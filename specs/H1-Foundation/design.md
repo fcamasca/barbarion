@@ -155,6 +155,7 @@ La inicialización devuelve `DatabaseStatus(path, schema_version, foreign_keys_e
 - calcula estado global sin imprimir ni terminar el proceso.
 
 Orden: Python, configuración, data, output, logs, SQLite y Ollama.
+`run_doctor_checks` recibe `Settings` y los resultados del bootstrap, y devuelve `DoctorReport(checks, summary)`. El reporte expone `exit_code` (`0` sin fallos requeridos, `1` con alguno) y no imprime, configura logging ni termina el proceso. Ollama usa `OllamaProbeResult(available, detail)` para permitir pruebas sin red.
 
 ## 5. Configuración de ejemplo
 

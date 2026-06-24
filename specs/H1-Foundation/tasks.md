@@ -116,6 +116,8 @@
 
 ### H1-T08 — Implementar checks de `doctor`
 
+**Estado:** completado.
+
 **Estimación:** 2 h  
 **Dependencias:** H1-T03, H1-T05, H1-T06, H1-T07.  
 **Requisitos:** H1-REQ-009, H1-NFR-001.

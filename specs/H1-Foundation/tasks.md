@@ -147,6 +147,8 @@
 
 ### H1-T10 — Completar smoke tests
 
+**Estado:** completado.
+
 **Estimación:** 1.5 h  
 **Dependencias:** H1-T04, H1-T09.  
 **Requisitos:** H1-REQ-011, H1-NFR-004.

@@ -1,11 +1,20 @@
-"""Punto de entrada mínimo de la línea de comandos de Barbarion."""
+"""Punto de entrada de la línea de comandos de Barbarion."""
 
 import argparse
+import logging
 import sys
 from collections.abc import Sequence
 
 from barbarion import __version__
-from barbarion.config import ConfigError, load_settings, settings_display_items
+from barbarion.bootstrap import DirectoryResult, initialize_directories
+from barbarion.config import (
+    ConfigError,
+    Settings,
+    load_settings,
+    settings_display_items,
+)
+from barbarion.doctor import DoctorReport, run_doctor_checks
+from barbarion.logging_config import configure_logging
 
 
 class SpanishArgumentParser(argparse.ArgumentParser):
@@ -41,22 +50,80 @@ def _add_help_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _pending_command(args: argparse.Namespace) -> int:
-    """Informa que un comando se conectará en una tarea posterior."""
-    command_label = getattr(args, "command_label", "")
-    print(
-        f"El comando '{command_label}' todavía no está implementado.",
-        file=sys.stderr,
-    )
-    return 2
-
-
 def _show_config(args: argparse.Namespace) -> int:
     """Muestra la configuración efectiva sin modificar el entorno."""
     settings = load_settings(args.config)
     for key, value in settings_display_items(settings):
         print(f"{key} = {value}")
     return 0
+
+
+def _run_doctor(args: argparse.Namespace) -> int:
+    """Orquesta bootstrap, logging, checks y presentación del diagnóstico."""
+    settings = load_settings(args.config)
+    directory_results = initialize_directories(settings)
+    logger = _configure_doctor_logging(settings, directory_results)
+
+    if logger is not None:
+        source = settings.config_source or "valores predeterminados"
+        logger.info("Inicio del diagnóstico.")
+        logger.info("Configuración cargada desde %s.", source)
+
+    report = run_doctor_checks(settings, directory_results)
+    _render_doctor_report(report)
+    if logger is not None:
+        _log_doctor_report(logger, report)
+    return report.exit_code
+
+
+def _configure_doctor_logging(
+    settings: Settings,
+    directory_results: tuple[DirectoryResult, ...],
+) -> logging.Logger | None:
+    """Configura logging solo cuando su directorio quedó disponible."""
+    logs_result = next(
+        (result for result in directory_results if "logs" in result.roles),
+        None,
+    )
+    if logs_result is None or not logs_result.success:
+        return None
+    return configure_logging(settings)
+
+
+
+def _render_doctor_report(report: DoctorReport) -> None:
+    """Presenta checks y resumen en stdout con columnas estables."""
+    name_width = max(len(check.name) for check in report.checks)
+    for check in report.checks:
+        print(f"{check.status:<5} {check.name:<{name_width}} {check.detail}")
+    print()
+    print(
+        f"Resumen: {report.summary.pass_count} PASS, "
+        f"{report.summary.warn_count} WARN, "
+        f"{report.summary.fail_count} FAIL"
+    )
+
+
+def _log_doctor_report(logger: logging.Logger, report: DoctorReport) -> None:
+    """Registra cada resultado con el nivel correspondiente."""
+    log_methods = {
+        "PASS": logger.info,
+        "WARN": logger.warning,
+        "FAIL": logger.error,
+    }
+    for check in report.checks:
+        log_methods[check.status](
+            "%s %s: %s",
+            check.status,
+            check.name,
+            check.detail,
+        )
+
+    if report.summary.success:
+        logger.info("Resultado del diagnóstico: éxito.")
+    else:
+        logger.error("Resultado del diagnóstico: fallo requerido.")
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Construye el parser raíz sin provocar efectos secundarios."""
@@ -100,10 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,
     )
     _add_help_option(doctor_parser)
-    doctor_parser.set_defaults(
-        handler=_pending_command,
-        command_label="doctor",
-    )
+    doctor_parser.set_defaults(handler=_run_doctor)
 
     config_parser = commands.add_parser(
         "config",
@@ -139,6 +203,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ConfigError as error:
         print(f"Error de configuración: {error}", file=sys.stderr)
         return 2
+    except OSError as error:
+        print(f"Error operativo: {error}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print("Operación interrumpida por el usuario.", file=sys.stderr)
         return 130

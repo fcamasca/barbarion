@@ -132,6 +132,8 @@
 
 ### H1-T09 — Integrar `doctor` con CLI
 
+**Estado:** completado.
+
 **Estimación:** 1.5 h  
 **Dependencias:** H1-T02, H1-T08.  
 **Requisitos:** H1-REQ-006 a H1-REQ-010.

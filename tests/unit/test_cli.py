@@ -64,14 +64,6 @@ def test_invalid_arguments_return_two_without_traceback() -> None:
     assert "Traceback" not in result.stderr
 
 
-@pytest.mark.parametrize("args", [("doctor",)])
-def test_pending_commands_are_explicit(args: tuple[str, ...]) -> None:
-    result = run_cli(*args)
-
-    assert result.returncode == 2
-    assert "todavía no está implementado" in result.stderr
-    assert "Traceback" not in result.stderr
-
 
 def test_keyboard_interrupt_returns_130(
     monkeypatch: pytest.MonkeyPatch,

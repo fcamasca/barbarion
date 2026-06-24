@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "barbarion"
+dynamic = ["version"]
+description = "Agente AI on-premise para sistemas legacy Oracle/PLSQL y PowerBuilder"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Barbarion contributors" },
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+]
+
+[project.scripts]
+barbarion = "barbarion.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "barbarion.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

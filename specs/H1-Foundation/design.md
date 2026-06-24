@@ -145,6 +145,7 @@ La versión X del esquema de base de datos es más reciente que la admitida por 
 ```
 
 `X` se sustituye por la versión detectada.
+La inicialización devuelve `DatabaseStatus(path, schema_version, foreign_keys_enabled)`. Este resultado permite que `doctor` informe salud y versión sin mantener abierta la conexión.
 
 ### `doctor.py`
 

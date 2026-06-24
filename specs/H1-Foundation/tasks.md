@@ -101,6 +101,8 @@
 
 ### H1-T07 — Implementar SQLite inicial
 
+**Estado:** completado.
+
 **Estimación:** 2 h  
 **Dependencias:** H1-T05.  
 **Requisitos:** H1-REQ-008.

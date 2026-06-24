@@ -6,7 +6,7 @@ El proyecto ayuda a desarrolladores y analistas técnicos a comprender código e
 
 ## Estado del proyecto
 
-Barbarion se encuentra en la fase de definición de su MVP. La implementación seguirá cinco hitos pequeños y verificables bajo un enfoque Spec-Driven Development.
+Barbarion se encuentra implementando `H1-Foundation`, el primero de cinco hitos pequeños y verificables bajo un enfoque Spec-Driven Development.
 
 > El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no forma parte del diseño público ni limita la arquitectura de Barbarion.
 
@@ -60,7 +60,7 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 
 ## Desarrollo
 
-El código de aplicación se incorporará al iniciar `H1-Foundation`. Hasta entonces, el repositorio conserva únicamente la documentación y estructura necesarias para acordar el alcance.
+La base Python y la CLI mínima ya están disponibles como parte de `H1-Foundation`. Los subcomandos operativos se incorporarán incrementalmente según las tareas aprobadas del hito.
 
 ## Licencia
 

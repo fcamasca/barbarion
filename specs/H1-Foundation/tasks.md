@@ -11,6 +11,8 @@
 
 ### H1-T01 — Crear packaging mínimo
 
+**Estado:** completado.
+
 **Estimación:** 1 h  
 **Dependencias:** ninguna.  
 **Requisitos:** H1-REQ-001, H1-NFR-003, H1-NFR-004.
@@ -30,7 +32,7 @@
 
 - construir parser `argparse`;
 - agregar `--version`, `--config`, `doctor` y `config show`;
-- implementar despacho y `KeyboardInterrupt`;
+- implementar despacho, mensajes en español y `KeyboardInterrupt`;
 - probar ayuda, versión y códigos base.
 
 **Verificación:** ayuda y versión no crean recursos.
@@ -121,7 +123,7 @@
 **Requisitos:** H1-REQ-006 a H1-REQ-010.
 
 - orquestar configuración, directorios, logging, SQLite y Ollama;
-- renderizar resultados y resumen;
+- renderizar resultados y resumen en español;
 - aplicar códigos `0`, `1` y `2`;
 - asegurar mensajes breves sin traceback.
 

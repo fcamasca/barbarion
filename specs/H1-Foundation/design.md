@@ -11,7 +11,7 @@ Construir una base Python local, instalable y comprobable sin capacidades del do
 | Python | CPython `>=3.12,<3.13` | Coincide con la arquitectura y permite `tomllib` |
 | Packaging | `pyproject.toml` con `setuptools.build_meta` | Convención estándar sin herramienta adicional |
 | Layout | `src/` layout | Evita importar código no instalado |
-| CLI | `argparse` | Cubre los comandos sin dependencia runtime |
+| CLI | `argparse`, con ayuda y mensajes en español | Cubre los comandos sin dependencia runtime |
 | Configuración | `tomllib`, dataclass inmutable y validación propia | El esquema H1 es pequeño |
 | Rutas | `pathlib.Path` | Portabilidad y normalización explícita |
 | Logging | `logging` estándar | Suficiente para consola y archivo |
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 Se inserta versión `1` con fecha UTC ISO 8601 si no existe. Una versión detectada mayor que la soportada falla sin modificar la base y produce exactamente:
 
 ```text
-Database schema version X is newer than this Barbarion version supports.
+La versión X del esquema de base de datos es más reciente que la admitida por esta versión de Barbarion.
 ```
 
 `X` se sustituye por la versión detectada.
@@ -215,14 +215,14 @@ H1 no expone `barbarion init`. De acuerdo con [D-012](../../docs/DECISIONS.md), 
 
 ```text
 PASS  Python          3.12.x
-PASS  Config          ./barbarion.toml
-PASS  Data directory  /ruta/normalizada/data
-PASS  Output directory /ruta/normalizada/output
-PASS  Logs directory  /ruta/normalizada/logs
+PASS  Configuración   ./barbarion.toml
+PASS  Directorio de datos   /ruta/normalizada/data
+PASS  Directorio de salida  /ruta/normalizada/output
+PASS  Directorio de logs    /ruta/normalizada/logs
 PASS  SQLite          schema version 1
-WARN  Ollama          unavailable at http://127.0.0.1:11434
+WARN  Ollama           no disponible en http://127.0.0.1:11434
 
-Summary: 6 PASS, 1 WARN, 0 FAIL
+Resumen: 6 PASS, 1 WARN, 0 FAIL
 ```
 
 Nombres, estados, orden y semántica son parte del contrato; el espaciado exacto puede ajustarse.
@@ -243,6 +243,7 @@ Reglas:
 - incluir acción y recurso afectado;
 - no capturar `BaseException`;
 - no borrar SQLite, configuración o directorios para recuperarse;
+- presentar en español toda ayuda, diagnóstico y error dirigido al usuario;
 - no mostrar traceback en errores esperados.
 
 ## 9. Seguridad y privacidad

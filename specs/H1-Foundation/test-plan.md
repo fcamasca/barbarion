@@ -72,7 +72,7 @@ Si permisos no pueden simularse de forma fiable en una plataforma, se cubre la r
 | UT-DB-01 | Base ausente | DB y migración `1` | H1-REQ-008 |
 | UT-DB-02 | Segunda inicialización | Una fila de migración | H1-REQ-008 |
 | UT-DB-03 | Health check | `SELECT 1`, FK activas, versión `1` | H1-REQ-008 |
-| UT-DB-04 | Versión futura `X` | Falla sin modificar DB y muestra `Database schema version X is newer than this Barbarion version supports.` | H1-REQ-008 |
+| UT-DB-04 | Versión futura `X` | Falla sin modificar DB y muestra `La versión X del esquema de base de datos es más reciente que la admitida por esta versión de Barbarion.` | H1-REQ-008 |
 | UT-DB-05 | Ruta no utilizable | Error accionable | H1-REQ-008 |
 | UT-DB-06 | Error durante migración | Rollback sin versión parcial | H1-REQ-008 |
 

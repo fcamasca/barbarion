@@ -65,6 +65,7 @@ H1 no incluye análisis de sistemas legacy ni funcionalidad de negocio. Su resul
 
 - `barbarion --help` finaliza con código `0` y muestra `doctor` y `config`;
 - `barbarion config --help` muestra el subcomando `show`;
+- la ayuda y los mensajes dirigidos al usuario están en español;
 - `barbarion --version` finaliza con código `0` y muestra una versión compatible con la metadata del paquete;
 - ninguno de estos comandos crea `data/`, `output/`, `logs/` ni SQLite.
 
@@ -153,7 +154,7 @@ H1 no incluye análisis de sistemas legacy ni funcionalidad de negocio. Su resul
 - cada conexión habilita `PRAGMA foreign_keys = ON` y usa un timeout de 5 segundos;
 - repetir la inicialización no cambia la versión ni agrega filas duplicadas;
 - `SELECT 1` y la lectura de la versión comprueban salud;
-- una versión de esquema futura se reporta exactamente como `Database schema version X is newer than this Barbarion version supports.`, sustituyendo `X` por la versión detectada;
+- una versión de esquema futura se reporta exactamente como `La versión X del esquema de base de datos es más reciente que la admitida por esta versión de Barbarion.`, sustituyendo `X` por la versión detectada;
 - errores de apertura, bloqueo o versión futura desconocida se reportan sin borrar ni recrear la base.
 
 ### H1-REQ-009 — Diagnóstico del entorno
@@ -183,7 +184,7 @@ H1 no incluye análisis de sistemas legacy ni funcionalidad de negocio. Su resul
 - código `1`: `doctor` completó, pero uno o más checks requeridos fallaron;
 - código `2`: argumentos o configuración inválidos;
 - `Ctrl+C` finaliza con código `130` y mensaje breve;
-- errores esperados no muestran traceback ni mensajes crudos de librerías.
+- errores esperados se presentan en español y no muestran traceback ni mensajes crudos de librerías.
 
 ### H1-REQ-011 — Pruebas reproducibles
 

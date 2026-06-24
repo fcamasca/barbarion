@@ -24,6 +24,7 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 | D-010 | 2026-06-23 | Aceptada | Parsers heurísticos con fallback de texto | Permiten entregar valor antes de construir analizadores formales | Toda extracción debe conservar evidencia y declarar limitaciones |
 | D-011 | 2026-06-23 | Aceptada | Registro liviano de decisiones en un único archivo | El volumen actual no justifica una estructura completa de ADR | Se migrará a ADR individuales si el historial deja de ser manejable |
 | D-012 | 2026-06-23 | Aceptada | Se pospone un comando explícito `barbarion init` | H1 necesita un flujo mínimo y ya cuenta con diagnóstico operativo | En H1, `barbarion doctor` también realiza el bootstrap idempotente de directorios y SQLite; `init` se reconsiderará si separar ambos comportamientos aporta valor |
+| D-013 | 2026-06-23 | Aceptada | La comunicación de Barbarion con el usuario será en español | Favorece claridad y consistencia para sus usuarios iniciales | Ayuda, mensajes CLI, errores, diagnósticos, logs, comentarios y docstrings se escriben en español; identificadores, claves de configuración, APIs y códigos técnicos estables pueden permanecer en inglés |
 
 ## Cómo añadir una decisión
 

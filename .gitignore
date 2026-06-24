@@ -1,5 +1,7 @@
 # Python
+.barbarion/
 __pycache__/
+*.pyc
 *.py[cod]
 *.egg-info/
 .pytest_cache/
@@ -19,6 +21,7 @@ barbarion.toml
 # Datos e índices locales
 data/
 output/
+logs/
 *.db
 *.db-shm
 *.db-wal

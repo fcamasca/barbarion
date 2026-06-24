@@ -26,6 +26,8 @@
 
 ### H1-T02 — Definir árbol CLI y códigos base
 
+**Estado:** completado.
+
 **Estimación:** 1.5 h  
 **Dependencias:** H1-T01.  
 **Requisitos:** H1-REQ-002, H1-REQ-010.

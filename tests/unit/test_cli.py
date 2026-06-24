@@ -1,5 +1,6 @@
 """Pruebas del árbol y los códigos base de la CLI."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,9 +13,12 @@ from barbarion import cli
 
 def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Ejecuta la CLI como módulo en un proceso aislado."""
+    environment = os.environ.copy()
+    environment.pop("BARBARION_CONFIG", None)
     return subprocess.run(
         [sys.executable, "-m", "barbarion", *args],
         cwd=cwd,
+        env=environment,
         check=False,
         capture_output=True,
         text=True,
@@ -60,7 +64,7 @@ def test_invalid_arguments_return_two_without_traceback() -> None:
     assert "Traceback" not in result.stderr
 
 
-@pytest.mark.parametrize("args", [("doctor",), ("config", "show")])
+@pytest.mark.parametrize("args", [("doctor",)])
 def test_pending_commands_are_explicit(args: tuple[str, ...]) -> None:
     result = run_cli(*args)
 
@@ -85,3 +89,58 @@ def test_keyboard_interrupt_returns_130(
 
     assert cli.main([]) == 130
     assert "Operación interrumpida por el usuario." in capsys.readouterr().err
+
+def test_config_show_uses_defaults_without_side_effects(tmp_path: Path) -> None:
+    result = run_cli("config", "show", cwd=tmp_path)
+
+    assert result.returncode == 0
+    lines = result.stdout.splitlines()
+    assert lines[0] == "origen = valores predeterminados"
+    assert lines[1] == "archivo_configuracion = ninguno"
+    assert f"data_dir = {tmp_path / 'data'}" in lines
+    assert f"database_path = {tmp_path / 'data' / 'barbarion.db'}" in lines
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
+    source = tmp_path / "settings.toml"
+    source.write_text('domain = "legacy"\nlog_level = "debug"\n', encoding="utf-8")
+
+    result = run_cli("--config", str(source), "config", "show", cwd=tmp_path)
+
+    assert result.returncode == 0
+    lines = result.stdout.splitlines()
+    keys = [line.partition(" = ")[0] for line in lines]
+    assert keys == [
+        "origen",
+        "archivo_configuracion",
+        "domain",
+        "data_dir",
+        "output_dir",
+        "logs_dir",
+        "database_path",
+        "log_level",
+        "ollama_url",
+        "ollama_timeout_seconds",
+    ]
+    assert lines[0] == "origen = archivo"
+    assert lines[1] == f"archivo_configuracion = {source}"
+    assert "domain = legacy" in lines
+    assert "log_level = DEBUG" in lines
+    assert list(tmp_path.iterdir()) == [source]
+
+
+def test_config_show_reports_invalid_file_without_traceback(tmp_path: Path) -> None:
+    result = run_cli(
+        "--config",
+        str(tmp_path / "missing.toml"),
+        "config",
+        "show",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert "Error de configuración:" in result.stderr
+    assert "no existe" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert list(tmp_path.iterdir()) == []

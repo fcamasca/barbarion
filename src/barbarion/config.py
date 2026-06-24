@@ -81,6 +81,31 @@ def load_settings(
     )
 
 
+def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
+    """Devuelve la configuración en el orden estable de la salida CLI."""
+    source_kind = (
+        "archivo"
+        if settings.config_source is not None
+        else "valores predeterminados"
+    )
+    source_path = (
+        str(settings.config_source)
+        if settings.config_source is not None
+        else "ninguno"
+    )
+    return (
+        ("origen", source_kind),
+        ("archivo_configuracion", source_path),
+        ("domain", settings.domain),
+        ("data_dir", str(settings.data_dir)),
+        ("output_dir", str(settings.output_dir)),
+        ("logs_dir", str(settings.logs_dir)),
+        ("database_path", str(settings.database_path)),
+        ("log_level", settings.log_level),
+        ("ollama_url", settings.ollama_url),
+        ("ollama_timeout_seconds", str(settings.ollama_timeout_seconds)),
+    )
+
 def _normalize_working_dir(cwd: Path | None) -> Path:
     """Normaliza el directorio base sin exigir recursos adicionales."""
     candidate = Path.cwd() if cwd is None else Path(cwd)

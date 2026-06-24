@@ -99,6 +99,7 @@ Ayuda y versión no cargan configuración ni inicializan el filesystem.
 El TOML usa claves de nivel raíz. `Settings` conserva además `config_source: Path | None`, que no forma parte del archivo.
 
 Hitos futuros podrán incorporar secciones como `[ingestion]`, `[rag]` y `[spec]` cuando existan requisitos concretos. H1 no crea secciones vacías ni las acepta anticipadamente; sus claves planas permanecen sin cambios.
+`config show` imprime líneas `clave = valor` en este orden: `origen`, `archivo_configuracion`, `domain`, `data_dir`, `output_dir`, `logs_dir`, `database_path`, `log_level`, `ollama_url` y `ollama_timeout_seconds`. El origen es `archivo` o `valores predeterminados`; cuando no existe archivo, `archivo_configuracion` muestra `ninguno`.
 
 ### `bootstrap.py`
 

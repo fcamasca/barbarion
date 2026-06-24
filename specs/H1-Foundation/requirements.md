@@ -106,7 +106,7 @@ H1 no incluye análisis de sistemas legacy ni funcionalidad de negocio. Su resul
 **Criterios de aceptación:**
 
 - finaliza con código `0` para una configuración válida;
-- muestra el origen (`archivo` o `defaults`) y todos los campos de H1 en orden estable;
+- muestra el origen (`archivo` o `valores predeterminados`) y todos los campos de H1 en orden estable;
 - muestra rutas normalizadas absolutas para facilitar diagnóstico;
 - no crea directorios, base de datos ni archivo de log;
 - una configuración inválida finaliza con código `2` y no imprime traceback.

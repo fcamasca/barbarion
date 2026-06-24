@@ -56,6 +56,8 @@
 
 ### H1-T04 — Implementar `config show`
 
+**Estado:** completado.
+
 **Estimación:** 1 h  
 **Dependencias:** H1-T02, H1-T03.  
 **Requisitos:** H1-REQ-005.

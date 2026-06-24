@@ -5,6 +5,7 @@ import sys
 from collections.abc import Sequence
 
 from barbarion import __version__
+from barbarion.config import ConfigError, load_settings, settings_display_items
 
 
 class SpanishArgumentParser(argparse.ArgumentParser):
@@ -49,6 +50,13 @@ def _pending_command(args: argparse.Namespace) -> int:
     )
     return 2
 
+
+def _show_config(args: argparse.Namespace) -> int:
+    """Muestra la configuración efectiva sin modificar el entorno."""
+    settings = load_settings(args.config)
+    for key, value in settings_display_items(settings):
+        print(f"{key} = {value}")
+    return 0
 
 def build_parser() -> argparse.ArgumentParser:
     """Construye el parser raíz sin provocar efectos secundarios."""
@@ -117,10 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
         add_help=False,
     )
     _add_help_option(show_parser)
-    show_parser.set_defaults(
-        handler=_pending_command,
-        command_label="config show",
-    )
+    show_parser.set_defaults(handler=_show_config)
 
     return parser
 
@@ -131,6 +136,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser = build_parser()
         args = parser.parse_args(argv)
         return args.handler(args)
+    except ConfigError as error:
+        print(f"Error de configuración: {error}", file=sys.stderr)
+        return 2
     except KeyboardInterrupt:
         print("Operación interrumpida por el usuario.", file=sys.stderr)
         return 130

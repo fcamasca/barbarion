@@ -1,6 +1,6 @@
 # H1 — Foundation
 
-**Estado:** aprobado.
+**Estado:** completado y aceptado.
 
 Establecer una aplicación Python local, instalable y comprobable con CLI, configuración, persistencia base y pruebas reproducibles.
 
@@ -13,5 +13,6 @@ El alcance y los criterios iniciales están en [ROADMAP.md](../../docs/ROADMAP.m
 - [Plan de tareas](tasks.md)
 - [Análisis de impacto](impact-analysis.md)
 - [Plan de pruebas](test-plan.md)
+- [Evidencia de aceptación](acceptance.md)
 
-La implementación de H1 puede comenzar siguiendo esta spec. Cualquier cambio de alcance debe reflejarse primero en estos documentos.
+H1 fue implementado y aceptado siguiendo esta spec. Cualquier cambio posterior de alcance debe reflejarse primero en estos documentos.

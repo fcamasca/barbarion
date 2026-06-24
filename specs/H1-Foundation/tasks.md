@@ -176,6 +176,8 @@
 
 ### H1-T12 — Ejecutar aceptación
 
+**Estado:** completado.
+
 **Estimación:** 1.5 h  
 **Dependencias:** H1-T01 a H1-T11.  
 **Requisitos:** todos.

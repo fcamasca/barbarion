@@ -6,7 +6,7 @@ Las specs convierten cada hito del roadmap en trabajo pequeño, revisable y veri
 
 | Hito | Objetivo | Estado |
 |---|---|---|
-| [H1-Foundation](H1-Foundation/) | Base Python, CLI, configuración y pruebas | Aprobado |
+| [H1-Foundation](H1-Foundation/) | Base Python, CLI, configuración y pruebas | Completado |
 | [H2-Ingestion](H2-Ingestion/) | Ingesta incremental y metadata trazable | Pendiente |
 | [H3-RAG](H3-RAG/) | Recuperación y respuestas locales con fuentes | Pendiente |
 | [H4-ReverseEngineering](H4-ReverseEngineering/) | Relaciones e impacto técnico básico | Pendiente |

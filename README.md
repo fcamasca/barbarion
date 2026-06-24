@@ -8,7 +8,7 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 
 ## Estado
 
-La base de `H1-Foundation` está disponible en la versión `0.1.0`:
+`H1-Foundation` está completado y aceptado en la versión `0.1.0`:
 
 - paquete Python instalable;
 - CLI local en español;

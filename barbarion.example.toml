@@ -1,0 +1,8 @@
+domain = "default"
+data_dir = "./data"
+output_dir = "./output"
+logs_dir = "./logs"
+database_path = "./data/barbarion.db"
+log_level = "INFO"
+ollama_url = "http://127.0.0.1:11434"
+ollama_timeout_seconds = 2.0

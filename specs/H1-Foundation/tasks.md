@@ -41,6 +41,8 @@
 
 ### H1-T03 — Implementar configuración
 
+**Estado:** completado.
+
 **Estimación:** 2.5 h  
 **Dependencias:** H1-T01.  
 **Requisitos:** H1-REQ-003, H1-REQ-004, H1-NFR-002.

@@ -11,6 +11,7 @@ import importlib
 import logging
 import os
 import pathlib
+import pkgutil
 import sqlite3
 import sys
 import urllib.request
@@ -25,7 +26,14 @@ urllib.request.urlopen = forbidden
 root_handlers = list(logging.getLogger().handlers)
 barbarion_handlers = list(logging.getLogger("barbarion").handlers)
 
-for module_name in ("barbarion", "barbarion.cli", "barbarion.__main__"):
+package = importlib.import_module("barbarion")
+module_names = ["barbarion"]
+module_names.extend(
+    module.name for module in pkgutil.walk_packages(
+        package.__path__, prefix="barbarion."
+    )
+)
+for module_name in module_names:
     importlib.import_module(module_name)
 
 assert list(pathlib.Path.cwd().iterdir()) == []

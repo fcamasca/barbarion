@@ -86,6 +86,8 @@
 
 ### H1-T06 — Configurar logging
 
+**Estado:** completado.
+
 **Estimación:** 1 h  
 **Dependencias:** H1-T05.  
 **Requisitos:** H1-REQ-007.

@@ -67,6 +67,7 @@ source .venv/bin/activate
 Instalar Barbarion con las dependencias de desarrollo:
 
 ```bash
+python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 ```
 

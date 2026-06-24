@@ -44,6 +44,21 @@ Activar el entorno:
 .\.venv\Scripts\Activate.ps1
 ```
 
+Si PowerShell bloquea la ejecución de scripts con un error similar a:
+
+```text
+PSSecurityException: la ejecución de scripts está deshabilitada en este sistema
+```
+
+habilitar la ejecución únicamente para la sesión actual:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+Este cambio no modifica la política del sistema de forma permanente y solo afecta la ventana actual de PowerShell.
+
 ```bash
 # Linux o macOS
 source .venv/bin/activate

@@ -23,6 +23,7 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 | D-009 | 2026-06-23 | Aceptada | FastAPI se difiere | La CLI no necesita una API HTTP para validar el MVP | Solo se reconsiderará ante un cliente real que la necesite |
 | D-010 | 2026-06-23 | Aceptada | Parsers heurísticos con fallback de texto | Permiten entregar valor antes de construir analizadores formales | Toda extracción debe conservar evidencia y declarar limitaciones |
 | D-011 | 2026-06-23 | Aceptada | Registro liviano de decisiones en un único archivo | El volumen actual no justifica una estructura completa de ADR | Se migrará a ADR individuales si el historial deja de ser manejable |
+| D-012 | 2026-06-23 | Aceptada | Se pospone un comando explícito `barbarion init` | H1 necesita un flujo mínimo y ya cuenta con diagnóstico operativo | En H1, `barbarion doctor` también realiza el bootstrap idempotente de directorios y SQLite; `init` se reconsiderará si separar ambos comportamientos aporta valor |
 
 ## Cómo añadir una decisión
 

@@ -108,6 +108,7 @@ Hitos futuros podrán incorporar secciones como `[ingestion]`, `[rag]` y `[spec]
 - comprueba escritura mediante un temporal que elimina de inmediato;
 - devuelve resultados estructurados, sin imprimir;
 - deduplica rutas, incluido el padre de `database_path`.
+Devuelve una tupla ordenada de `DirectoryResult(roles, path, success, detail)`. `roles` agrupa los usos `data`, `output`, `logs` y `database` cuando comparten una ruta; `detail` es un mensaje en español apto para diagnóstico.
 
 ### `logging_config.py`
 

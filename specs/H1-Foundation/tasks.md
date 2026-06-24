@@ -71,6 +71,8 @@
 
 ### H1-T05 — Inicializar directorios
 
+**Estado:** completado.
+
 **Estimación:** 1.5 h  
 **Dependencias:** H1-T03.  
 **Requisitos:** H1-REQ-006, H1-NFR-002.

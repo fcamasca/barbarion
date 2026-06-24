@@ -2,41 +2,172 @@
 
 Barbarion es un agente AI on-premise para análisis, documentación e ingeniería inversa asistida de sistemas legacy **Oracle/PLSQL + PowerBuilder**.
 
-El proyecto ayuda a desarrolladores y analistas técnicos a comprender código existente, localizar dependencias, recuperar conocimiento autorizado y producir documentación Markdown trazable sin enviar el corpus a servicios cloud.
-
-## Estado del proyecto
-
-Barbarion se encuentra implementando `H1-Foundation`, el primero de cinco hitos pequeños y verificables bajo un enfoque Spec-Driven Development.
+Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender código existente, localizar dependencias y producir documentación trazable sin enviar el corpus a servicios cloud.
 
 > El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no forma parte del diseño público ni limita la arquitectura de Barbarion.
 
-El MVP trabaja con un solo sistema legacy objetivo y un corpus autorizado. Esta restricción permite validar utilidad real antes de considerar más dominios, interfaces o infraestructura.
+## Estado
 
-## Capacidades previstas
+La base de `H1-Foundation` está disponible en la versión `0.1.0`:
 
-- ingesta incremental de código Oracle/PLSQL, exports de PowerBuilder y documentación técnica;
-- inventario local de archivos, objetos y relaciones básicas;
-- RAG local con referencias verificables a las fuentes recuperadas;
-- explicación de componentes y análisis de impacto asistido;
-- generación de inventarios, análisis y specs en Markdown;
-- operación local mediante CLI y modelos ejecutados con Ollama.
+- paquete Python instalable;
+- CLI local en español;
+- configuración TOML validada;
+- inicialización segura de directorios;
+- logging local;
+- SQLite versionado;
+- diagnóstico reproducible mediante `barbarion doctor`;
+- pruebas unitarias, de integración y smoke.
 
-## Principios
+Todavía no se implementan ingesta, parsers, RAG, embeddings, Qdrant, ingeniería inversa ni generación de documentos. Estas capacidades pertenecen a hitos posteriores.
+
+## Requisitos
+
+- CPython `3.12` (`>=3.12,<3.13`);
+- `pip`;
+- Ollama es opcional en H1.
+
+Ollama no es necesario para instalar, probar ni aceptar H1. Cuando no está disponible, `doctor` informa `WARN` y conserva el código de salida `0` si todos los checks requeridos pasan.
+
+## Instalación para desarrollo
+
+Desde el checkout del repositorio:
+
+```bash
+python -m venv .venv
+```
+
+Activar el entorno:
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# Linux o macOS
+source .venv/bin/activate
+```
+
+Instalar Barbarion con las dependencias de desarrollo:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
+Comprobar la instalación:
+
+```bash
+barbarion --version
+barbarion --help
+```
+
+## Configuración
+
+El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles en H1. Para crear una configuración local:
+
+```powershell
+# Windows PowerShell
+Copy-Item barbarion.example.toml barbarion.toml
+```
+
+```bash
+# Linux o macOS
+cp barbarion.example.toml barbarion.toml
+```
+
+`barbarion.toml` está excluido de Git. No deben versionarse rutas personales, credenciales ni endpoints privados.
+
+La configuración se resuelve en este orden:
+
+1. opción global `--config RUTA`;
+2. variable de entorno `BARBARION_CONFIG`;
+3. `./barbarion.toml`;
+4. valores predeterminados.
+
+Las rutas relativas se resuelven desde el directorio del archivo TOML. Sin archivo, se resuelven desde el directorio de trabajo.
+
+Para inspeccionar los valores efectivos sin crear recursos:
+
+```bash
+barbarion config show
+barbarion --config ruta/al/archivo.toml config show
+```
+
+## Comandos disponibles
+
+| Comando | Resultado | Efectos secundarios |
+|---|---|---|
+| `barbarion --help` | Muestra ayuda en español | Ninguno |
+| `barbarion --version` | Muestra la versión instalada | Ninguno |
+| `barbarion config show` | Valida y muestra la configuración efectiva | Ninguno |
+| `barbarion doctor` | Inicializa recursos y diagnostica el entorno | Crea directorios, SQLite y log si faltan |
+
+`doctor` comprueba, en orden:
+
+1. versión de Python;
+2. configuración;
+3. directorio de datos;
+4. directorio de salida;
+5. directorio de logs;
+6. SQLite;
+7. disponibilidad de Ollama mediante `GET /api/tags`.
+
+Los resultados usan `PASS`, `WARN` y `FAIL`. El detalle, los errores, la ayuda y los logs se presentan en español.
+
+## Directorios y archivos locales
+
+Con la configuración predeterminada, `barbarion doctor` inicializa:
+
+```text
+data/
+└── barbarion.db
+output/
+logs/
+└── barbarion.log
+```
+
+`data/`, `output/`, `logs/`, `barbarion.toml`, bases SQLite y `.venv/` están excluidos de Git.
+
+## Códigos de salida
+
+| Código | Significado |
+|---:|---|
+| `0` | Comando completado; todos los checks requeridos pasan. Puede haber advertencias opcionales |
+| `1` | `doctor` encontró un fallo requerido o ocurrió un error operativo |
+| `2` | Argumentos o configuración inválidos |
+| `130` | Operación interrumpida por el usuario |
+
+Los errores esperados no muestran traceback.
+
+## Pruebas
+
+Ejecutar toda la suite:
+
+```bash
+python -m pytest
+```
+
+Ejecutar únicamente los smoke tests contra el entry point instalado:
+
+```bash
+python -m pytest tests/smoke
+```
+
+Las pruebas usan directorios temporales y un endpoint Ollama falso en loopback. No necesitan un Ollama real ni acceso a internet.
+
+## Alcance y principios
 
 - local y on-premise por diseño;
-- evidencia antes que elocuencia;
 - CLI-first;
-- un monolito Python modular;
-- parsers heurísticos y honestos antes que analizadores perfectos;
+- monolito Python modular de un solo proceso;
+- biblioteca estándar para el runtime de H1;
+- evidencia antes que elocuencia;
+- un solo dominio configurado durante la validación inicial;
 - entregables pequeños y verificables;
-- profundidad en Oracle/PLSQL + PowerBuilder, no soporte genérico para cualquier tecnología;
-- revisión humana de conclusiones y documentos generados.
+- revisión humana de resultados futuros.
 
-## Arquitectura del MVP
-
-El diseño inicial utiliza una aplicación Python de un solo proceso, SQLite para metadata, Qdrant en modo local para búsqueda vectorial, Ollama para embeddings e inferencia, y Markdown para los entregables.
-
-No forman parte del MVP una extensión de VS Code, UI web, autenticación, microservicios, Kubernetes, una base de datos empresarial ni un grafo avanzado.
+No forman parte del MVP una extensión de VS Code, UI web, autenticación, microservicios, Kubernetes, base de datos empresarial ni grafo avanzado.
 
 ## Roadmap
 
@@ -56,12 +187,8 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Decisiones técnicas](docs/DECISIONS.md)
 - [Specs por hito](specs/)
-- [Referencias públicas](docs/references/)
-
-## Desarrollo
-
-La base Python y la CLI mínima ya están disponibles como parte de `H1-Foundation`. Los subcomandos operativos se incorporarán incrementalmente según las tareas aprobadas del hito.
+- [Spec aprobada de H1](specs/H1-Foundation/)
 
 ## Licencia
 
-Consulta [LICENSE](LICENSE).
+Barbarion se distribuye bajo la [licencia MIT](LICENSE).

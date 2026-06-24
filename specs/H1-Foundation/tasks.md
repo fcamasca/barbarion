@@ -161,6 +161,8 @@
 
 ### H1-T11 — Documentar operación
 
+**Estado:** completado.
+
 **Estimación:** 1 h  
 **Dependencias:** H1-T10.  
 **Requisitos:** H1-REQ-012.

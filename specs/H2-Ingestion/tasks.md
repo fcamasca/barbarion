@@ -82,7 +82,7 @@
 
 ### H2-T06 — Implementar discovery básico
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T01, H2-T03.  
 **Requisitos:** H2-REQ-003.

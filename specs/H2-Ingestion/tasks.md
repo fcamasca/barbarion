@@ -123,7 +123,7 @@
 
 ### H2-T09 — Implementar firma de procesamiento
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T01, H2-T03.  
 **Requisitos:** H2-REQ-006, H2-NFR-002.

@@ -202,7 +202,7 @@
 
 ### H2-T15 — Implementar OracleParser base
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T11, H2-T12.  
 **Requisitos:** H2-REQ-011.
@@ -215,7 +215,7 @@
 
 ### H2-T16 — Delimitar subprogramas Oracle
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T15.  
 **Requisitos:** H2-REQ-011.

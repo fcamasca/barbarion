@@ -11,6 +11,7 @@ from barbarion.infrastructure.parsers.encoding import (
     decode_text_source,
 )
 from barbarion.infrastructure.parsers.markdown import MarkdownParser
+from barbarion.infrastructure.parsers.oracle import ORACLE_EXTENSIONS, OracleParser
 from barbarion.infrastructure.parsers.registry import (
     DuplicateParserExtensionError,
     ParserRegistry,
@@ -26,6 +27,8 @@ __all__ = [
     "EXTRACTION_LIMIT_EXCEEDED",
     "LOW_CONFIDENCE_ENCODING",
     "MarkdownParser",
+    "ORACLE_EXTENSIONS",
+    "OracleParser",
     "ParserRegistry",
     "ParserRegistryError",
     "TEXT_DECODE_FAILED",

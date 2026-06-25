@@ -40,7 +40,7 @@
 
 ### H2-T03 — Definir contratos del pipeline
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** ninguna.  
 **Requisitos:** H2-REQ-009, H2-REQ-018, H2-NFR-008.

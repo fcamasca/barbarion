@@ -2,6 +2,7 @@
 
 import os
 import tomllib
+import codecs
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,12 +21,75 @@ _DEFAULTS: dict[str, object] = {
     "ollama_url": "http://127.0.0.1:11434",
     "ollama_timeout_seconds": 2.0,
 }
-_ALLOWED_KEYS = frozenset(_DEFAULTS)
+_DEFAULT_INGESTION: dict[str, object] = {
+    "paths": ("sources/oracle", "sources/powerbuilder", "sources/docs"),
+    "extensions": (
+        ".sql",
+        ".pks",
+        ".pkb",
+        ".prc",
+        ".fnc",
+        ".trg",
+        ".pck",
+        ".vw",
+        ".vws",
+        ".pkg",
+        ".tps",
+        ".srw",
+        ".sru",
+        ".srf",
+        ".srm",
+        ".srj",
+        ".srd",
+        ".pbl",
+        ".md",
+        ".txt",
+        ".docx",
+        ".pdf",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".ini",
+    ),
+    "chunk_size": 4000,
+    "chunk_overlap": 400,
+    "ignore_patterns": (
+        ".git/**",
+        ".barbarion/**",
+        ".venv/**",
+        "**/__pycache__/**",
+        "data/**",
+        "output/**",
+        "logs/**",
+        "**/node_modules/**",
+    ),
+    "max_file_size_mb": 50,
+    "max_extracted_chars": 5_000_000,
+    "max_pdf_pages": 1000,
+    "encodings": ("utf-8", "cp1252", "latin-1"),
+}
+_ALLOWED_KEYS = frozenset(_DEFAULTS) | {"ingestion"}
+_ALLOWED_INGESTION_KEYS = frozenset(_DEFAULT_INGESTION)
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
 class ConfigError(ValueError):
     """Error esperado al localizar, leer o validar la configuración."""
+
+
+@dataclass(frozen=True, slots=True)
+class IngestionSettings:
+    """Configuracion efectiva e inmutable para ingesta."""
+
+    paths: tuple[Path, ...]
+    extensions: tuple[str, ...]
+    chunk_size: int
+    chunk_overlap: int
+    ignore_patterns: tuple[str, ...]
+    max_file_size_mb: int
+    max_extracted_chars: int
+    max_pdf_pages: int
+    encodings: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +104,7 @@ class Settings:
     log_level: str
     ollama_url: str
     ollama_timeout_seconds: float
+    ingestion: IngestionSettings
     config_source: Path | None
 
 
@@ -77,6 +142,7 @@ def load_settings(
         ollama_timeout_seconds=_validate_timeout(
             values["ollama_timeout_seconds"]
         ),
+        ingestion=_build_ingestion_settings(values.get("ingestion"), base_dir),
         config_source=source,
     )
 
@@ -253,3 +319,138 @@ def _validate_ollama_url(value: object) -> str:
             "La clave 'ollama_url' contiene un puerto no válido."
         )
     return url.rstrip("/")
+
+
+def _build_ingestion_settings(value: object, base_dir: Path) -> IngestionSettings:
+    """Construye la configuracion de ingesta desde defaults y TOML."""
+    if value is None:
+        raw_ingestion: dict[str, object] = {}
+    elif isinstance(value, dict):
+        raw_ingestion = value
+    else:
+        raise ConfigError("La seccion 'ingestion' debe ser una tabla TOML.")
+
+    unknown_keys = sorted(set(raw_ingestion) - _ALLOWED_INGESTION_KEYS)
+    if unknown_keys:
+        formatted = ", ".join(f"ingestion.{key}" for key in unknown_keys)
+        raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
+
+    values = {**_DEFAULT_INGESTION, **raw_ingestion}
+    chunk_size = _validate_int_range(
+        values["chunk_size"],
+        "ingestion.chunk_size",
+        minimum=500,
+        maximum=100_000,
+    )
+    chunk_overlap = _validate_int_range(
+        values["chunk_overlap"],
+        "ingestion.chunk_overlap",
+        minimum=0,
+        maximum=chunk_size - 1,
+    )
+    max_extracted_chars = _validate_int_range(
+        values["max_extracted_chars"],
+        "ingestion.max_extracted_chars",
+        minimum=chunk_size,
+    )
+
+    return IngestionSettings(
+        paths=_resolve_path_list(values["paths"], "ingestion.paths", base_dir),
+        extensions=_validate_extensions(values["extensions"]),
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        ignore_patterns=_validate_string_list(
+            values["ignore_patterns"],
+            "ingestion.ignore_patterns",
+        ),
+        max_file_size_mb=_validate_int_range(
+            values["max_file_size_mb"],
+            "ingestion.max_file_size_mb",
+            minimum=1,
+            maximum=1024,
+        ),
+        max_extracted_chars=max_extracted_chars,
+        max_pdf_pages=_validate_int_range(
+            values["max_pdf_pages"],
+            "ingestion.max_pdf_pages",
+            minimum=1,
+        ),
+        encodings=_validate_encodings(values["encodings"]),
+    )
+
+
+def _validate_int_range(
+    value: object,
+    key: str,
+    *,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    """Valida un entero dentro de un rango inclusivo."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"La clave '{key}' debe ser un entero.")
+    if value < minimum:
+        raise ConfigError(f"La clave '{key}' debe ser mayor o igual que {minimum}.")
+    if maximum is not None and value > maximum:
+        raise ConfigError(f"La clave '{key}' debe ser menor o igual que {maximum}.")
+    return value
+
+
+def _resolve_path_list(value: object, key: str, base_dir: Path) -> tuple[Path, ...]:
+    """Valida y resuelve una lista de rutas."""
+    raw_paths = _validate_string_list(value, key)
+    if not raw_paths:
+        raise ConfigError(f"La clave '{key}' debe contener al menos una ruta.")
+    return tuple(_resolve_path(path, key, base_dir) for path in raw_paths)
+
+
+def _validate_string_list(value: object, key: str) -> tuple[str, ...]:
+    """Valida una lista de cadenas no vacias."""
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError(f"La clave '{key}' debe ser una lista.")
+
+    normalized: list[str] = []
+    for item in value:
+        normalized.append(_require_non_empty_string(item, key))
+    return tuple(normalized)
+
+
+def _validate_extensions(value: object) -> tuple[str, ...]:
+    """Normaliza extensiones a minusculas con punto inicial."""
+    raw_extensions = _validate_string_list(value, "ingestion.extensions")
+    if not raw_extensions:
+        raise ConfigError(
+            "La clave 'ingestion.extensions' debe contener al menos una extension."
+        )
+
+    extensions: list[str] = []
+    for extension in raw_extensions:
+        normalized = extension.lower()
+        if not normalized.startswith("."):
+            normalized = f".{normalized}"
+        if normalized == "." or "/" in normalized or "\\" in normalized:
+            raise ConfigError(
+                "La clave 'ingestion.extensions' contiene una extension no valida."
+            )
+        extensions.append(normalized)
+    return tuple(dict.fromkeys(extensions))
+
+
+def _validate_encodings(value: object) -> tuple[str, ...]:
+    """Valida que los encodings existan en Python."""
+    encodings = _validate_string_list(value, "ingestion.encodings")
+    if not encodings:
+        raise ConfigError(
+            "La clave 'ingestion.encodings' debe contener al menos un encoding."
+        )
+
+    normalized: list[str] = []
+    for encoding in encodings:
+        try:
+            normalized.append(codecs.lookup(encoding).name)
+        except LookupError as error:
+            raise ConfigError(
+                f"La clave 'ingestion.encodings' contiene un encoding no valido: "
+                f"{encoding}."
+            ) from error
+    return tuple(dict.fromkeys(normalized))

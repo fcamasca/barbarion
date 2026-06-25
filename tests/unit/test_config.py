@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from barbarion.config import ConfigError, Settings, load_settings
+from barbarion.config import ConfigError, IngestionSettings, Settings, load_settings
 
 
 def write_config(path: Path, content: str) -> Path:
@@ -26,6 +26,57 @@ def test_defaults_are_resolved_from_working_directory(tmp_path: Path) -> None:
         log_level="INFO",
         ollama_url="http://127.0.0.1:11434",
         ollama_timeout_seconds=2.0,
+        ingestion=IngestionSettings(
+            paths=(
+                tmp_path / "sources" / "oracle",
+                tmp_path / "sources" / "powerbuilder",
+                tmp_path / "sources" / "docs",
+            ),
+            extensions=(
+                ".sql",
+                ".pks",
+                ".pkb",
+                ".prc",
+                ".fnc",
+                ".trg",
+                ".pck",
+                ".vw",
+                ".vws",
+                ".pkg",
+                ".tps",
+                ".srw",
+                ".sru",
+                ".srf",
+                ".srm",
+                ".srj",
+                ".srd",
+                ".pbl",
+                ".md",
+                ".txt",
+                ".docx",
+                ".pdf",
+                ".yaml",
+                ".yml",
+                ".json",
+                ".ini",
+            ),
+            chunk_size=4000,
+            chunk_overlap=400,
+            ignore_patterns=(
+                ".git/**",
+                ".barbarion/**",
+                ".venv/**",
+                "**/__pycache__/**",
+                "data/**",
+                "output/**",
+                "logs/**",
+                "**/node_modules/**",
+            ),
+            max_file_size_mb=50,
+            max_extracted_chars=5_000_000,
+            max_pdf_pages=1000,
+            encodings=("utf-8", "cp1252", "iso8859-1"),
+        ),
         config_source=None,
     )
     assert list(tmp_path.iterdir()) == []
@@ -109,7 +160,6 @@ def test_invalid_toml_is_rejected(tmp_path: Path) -> None:
     "content",
     [
         'unknown = "value"\n',
-        '[ingestion]\nenabled = true\n',
     ],
 )
 def test_unknown_keys_and_future_sections_are_rejected(
@@ -119,6 +169,16 @@ def test_unknown_keys_and_future_sections_are_rejected(
     source = write_config(tmp_path / "unknown.toml", content)
 
     with pytest.raises(ConfigError, match="desconocidas"):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
+def test_unknown_ingestion_keys_are_rejected(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "unknown-ingestion.toml",
+        "[ingestion]\nenabled = true\n",
+    )
+
+    with pytest.raises(ConfigError, match="ingestion.enabled"):
         load_settings(source, environ={}, cwd=tmp_path)
 
 
@@ -166,6 +226,77 @@ def test_values_are_normalized(tmp_path: Path) -> None:
     assert settings.log_level == "DEBUG"
     assert settings.ollama_url == "http://localhost:11434"
     assert settings.ollama_timeout_seconds == 3.0
+
+
+def test_ingestion_values_are_resolved_from_config_directory(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    source = write_config(
+        config_dir / "settings.toml",
+        "\n".join(
+            [
+                "[ingestion]",
+                'paths = ["../src-a", "src-b"]',
+                'extensions = ["SQL", ".PkB", "sql"]',
+                "chunk_size = 1200",
+                "chunk_overlap = 1199",
+                'ignore_patterns = ["build/**", "tmp/**"]',
+                "max_file_size_mb = 12",
+                "max_extracted_chars = 1200",
+                "max_pdf_pages = 25",
+                'encodings = ["utf-8", "latin-1", "utf8"]',
+            ]
+        ),
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.ingestion.paths == (
+        tmp_path / "src-a",
+        config_dir / "src-b",
+    )
+    assert settings.ingestion.extensions == (".sql", ".pkb")
+    assert settings.ingestion.chunk_size == 1200
+    assert settings.ingestion.chunk_overlap == 1199
+    assert settings.ingestion.ignore_patterns == ("build/**", "tmp/**")
+    assert settings.ingestion.max_file_size_mb == 12
+    assert settings.ingestion.max_extracted_chars == 1200
+    assert settings.ingestion.max_pdf_pages == 25
+    assert settings.ingestion.encodings == ("utf-8", "iso8859-1")
+    assert list(config_dir.iterdir()) == [source]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_message"),
+    [
+        ("[ingestion]\npaths = []\n", "paths"),
+        ('[ingestion]\npaths = ["ok", 1]\n', "paths"),
+        ('[ingestion]\nextensions = []\n', "extensions"),
+        ('[ingestion]\nextensions = ["."]\n', "extension"),
+        ("[ingestion]\nchunk_size = 499\n", "chunk_size"),
+        ("[ingestion]\nchunk_size = 100001\n", "chunk_size"),
+        ("[ingestion]\nchunk_size = 500\nchunk_overlap = 500\n", "chunk_overlap"),
+        ("[ingestion]\nchunk_overlap = -1\n", "chunk_overlap"),
+        ("[ingestion]\nmax_file_size_mb = 0\n", "max_file_size_mb"),
+        ("[ingestion]\nmax_file_size_mb = 1025\n", "max_file_size_mb"),
+        (
+            "[ingestion]\nchunk_size = 1000\nmax_extracted_chars = 999\n",
+            "max_extracted_chars",
+        ),
+        ("[ingestion]\nmax_pdf_pages = 0\n", "max_pdf_pages"),
+        ('[ingestion]\nencodings = ["utf-8", "fake-encoding"]\n', "encoding"),
+        ("ingestion = 42\n", "ingestion"),
+    ],
+)
+def test_invalid_ingestion_values_are_rejected(
+    content: str,
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    source = write_config(tmp_path / "invalid-ingestion.toml", content)
+
+    with pytest.raises(ConfigError, match=expected_message):
+        load_settings(source, environ={}, cwd=tmp_path)
 
 
 def test_settings_are_immutable(tmp_path: Path) -> None:

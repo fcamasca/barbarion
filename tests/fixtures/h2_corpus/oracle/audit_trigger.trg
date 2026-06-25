@@ -1,0 +1,7 @@
+CREATE OR REPLACE TRIGGER demo_audit_trg
+BEFORE INSERT ON demo_table
+FOR EACH ROW
+BEGIN
+  :NEW.created_at := SYSDATE;
+END;
+/

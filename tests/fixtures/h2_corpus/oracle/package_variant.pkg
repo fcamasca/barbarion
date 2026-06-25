@@ -1,0 +1,4 @@
+CREATE OR REPLACE PACKAGE demo_flags AS
+  FUNCTION enabled RETURN NUMBER;
+END demo_flags;
+/

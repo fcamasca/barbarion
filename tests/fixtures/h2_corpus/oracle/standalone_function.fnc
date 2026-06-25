@@ -1,0 +1,5 @@
+CREATE OR REPLACE FUNCTION demo_tax_rate RETURN NUMBER IS
+BEGIN
+  RETURN 0.18;
+END demo_tax_rate;
+/

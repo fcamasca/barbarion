@@ -418,7 +418,7 @@
 
 ### H2-T31 — Crear corpus sintético de pruebas
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T13–H2-T21.  
 **Requisitos:** todos los parsers.
@@ -431,7 +431,7 @@
 
 ### H2-T32 — Completar integración incremental
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T27, H2-T31.  
 **Requisitos:** H2-REQ-005–H2-REQ-008, H2-NFR-002.
@@ -443,7 +443,7 @@
 
 ### H2-T33 — Completar smoke tests
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T28–H2-T32.  
 **Requisitos:** H2-REQ-023, H2-REQ-026.
@@ -457,7 +457,7 @@
 
 ### H2-T34 — Documentar operación H2
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T28, H2-T29.  
 **Requisitos:** H2-REQ-001, H2-REQ-023.

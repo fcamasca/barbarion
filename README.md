@@ -8,7 +8,8 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 
 ## Estado
 
-`H1-Foundation` está completado y aceptado en la versión `0.1.0`:
+`H1-Foundation` está completado y aceptado en la versión `0.1.0`.
+`H2-Ingestion` está implementado operativamente y pendiente de aceptación final:
 
 - paquete Python instalable;
 - CLI local en español;
@@ -17,17 +18,20 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 - logging local;
 - SQLite versionado;
 - diagnóstico reproducible mediante `barbarion doctor`;
+- ingesta local incremental de corpus autorizado;
+- parsers heurísticos para Oracle/PLSQL, PowerBuilder textual, Markdown, texto, configuración, PDF y DOCX;
+- métricas, stats e inventario consultable desde SQLite;
 - pruebas unitarias, de integración y smoke.
 
-Todavía no se implementan ingesta, parsers, RAG, embeddings, Qdrant, ingeniería inversa ni generación de documentos. Estas capacidades pertenecen a hitos posteriores.
+Todavía no se implementan RAG, embeddings, Qdrant, ingeniería inversa ni generación de documentos. Estas capacidades pertenecen a hitos posteriores.
 
 ## Requisitos
 
 - CPython `3.12` (`>=3.12,<3.13`);
 - `pip`;
-- Ollama es opcional en H1.
+- Ollama es opcional para H1/H2.
 
-Ollama no es necesario para instalar, probar ni aceptar H1. Cuando no está disponible, `doctor` informa `WARN` y conserva el código de salida `0` si todos los checks requeridos pasan.
+Ollama no es necesario para instalar, probar ni ejecutar H2. Cuando no está disponible, `doctor` informa `WARN` y conserva el código de salida `0` si todos los checks requeridos pasan.
 
 ## Instalación para desarrollo
 
@@ -118,6 +122,10 @@ barbarion --config ruta/al/archivo.toml config show
 | `barbarion --version` | Muestra la versión instalada | Ninguno |
 | `barbarion config show` | Valida y muestra la configuración efectiva | Ninguno |
 | `barbarion doctor` | Inicializa recursos y diagnostica el entorno | Crea directorios, SQLite y log si faltan |
+| `barbarion ingest` | Ejecuta ingesta incremental del corpus configurado | Lee corpus y escribe metadata/chunks en SQLite |
+| `barbarion ingest --full` | Reprocesa archivos compatibles sin truncar el corpus previo | Escribe metadata/chunks en SQLite |
+| `barbarion ingest --path RUTA` | Usa roots ad hoc; puede repetirse | Escribe metadata/chunks en SQLite |
+| `barbarion ingest --stats` | Muestra métricas e inventario persistidos | Ninguno |
 
 `doctor` comprueba, en orden:
 
@@ -150,7 +158,7 @@ logs/
 | Código | Significado |
 |---:|---|
 | `0` | Comando completado; todos los checks requeridos pasan. Puede haber advertencias opcionales |
-| `1` | `doctor` encontró un fallo requerido o ocurrió un error operativo |
+| `1` | `doctor` encontró un fallo requerido, una ingesta terminó con errores recuperables o ocurrió un error operativo |
 | `2` | Argumentos o configuración inválidos |
 | `130` | Operación interrumpida por el usuario |
 
@@ -202,6 +210,7 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 - [Roadmap del MVP](docs/ROADMAP.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Decisiones técnicas](docs/DECISIONS.md)
+- [Operación de ingesta H2](docs/INGESTION.md)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)
 

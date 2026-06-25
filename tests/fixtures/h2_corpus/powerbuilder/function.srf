@@ -1,0 +1,7 @@
+$PBExportHeader$f_demo_sum.srf
+global type f_demo_sum from function_object
+end type
+
+public function long f_demo_sum(long a, long b);
+return a + b
+end function

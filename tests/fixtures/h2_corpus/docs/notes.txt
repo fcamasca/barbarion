@@ -1,0 +1,3 @@
+Primera nota sintetica.
+
+Segunda nota con Unicode: áéíóú ñ.

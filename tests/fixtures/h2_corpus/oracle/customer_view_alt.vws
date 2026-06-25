@@ -1,0 +1,4 @@
+CREATE OR REPLACE VIEW demo_customer_active_vw AS
+SELECT customer_id
+  FROM demo_customers
+ WHERE active_flag = 'Y';

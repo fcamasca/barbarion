@@ -15,6 +15,7 @@ from barbarion.database import DatabaseError, initialize_database
 from barbarion.doctor import DoctorReport, run_doctor_checks
 from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
+from barbarion.domain.models import IngestionRunStatus
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
 from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
 from barbarion.infrastructure.parsers import (
@@ -142,7 +143,10 @@ def _run_ingest(args: argparse.Namespace) -> int:
             )
     if outcome.status.value == "interrupted":
         return 130
-    if outcome.status.value == "failed":
+    if outcome.status in {
+        IngestionRunStatus.FAILED,
+        IngestionRunStatus.COMPLETED_WITH_ERRORS,
+    }:
         return 1
     return 0
 

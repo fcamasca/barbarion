@@ -1,0 +1,1 @@
+Texto valido antes del byte invalido.

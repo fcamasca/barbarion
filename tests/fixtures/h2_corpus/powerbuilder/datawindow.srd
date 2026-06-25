@@ -1,0 +1,5 @@
+$PBExportHeader$d_demo_orders.srd
+release 19;
+datawindow(units=0 timer_interval=0 color=1073741824)
+table(column=(type=number name=id dbname="orders.id")
+retrieve="SELECT id, amount FROM demo_orders WHERE status = :status")

@@ -95,7 +95,6 @@ class IngestionService:
             for item in items:
                 if isinstance(item, PipelineError):
                     self._log_pipeline_error(item)
-                    metrics = _add_error(metrics)
                     if item.error_code == "FILE_TOO_LARGE":
                         skipped_file = _discovered_from_error(item, effective_roots)
                         if skipped_file is not None:
@@ -110,8 +109,10 @@ class IngestionService:
                             )
                         else:
                             self.repository.record_error(run_id=run_id, error=item)
+                            metrics = _add_error(metrics)
                     else:
                         self.repository.record_error(run_id=run_id, error=item)
+                        metrics = _add_error(metrics)
                     if item.error_code.startswith("ROOT_"):
                         completed_roots = _remove_unsafe_roots(completed_roots, item)
                     continue
@@ -142,7 +143,6 @@ class IngestionService:
                         )
                     )
                     self._log_pipeline_error(error)
-                    metrics = _add_error(metrics)
                     if error.error_code == "UNSUPPORTED_BINARY_PBL":
                         self.repository.record_skipped(
                             run_id=run_id,
@@ -159,6 +159,7 @@ class IngestionService:
                             error=error,
                             discovered_file=item,
                         )
+                        metrics = _add_error(metrics)
             if not interrupted:
                 deleted = self.repository.reconcile_deleted(
                     run_id=run_id,

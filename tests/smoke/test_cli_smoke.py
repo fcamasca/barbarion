@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.h2_corpus import build_h2_corpus
+
 
 class OllamaTagsHandler(BaseHTTPRequestHandler):
     """Servidor mínimo que representa `GET /api/tags` de Ollama."""
@@ -100,6 +102,26 @@ def write_config(tmp_path: Path, ollama_url: str) -> Path:
         ),
         encoding="utf-8",
     )
+    return source
+
+
+def write_ingest_config(tmp_path: Path, ollama_url: str, corpus: Path) -> Path:
+    """Crea configuracion smoke con paths de ingesta explicitos."""
+    source = write_config(tmp_path, ollama_url)
+    with source.open("a", encoding="utf-8") as output:
+        output.write(
+            "\n".join(
+                [
+                    "",
+                    "[ingestion]",
+                    f'paths = ["{corpus.as_posix()}"]',
+                    "chunk_size = 500",
+                    "chunk_overlap = 0",
+                    'encodings = ["utf-8", "cp1252", "latin-1"]',
+                    "",
+                ]
+            )
+        )
     return source
 
 
@@ -206,3 +228,79 @@ def test_missing_explicit_config_returns_two_without_side_effects(
     assert "Error de configuración:" in result.stderr
     assert "Traceback" not in result.stderr
     assert list(tmp_path.iterdir()) == []
+
+
+def test_ingest_help_from_installed_cli_has_no_side_effects(tmp_path: Path) -> None:
+    result = run_barbarion("ingest", "--help", cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "uso:" in result.stdout
+    assert "--path RUTA" in result.stdout
+    assert "--stats" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_ingest_requires_doctor_bootstrap(
+    tmp_path: Path,
+    ollama_url: str,
+) -> None:
+    corpus = build_h2_corpus(tmp_path / "corpus")
+    source = write_ingest_config(tmp_path, ollama_url, corpus)
+
+    result = run_barbarion("--config", str(source), "ingest", cwd=tmp_path)
+
+    assert result.returncode == 1
+    assert "Ejecuta 'barbarion doctor'" in result.stderr
+    assert not (tmp_path / "data").exists()
+
+
+def test_ingest_incremental_full_and_stats_from_installed_cli(
+    tmp_path: Path,
+    ollama_url: str,
+) -> None:
+    corpus = build_h2_corpus(tmp_path / "corpus")
+    ad_hoc = tmp_path / "ad_hoc"
+    ad_hoc.mkdir()
+    (ad_hoc / "extra.txt").write_text("archivo ad hoc", encoding="utf-8")
+    source = write_ingest_config(tmp_path, ollama_url, corpus)
+
+    doctor = run_barbarion("--config", str(source), "doctor", cwd=tmp_path)
+    first = run_barbarion(
+        "--config",
+        str(source),
+        "ingest",
+        "--path",
+        str(corpus),
+        "--path",
+        str(ad_hoc),
+        cwd=tmp_path,
+    )
+    second = run_barbarion("--config", str(source), "ingest", cwd=tmp_path)
+    full = run_barbarion("--config", str(source), "ingest", "--full", cwd=tmp_path)
+    database_path = tmp_path / "data" / "barbarion.db"
+    before = database_path.stat()
+    stats = run_barbarion("--config", str(source), "ingest", "--stats", cwd=tmp_path)
+    after = database_path.stat()
+    invalid = run_barbarion(
+        "--config",
+        str(source),
+        "ingest",
+        "--stats",
+        "--path",
+        str(corpus),
+        cwd=tmp_path,
+    )
+
+    assert doctor.returncode == 0
+    assert first.returncode == 0
+    assert "Ingesta finalizada: completed" in first.stdout
+    assert second.returncode == 0
+    assert "Procesados: 0" in second.stdout
+    assert full.returncode == 0
+    assert "Ingesta finalizada: completed" in full.stdout
+    assert stats.returncode == 0
+    assert "Estadisticas de ingesta" in stats.stdout
+    assert before.st_size == after.st_size
+    assert before.st_mtime_ns == after.st_mtime_ns
+    assert invalid.returncode == 2
+    assert "--stats no se combina" in invalid.stderr

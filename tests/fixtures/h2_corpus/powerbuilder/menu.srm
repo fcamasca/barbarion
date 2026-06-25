@@ -1,0 +1,3 @@
+$PBExportHeader$m_demo_menu.srm
+global type m_demo_menu from menu
+end type

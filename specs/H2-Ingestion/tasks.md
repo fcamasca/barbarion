@@ -69,7 +69,7 @@
 
 ### H2-T05 — Activar y verificar SQLite WAL
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T04.  
 **Requisitos:** H2-REQ-020.

@@ -8,6 +8,7 @@ from pathlib import Path
 from barbarion.infrastructure.sqlite import INGESTION_SCHEMA_STATEMENTS
 
 DATABASE_TIMEOUT_SECONDS = 5.0
+WAL_UNAVAILABLE_CODE = "DATABASE_WAL_UNAVAILABLE"
 FUTURE_SCHEMA_MESSAGE = (
     "La versión {version} del esquema de base de datos es más reciente que la "
     "admitida por esta versión de Barbarion."
@@ -25,6 +26,7 @@ class DatabaseStatus:
     path: Path
     schema_version: int
     foreign_keys_enabled: bool
+    wal_enabled: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +73,12 @@ def initialize_database(database_path: Path) -> DatabaseStatus:
                 _apply_migration(connection, migration)
 
         schema_version = _read_schema_version(connection)
-        foreign_keys_enabled = _check_health(connection)
+        foreign_keys_enabled, wal_enabled = _check_health(connection)
         return DatabaseStatus(
             path=path,
             schema_version=schema_version,
             foreign_keys_enabled=foreign_keys_enabled,
+            wal_enabled=wal_enabled,
         )
     except DatabaseError:
         raise
@@ -93,13 +96,29 @@ def _open_connection(path: Path) -> sqlite3.Connection:
     try:
         connection = sqlite3.connect(path, timeout=DATABASE_TIMEOUT_SECONDS)
         connection.execute("PRAGMA foreign_keys = ON")
+        _enable_wal(connection)
         return connection
+    except DatabaseError:
+        if connection is not None:
+            connection.close()
+        raise
     except sqlite3.Error as error:
         if connection is not None:
             connection.close()
         raise DatabaseError(
             f"No se pudo abrir la base SQLite '{path}': {error}."
         ) from error
+
+
+def _enable_wal(connection: sqlite3.Connection) -> None:
+    """Activa WAL y falla si SQLite no confirma el modo solicitado."""
+    row = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+    if row is None or str(row[0]).lower() != "wal":
+        observed = "sin respuesta" if row is None else str(row[0])
+        raise DatabaseError(
+            f"{WAL_UNAVAILABLE_CODE}: SQLite no pudo activar journal_mode=WAL "
+            f"(respuesta: {observed})."
+        )
 
 
 def _read_schema_version(connection: sqlite3.Connection) -> int:
@@ -149,8 +168,8 @@ def _apply_migration(
         raise
 
 
-def _check_health(connection: sqlite3.Connection) -> bool:
-    """Comprueba consulta básica, claves foráneas y versión registrada."""
+def _check_health(connection: sqlite3.Connection) -> tuple[bool, bool]:
+    """Comprueba consulta básica, claves foráneas, WAL y versión registrada."""
     health_row = connection.execute("SELECT 1").fetchone()
     if health_row != (1,):
         raise DatabaseError("La comprobación básica de SQLite falló.")
@@ -159,9 +178,19 @@ def _check_health(connection: sqlite3.Connection) -> bool:
     if foreign_keys_row != (1,):
         raise DatabaseError("SQLite no tiene habilitadas las claves foráneas.")
 
+    journal_mode_row = connection.execute("PRAGMA journal_mode").fetchone()
+    if journal_mode_row is None or str(journal_mode_row[0]).lower() != "wal":
+        observed = (
+            "sin respuesta" if journal_mode_row is None else str(journal_mode_row[0])
+        )
+        raise DatabaseError(
+            f"{WAL_UNAVAILABLE_CODE}: SQLite no conserva journal_mode=WAL "
+            f"(respuesta: {observed})."
+        )
+
     schema_version = _read_schema_version(connection)
     if schema_version != _supported_schema_version():
         raise DatabaseError(
             "La versión del esquema SQLite no coincide con la versión esperada."
         )
-    return True
+    return True, True

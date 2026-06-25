@@ -9,6 +9,7 @@ import pytest
 from barbarion import database
 from barbarion.database import (
     DATABASE_TIMEOUT_SECONDS,
+    WAL_UNAVAILABLE_CODE,
     DatabaseError,
     initialize_database,
 )
@@ -22,6 +23,12 @@ def migration_rows(path: Path) -> list[tuple[int, str]]:
         ).fetchall()
 
 
+def journal_mode(path: Path) -> str:
+    """Lee el modo de journal persistido en la base."""
+    with sqlite3.connect(path) as connection:
+        return str(connection.execute("PRAGMA journal_mode").fetchone()[0])
+
+
 def test_new_database_creates_schema_version_two(tmp_path: Path) -> None:
     path = tmp_path / "barbarion.db"
 
@@ -30,7 +37,9 @@ def test_new_database_creates_schema_version_two(tmp_path: Path) -> None:
     assert status.path == path
     assert status.schema_version == 2
     assert status.foreign_keys_enabled is True
+    assert status.wal_enabled is True
     assert path.is_file()
+    assert journal_mode(path) == "wal"
     rows = migration_rows(path)
     assert [row[0] for row in rows] == [1, 2]
     assert all(datetime.fromisoformat(row[1]).tzinfo is not None for row in rows)
@@ -99,6 +108,9 @@ def test_existing_v1_database_upgrades_to_v2(tmp_path: Path) -> None:
     status = initialize_database(path)
 
     assert status.schema_version == 2
+    assert status.foreign_keys_enabled is True
+    assert status.wal_enabled is True
+    assert journal_mode(path) == "wal"
     assert [row[0] for row in migration_rows(path)] == [1, 2]
     with sqlite3.connect(path) as connection:
         assert connection.execute(
@@ -129,6 +141,7 @@ def test_connection_uses_five_second_timeout_and_foreign_keys(
 
     assert received_timeouts == [DATABASE_TIMEOUT_SECONDS]
     assert status.foreign_keys_enabled is True
+    assert status.wal_enabled is True
 
 
 def test_h2_schema_contains_expected_indexes(tmp_path: Path) -> None:
@@ -394,4 +407,50 @@ def test_locked_database_error_is_actionable(
 
     assert "No se pudo abrir" in str(captured.value)
     assert "database is locked" in str(captured.value)
+    assert path.exists() is False
+
+
+def test_wal_unavailable_error_is_actionable_and_closes_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "barbarion.db"
+
+    class FakeCursor:
+        def __init__(self, row: tuple[str, ...]) -> None:
+            self.row = row
+
+        def fetchone(self) -> tuple[str, ...]:
+            """Devuelve una respuesta controlada de SQLite."""
+            return self.row
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def execute(self, statement: str) -> FakeCursor:
+            """Simula una base que rechaza WAL."""
+            if statement == "PRAGMA journal_mode = WAL":
+                return FakeCursor(("delete",))
+            return FakeCursor(("ok",))
+
+        def close(self) -> None:
+            """Registra cierre tras el fallo."""
+            self.closed = True
+
+    fake_connection = FakeConnection()
+
+    def fake_connect(*args: object, **kwargs: object) -> FakeConnection:
+        """Devuelve una conexión falsa sin tocar el filesystem."""
+        del args, kwargs
+        return fake_connection
+
+    monkeypatch.setattr(sqlite3, "connect", fake_connect)
+
+    with pytest.raises(DatabaseError) as captured:
+        initialize_database(path)
+
+    assert WAL_UNAVAILABLE_CODE in str(captured.value)
+    assert "delete" in str(captured.value)
+    assert fake_connection.closed is True
     assert path.exists() is False

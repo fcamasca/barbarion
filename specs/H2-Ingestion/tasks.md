@@ -110,7 +110,7 @@
 
 ### H2-T08 — Implementar SHA-256 streaming
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T03.  
 **Requisitos:** H2-REQ-005.

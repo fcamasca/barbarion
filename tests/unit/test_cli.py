@@ -20,6 +20,7 @@ from barbarion.domain.models import (
     IngestionRunStatus,
     PipelineError,
 )
+from barbarion.domain.rag import EmbeddingRunStatus, IndexRunSummary
 from barbarion.logging_config import LOGGER_NAME, LOG_FILENAME
 
 
@@ -64,6 +65,8 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
         (("config", "show", "--help"), "Muestra la configuración efectiva"),
         (("doctor", "--help"), "Diagnostica el entorno local"),
         (("ingest", "--help"), "Ejecuta ingesta local"),
+        (("index", "--help"), "Ejecuta indexacion RAG incremental"),
+        (("reindex", "--help"), "Ejecuta reindexacion RAG"),
     ],
 )
 def test_help_is_in_spanish_and_has_no_side_effects(
@@ -391,3 +394,85 @@ def test_ingest_interrupted_status_maps_to_130(
 
     assert cli.main(["--config", str(source), "ingest"]) == 130
     assert "Ingesta finalizada: interrupted" in capsys.readouterr().out
+
+
+class FakeIndexService:
+    """Servicio de indexacion fake para CLI."""
+
+    def __init__(self, summary: IndexRunSummary) -> None:
+        self.summary = summary
+        self.calls = []
+
+    def run(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.summary
+
+
+def test_index_dry_run_uses_index_service(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeIndexService(
+        IndexRunSummary(
+            status=EmbeddingRunStatus.COMPLETED,
+            new_chunks=2,
+            dry_run=True,
+        )
+    )
+    monkeypatch.setattr(cli, "_build_index_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "index", "--dry-run"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert service.calls == [
+        {
+            "mode": cli.EmbeddingRunMode.INCREMENTAL,
+            "dry_run": True,
+            "delete_obsolete": True,
+        }
+    ]
+    assert "Dry-run de indexacion RAG: completed" in captured.out
+    assert "Nuevos: 2" in captured.out
+
+
+def test_reindex_requires_scope_or_full(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+
+    exit_code = cli.main(["--config", str(source), "reindex"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "reindex requiere" in captured.err
+
+
+def test_reindex_full_invokes_service(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeIndexService(
+        IndexRunSummary(status=EmbeddingRunStatus.COMPLETED, updated_chunks=3)
+    )
+    monkeypatch.setattr(cli, "_build_index_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "reindex", "--full", "--delete-obsolete"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert service.calls[0]["mode"] == cli.EmbeddingRunMode.FULL
+    assert service.calls[0]["scope"] is None
+    assert service.calls[0]["delete_obsolete"] is True
+    assert "Actualizados: 3" in captured.out

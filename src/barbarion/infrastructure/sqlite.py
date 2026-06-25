@@ -32,8 +32,16 @@ from barbarion.domain.models import (
     PipelineError,
 )
 from barbarion.domain.rag import (
+    ChunkEmbeddingState,
+    ChunkEmbeddingStatus,
     EmbeddingManifest,
     EmbeddingManifestStatus,
+    EmbeddingRunMode,
+    EmbeddingRunStatus,
+    H4SymbolMetadata,
+    IndexScope,
+    IndexableChunk,
+    VectorMetadata,
 )
 
 
@@ -1069,6 +1077,33 @@ class SQLiteRagRepository:
                 )
         return _manifest_from_row(row)
 
+    def find_active_manifest(
+        self,
+        *,
+        provider: str,
+        model: str,
+        distance: str,
+        normalize: bool,
+    ) -> PersistedEmbeddingManifest | None:
+        """Busca un manifest activo compatible con la configuracion."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT id, version, provider, model, dimension, distance,
+                       normalize, vector_provider, vector_table, status
+                FROM embedding_manifests
+                WHERE provider = ?
+                  AND model = ?
+                  AND distance = ?
+                  AND normalize = ?
+                  AND status = 'active'
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (provider, model, distance, 1 if normalize else 0),
+            ).fetchone()
+        return None if row is None else _manifest_from_row(row)
+
     def mark_other_manifests_obsolete(self, active_version: str) -> int:
         """Marca obsoletos los manifests activos que no coinciden con la version."""
         with self._connect() as connection:
@@ -1096,6 +1131,265 @@ class SQLiteRagRepository:
             ).fetchall()
         return tuple(_manifest_from_row(row) for row in rows)
 
+    def indexable_chunks(
+        self,
+        *,
+        domain: str,
+        scope: IndexScope | None = None,
+    ) -> tuple[IndexableChunk, ...]:
+        """Devuelve chunks vigentes de H2 con metadata filtrable."""
+        clauses = [
+            "files.status = 'processed'",
+            "files.domain = ?",
+            "documents.source_sha256 = files.sha256",
+        ]
+        parameters: list[object] = [domain]
+        if scope is not None:
+            if scope.path_prefix is not None:
+                clauses.append("files.relative_path LIKE ?")
+                parameters.append(f"{scope.path_prefix.rstrip('/')}%")
+            if scope.document_id is not None:
+                clauses.append("documents.id = ?")
+                parameters.append(scope.document_id)
+            if scope.chunk_id is not None:
+                clauses.append("chunks.id = ?")
+                parameters.append(scope.chunk_id)
+        where = " AND ".join(clauses)
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    chunks.id AS chunk_id,
+                    chunks.content AS content,
+                    chunks.content_sha256 AS content_sha256,
+                    chunks.object_type AS object_type,
+                    chunks.object_name AS object_name,
+                    chunks.metadata_json AS chunk_metadata_json,
+                    documents.id AS document_id,
+                    files.id AS file_id,
+                    files.domain AS domain,
+                    files.artifact_kind AS artifact_kind,
+                    files.relative_path AS relative_path,
+                    files.extension AS extension
+                FROM chunks
+                JOIN documents ON documents.id = chunks.document_id
+                JOIN files ON files.id = documents.file_id
+                WHERE {where}
+                ORDER BY files.relative_path, chunks.ordinal, chunks.id
+                """,
+                tuple(parameters),
+            ).fetchall()
+        return tuple(_indexable_chunk_from_row(row) for row in rows)
+
+    def chunk_embedding_states(
+        self,
+        *,
+        manifest_id: int,
+        scope: IndexScope | None = None,
+    ) -> dict[str, ChunkEmbeddingState]:
+        """Devuelve estado persistido por chunk para un manifest."""
+        clauses = ["manifest_id = ?"]
+        parameters: list[object] = [manifest_id]
+        if scope is not None and scope.chunk_id is not None:
+            clauses.append("chunk_id = ?")
+            parameters.append(scope.chunk_id)
+        where = " AND ".join(clauses)
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT chunk_id, content_sha256, status
+                FROM chunk_embeddings
+                WHERE {where}
+                ORDER BY chunk_id
+                """,
+                tuple(parameters),
+            ).fetchall()
+        return {
+            str(row["chunk_id"]): ChunkEmbeddingState(
+                chunk_id=str(row["chunk_id"]),
+                content_sha256=str(row["content_sha256"]),
+                status=ChunkEmbeddingStatus(str(row["status"])),
+            )
+            for row in rows
+        }
+
+    def begin_embedding_run(
+        self,
+        *,
+        manifest_id: int,
+        mode: EmbeddingRunMode,
+        scope: IndexScope | None,
+    ) -> int:
+        """Crea una corrida de indexacion H3."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO embedding_runs(
+                    manifest_id, mode, status, scope_json, started_at
+                )
+                VALUES (?, ?, 'running', ?, ?)
+                """,
+                (
+                    manifest_id,
+                    mode.value,
+                    _canonical_json(_scope_json(scope)),
+                    _utc_now(),
+                ),
+            )
+            connection.commit()
+            return int(cursor.lastrowid)
+
+    def record_chunk_indexed(
+        self,
+        *,
+        run_id: int,
+        manifest_id: int,
+        chunk: IndexableChunk,
+    ) -> None:
+        """Marca un chunk como indexado para un manifest."""
+        now = _utc_now()
+        symbols = chunk.metadata.symbols
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO chunk_embeddings(
+                    chunk_id, manifest_id, content_sha256, status, vector_ref,
+                    last_run_id, symbol_name, symbol_kind, parent_symbol,
+                    package_name, procedure_name, class_name, event_name,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, 'indexed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chunk_id, manifest_id) DO UPDATE SET
+                    content_sha256 = excluded.content_sha256,
+                    status = 'indexed',
+                    vector_ref = excluded.vector_ref,
+                    last_run_id = excluded.last_run_id,
+                    error_code = NULL,
+                    error_message = NULL,
+                    symbol_name = excluded.symbol_name,
+                    symbol_kind = excluded.symbol_kind,
+                    parent_symbol = excluded.parent_symbol,
+                    package_name = excluded.package_name,
+                    procedure_name = excluded.procedure_name,
+                    class_name = excluded.class_name,
+                    event_name = excluded.event_name,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    chunk.chunk_id,
+                    manifest_id,
+                    chunk.metadata.content_sha256,
+                    chunk.chunk_id,
+                    run_id,
+                    symbols.symbol_name,
+                    symbols.symbol_kind,
+                    symbols.parent_symbol,
+                    symbols.package_name,
+                    symbols.procedure_name,
+                    symbols.class_name,
+                    symbols.event_name,
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+
+    def record_chunk_error(
+        self,
+        *,
+        run_id: int,
+        manifest_id: int,
+        chunk: IndexableChunk,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        """Marca un chunk con error recuperable de indexacion."""
+        now = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO chunk_embeddings(
+                    chunk_id, manifest_id, content_sha256, status, vector_ref,
+                    last_run_id, error_code, error_message, created_at, updated_at
+                )
+                VALUES (?, ?, ?, 'error', ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(chunk_id, manifest_id) DO UPDATE SET
+                    content_sha256 = excluded.content_sha256,
+                    status = 'error',
+                    last_run_id = excluded.last_run_id,
+                    error_code = excluded.error_code,
+                    error_message = excluded.error_message,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    chunk.chunk_id,
+                    manifest_id,
+                    chunk.metadata.content_sha256,
+                    chunk.chunk_id,
+                    run_id,
+                    error_code,
+                    error_message,
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+
+    def mark_chunk_deleted(
+        self,
+        *,
+        run_id: int,
+        manifest_id: int,
+        chunk_id: str,
+    ) -> None:
+        """Marca un chunk como eliminado para un manifest."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE chunk_embeddings
+                SET status = 'deleted', last_run_id = ?, updated_at = ?
+                WHERE manifest_id = ? AND chunk_id = ?
+                """,
+                (run_id, _utc_now(), manifest_id, chunk_id),
+            )
+            connection.commit()
+
+    def finish_embedding_run(
+        self,
+        *,
+        run_id: int,
+        status: EmbeddingRunStatus,
+        new_chunks: int,
+        updated_chunks: int,
+        unchanged_chunks: int,
+        deleted_chunks: int,
+        failed_chunks: int,
+        duration_ms: int,
+    ) -> None:
+        """Cierra una corrida de indexacion H3 con metricas."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE embedding_runs
+                SET status = ?, finished_at = ?, new_chunks = ?,
+                    updated_chunks = ?, unchanged_chunks = ?, deleted_chunks = ?,
+                    failed_chunks = ?, duration_ms = ?
+                WHERE id = ?
+                """,
+                (
+                    status.value,
+                    _utc_now(),
+                    new_chunks,
+                    updated_chunks,
+                    unchanged_chunks,
+                    deleted_chunks,
+                    failed_chunks,
+                    duration_ms,
+                    run_id,
+                ),
+            )
+            connection.commit()
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=5.0)
         connection.row_factory = sqlite3.Row
@@ -1119,6 +1413,82 @@ def _manifest_from_row(row: sqlite3.Row) -> PersistedEmbeddingManifest:
         normalize=bool(row["normalize"]),
         version=str(row["version"]),
     )
+    return PersistedEmbeddingManifest(
+        id=int(row["id"]),
+        manifest=manifest,
+        vector_provider=str(row["vector_provider"]),
+        vector_table=str(row["vector_table"]),
+        status=EmbeddingManifestStatus(str(row["status"])),
+    )
+
+
+def _indexable_chunk_from_row(row: sqlite3.Row) -> IndexableChunk:
+    relative_path = str(row["relative_path"])
+    folder = str(Path(relative_path).parent).replace("\\", "/")
+    if folder == ".":
+        folder = ""
+    metadata_json = _loads_json_object(str(row["chunk_metadata_json"]))
+    symbols = H4SymbolMetadata(
+        symbol_name=_optional_text(metadata_json.get("symbol_name")),
+        symbol_kind=_optional_text(metadata_json.get("symbol_kind")),
+        parent_symbol=_optional_text(metadata_json.get("parent_symbol")),
+        package_name=_optional_text(metadata_json.get("package_name")),
+        procedure_name=_optional_text(metadata_json.get("procedure_name")),
+        class_name=_optional_text(metadata_json.get("class_name")),
+        event_name=_optional_text(metadata_json.get("event_name")),
+    )
+    return IndexableChunk(
+        chunk_id=str(row["chunk_id"]),
+        content=str(row["content"]),
+        metadata=VectorMetadata(
+            content_sha256=str(row["content_sha256"]),
+            domain=str(row["domain"]),
+            artifact_kind=str(row["artifact_kind"]),
+            language=_language_for_artifact(str(row["artifact_kind"])),
+            document_id=int(row["document_id"]),
+            file_id=int(row["file_id"]),
+            relative_path=relative_path,
+            folder=folder,
+            extension=str(row["extension"]),
+            object_type=row["object_type"],
+            object_name=row["object_name"],
+            symbols=symbols,
+        ),
+    )
+
+
+def _loads_json_object(raw_json: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _optional_text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _language_for_artifact(artifact_kind: str) -> str | None:
+    return {
+        "oracle": "plsql",
+        "powerbuilder": "powerscript",
+        "markdown": "markdown",
+        "pdf": "text",
+        "docx": "text",
+        "config": "config",
+        "text": "text",
+    }.get(artifact_kind)
+
+
+def _scope_json(scope: IndexScope | None) -> dict[str, object | None]:
+    if scope is None:
+        return {"path_prefix": None, "document_id": None, "chunk_id": None}
+    return {
+        "path_prefix": scope.path_prefix,
+        "document_id": scope.document_id,
+        "chunk_id": scope.chunk_id,
+    }
     return PersistedEmbeddingManifest(
         id=int(row["id"]),
         manifest=manifest,

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from barbarion import __version__
 from barbarion.application.ingest import IngestionService
+from barbarion.application.rag import IndexService
 from barbarion.bootstrap import DirectoryResult, initialize_directories
 from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
 from barbarion.database import DatabaseError, initialize_database
@@ -16,6 +17,8 @@ from barbarion.doctor import DoctorReport, run_doctor_checks
 from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
 from barbarion.domain.models import IngestionRunStatus
+from barbarion.domain.rag import EmbeddingRunMode, EmbeddingRunStatus, IndexRunSummary, IndexScope
+from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
 from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
 from barbarion.infrastructure.parsers import (
@@ -28,6 +31,8 @@ from barbarion.infrastructure.parsers import (
 )
 from barbarion.infrastructure.parsers.registry import ParserRegistry
 from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
+from barbarion.infrastructure.sqlite import SQLiteRagRepository
+from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.logging_config import configure_logging
 
 
@@ -159,6 +164,58 @@ def _run_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_index(args: argparse.Namespace) -> int:
+    """Ejecuta indexacion RAG incremental."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' e "
+            "ingesta el corpus antes de indexar.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_index_service(settings)
+    summary = service.run(
+        mode=EmbeddingRunMode.INCREMENTAL,
+        dry_run=args.dry_run,
+        delete_obsolete=True,
+    )
+    _render_index_summary(summary)
+    return _index_exit_code(summary)
+
+
+def _run_reindex(args: argparse.Namespace) -> int:
+    """Ejecuta reindexacion RAG completa o parcial."""
+    if not args.full and args.path is None and args.document is None and args.chunk_id is None:
+        print(
+            "Error de argumentos: reindex requiere --full, --path, --document "
+            "o --chunk-id.",
+            file=sys.stderr,
+        )
+        return 2
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' e "
+            "ingesta el corpus antes de reindexar.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    scope = _index_scope(args)
+    mode = EmbeddingRunMode.FULL if args.full else EmbeddingRunMode.PARTIAL
+    service = _build_index_service(settings)
+    summary = service.run(
+        mode=mode,
+        scope=scope,
+        dry_run=args.dry_run,
+        delete_obsolete=args.delete_obsolete,
+    )
+    _render_index_summary(summary)
+    return _index_exit_code(summary)
+
+
 def _show_ingestion_stats(args: argparse.Namespace) -> int:
     """Muestra estadisticas persistidas sin crear ni escanear recursos."""
     settings = load_settings(args.config)
@@ -177,6 +234,62 @@ def _show_ingestion_stats(args: argparse.Namespace) -> int:
         print("artefactos = " + ", ".join(f"{kind}:{count}" for kind, count in stats.artifact_kinds))
     else:
         print("artefactos = ninguno")
+    return 0
+
+
+def _index_scope(args: argparse.Namespace) -> IndexScope | None:
+    if args.full:
+        return None
+    path_prefix = None if args.path is None else args.path.replace("\\", "/")
+    return IndexScope(
+        path_prefix=path_prefix,
+        document_id=args.document,
+        chunk_id=args.chunk_id,
+    )
+
+
+def _build_index_service(settings: Settings) -> IndexService:
+    vector_table = f"{settings.vector_store.table_prefix}_vectors"
+    return IndexService(
+        settings=settings,
+        repository=SQLiteRagRepository(
+            settings.database_path,
+            vector_provider=settings.vector_store.provider,
+            vector_table=vector_table,
+        ),
+        embedding_provider=OllamaEmbeddingProvider(
+            base_url=settings.ollama_url,
+            model=settings.embeddings.model,
+            timeout_seconds=settings.embeddings.timeout_seconds,
+        ),
+        vector_store=SQLiteVecStore(
+            settings.database_path,
+            table_prefix=settings.vector_store.table_prefix,
+        ),
+    )
+
+
+def _render_index_summary(summary: IndexRunSummary) -> None:
+    prefix = "Dry-run de indexacion RAG" if summary.dry_run else "Indexacion RAG"
+    print(f"{prefix}: {summary.status.value}")
+    if summary.run_id is not None:
+        print(f"Run: {summary.run_id}")
+    print(f"Nuevos: {summary.new_chunks}")
+    print(f"Actualizados: {summary.updated_chunks}")
+    print(f"Sin cambios: {summary.unchanged_chunks}")
+    print(f"Eliminados: {summary.deleted_chunks}")
+    print(f"Fallidos: {summary.failed_chunks}")
+    print(f"Duracion: {summary.duration_ms} ms")
+
+
+def _index_exit_code(summary: IndexRunSummary) -> int:
+    if summary.status == EmbeddingRunStatus.INTERRUPTED:
+        return 130
+    if summary.status in {
+        EmbeddingRunStatus.FAILED,
+        EmbeddingRunStatus.COMPLETED_WITH_ERRORS,
+    }:
+        return 1
     return 0
 
 
@@ -390,6 +503,60 @@ def build_parser() -> argparse.ArgumentParser:
         help="muestra estadisticas persistidas sin ejecutar ingesta",
     )
     ingest_parser.set_defaults(handler=_run_ingest)
+
+    index_parser = commands.add_parser(
+        "index",
+        help="indexa chunks vigentes para RAG",
+        description="Ejecuta indexacion RAG incremental.",
+        add_help=False,
+    )
+    _add_help_option(index_parser)
+    index_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="muestra alcance sin escribir ni llamar modelos",
+    )
+    index_parser.set_defaults(handler=_run_index)
+
+    reindex_parser = commands.add_parser(
+        "reindex",
+        help="reconstruye total o parcialmente el indice RAG",
+        description="Ejecuta reindexacion RAG completa o parcial.",
+        add_help=False,
+    )
+    _add_help_option(reindex_parser)
+    reindex_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="reindexa todos los chunks vigentes",
+    )
+    reindex_parser.add_argument(
+        "--path",
+        metavar="RUTA",
+        help="limita la reindexacion por prefijo de ruta persistida",
+    )
+    reindex_parser.add_argument(
+        "--document",
+        type=int,
+        metavar="ID",
+        help="limita la reindexacion a un documento",
+    )
+    reindex_parser.add_argument(
+        "--chunk-id",
+        metavar="ID",
+        help="limita la reindexacion a un chunk",
+    )
+    reindex_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="muestra alcance sin escribir ni llamar modelos",
+    )
+    reindex_parser.add_argument(
+        "--delete-obsolete",
+        action="store_true",
+        help="elimina vectores obsoletos durante una reindexacion completa",
+    )
+    reindex_parser.set_defaults(handler=_run_reindex)
 
     return parser
 

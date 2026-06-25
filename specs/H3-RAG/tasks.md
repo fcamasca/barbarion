@@ -137,7 +137,7 @@
 
 ### H3-T10 - Implementar seleccion de chunks indexables
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T04.  
 **Requisitos:** H3-REQ-007, H3-REQ-022.
@@ -152,7 +152,7 @@
 
 ### H3-T11 - Implementar decision incremental de indexacion
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T05, H3-T10.  
 **Requisitos:** H3-REQ-008, H3-NFR-002.
@@ -165,7 +165,7 @@
 
 ### H3-T12 - Implementar IndexService
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T07, H3-T09, H3-T11.  
 **Requisitos:** H3-REQ-008, H3-REQ-020.
@@ -179,7 +179,7 @@
 
 ### H3-T13 - Implementar reindex full/parcial y obsoletos
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T12.  
 **Requisitos:** H3-REQ-009.
@@ -193,7 +193,7 @@
 
 ### H3-T14 - Integrar CLI index/reindex
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T12, H3-T13.  
 **Requisitos:** H3-REQ-018.

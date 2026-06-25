@@ -47,6 +47,15 @@ class ChunkEmbeddingStatus(StrEnum):
     ERROR = "error"
 
 
+class IndexAction(StrEnum):
+    """Accion incremental para un chunk."""
+
+    NEW = "new"
+    UPDATE = "update"
+    UNCHANGED = "unchanged"
+    DELETE = "delete"
+
+
 class EmbeddingProviderError(RuntimeError):
     """Error esperado al generar embeddings."""
 
@@ -148,6 +157,21 @@ class RetrievalFilter:
 
 
 @dataclass(frozen=True, slots=True)
+class IndexScope:
+    """Alcance opcional de indexacion H3."""
+
+    path_prefix: str | None = None
+    document_id: int | None = None
+    chunk_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.document_id is not None:
+            _require_positive(self.document_id, "document_id")
+        if self.chunk_id is not None:
+            _require_non_empty(self.chunk_id, "chunk_id")
+
+
+@dataclass(frozen=True, slots=True)
 class VectorMetadata:
     """Metadata filtrable asociada a un vector."""
 
@@ -171,6 +195,74 @@ class VectorMetadata:
             _require_non_negative(self.document_id, "document_id")
         if self.file_id is not None:
             _require_non_negative(self.file_id, "file_id")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexableChunk:
+    """Chunk vigente H2 listo para indexacion H3."""
+
+    chunk_id: str
+    content: str
+    metadata: VectorMetadata
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.chunk_id, "chunk_id")
+        _require_non_empty(self.content, "content")
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkEmbeddingState:
+    """Estado persistido de embedding para un chunk."""
+
+    chunk_id: str
+    content_sha256: str
+    status: ChunkEmbeddingStatus
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.chunk_id, "chunk_id")
+        _require_sha256(self.content_sha256, "content_sha256")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexDecision:
+    """Decision incremental sobre un chunk o vector obsoleto."""
+
+    action: IndexAction
+    chunk: IndexableChunk | None = None
+    chunk_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.action == IndexAction.DELETE:
+            if self.chunk_id is None:
+                raise ValueError("Las decisiones delete requieren chunk_id.")
+            _require_non_empty(self.chunk_id, "chunk_id")
+            return
+        if self.chunk is None:
+            raise ValueError("Las decisiones de indexacion requieren chunk.")
+
+
+@dataclass(frozen=True, slots=True)
+class IndexPlan:
+    """Plan incremental completo para una corrida."""
+
+    decisions: tuple[IndexDecision, ...]
+    dry_run: bool = False
+
+    @property
+    def new_chunks(self) -> int:
+        return _count(self.decisions, IndexAction.NEW)
+
+    @property
+    def updated_chunks(self) -> int:
+        return _count(self.decisions, IndexAction.UPDATE)
+
+    @property
+    def unchanged_chunks(self) -> int:
+        return _count(self.decisions, IndexAction.UNCHANGED)
+
+    @property
+    def deleted_chunks(self) -> int:
+        return _count(self.decisions, IndexAction.DELETE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +309,32 @@ class ContextQualityMetrics:
                 _require_unit_score(value, field_name)
 
 
+@dataclass(frozen=True, slots=True)
+class IndexRunSummary:
+    """Resumen de una corrida de indexacion H3."""
+
+    status: EmbeddingRunStatus
+    new_chunks: int = 0
+    updated_chunks: int = 0
+    unchanged_chunks: int = 0
+    deleted_chunks: int = 0
+    failed_chunks: int = 0
+    duration_ms: int = 0
+    run_id: int | None = None
+    dry_run: bool = False
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "new_chunks",
+            "updated_chunks",
+            "unchanged_chunks",
+            "deleted_chunks",
+            "failed_chunks",
+            "duration_ms",
+        ):
+            _require_non_negative(getattr(self, field_name), field_name)
+
+
 def embedding_version(
     *,
     provider: str,
@@ -244,6 +362,41 @@ def embedding_version(
         ensure_ascii=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def decide_index_plan(
+    chunks: tuple[IndexableChunk, ...],
+    states: dict[str, ChunkEmbeddingState],
+    *,
+    full: bool = False,
+    delete_obsolete: bool = True,
+    dry_run: bool = False,
+) -> IndexPlan:
+    """Decide que chunks indexar, omitir o eliminar."""
+    decisions: list[IndexDecision] = []
+    current_ids = {chunk.chunk_id for chunk in chunks}
+    for chunk in chunks:
+        state = states.get(chunk.chunk_id)
+        if full or state is None:
+            decisions.append(IndexDecision(IndexAction.NEW, chunk=chunk))
+        elif (
+            state.status != ChunkEmbeddingStatus.INDEXED
+            or state.content_sha256 != chunk.metadata.content_sha256
+        ):
+            decisions.append(IndexDecision(IndexAction.UPDATE, chunk=chunk))
+        else:
+            decisions.append(IndexDecision(IndexAction.UNCHANGED, chunk=chunk))
+
+    if delete_obsolete:
+        for chunk_id in sorted(set(states) - current_ids):
+            decisions.append(
+                IndexDecision(IndexAction.DELETE, chunk_id=chunk_id)
+            )
+    return IndexPlan(decisions=tuple(decisions), dry_run=dry_run)
+
+
+def _count(decisions: tuple[IndexDecision, ...], action: IndexAction) -> int:
+    return sum(1 for decision in decisions if decision.action == action)
 
 
 def _require_non_empty(value: str, key: str) -> None:

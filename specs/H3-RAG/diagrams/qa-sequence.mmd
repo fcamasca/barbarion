@@ -1,0 +1,30 @@
+sequenceDiagram
+    participant User as Usuario
+    participant CLI as CLI
+    participant Ask as AskService
+    participant Search as SearchService
+    participant Ctx as ContextBuilder
+    participant LLM as Ollama LLM
+    participant Cite as Validador de citas
+
+    User->>CLI: barbarion ask "pregunta"
+    CLI->>Ask: pregunta, filtros, opciones
+    Ask->>Search: recuperar candidatos
+    Search-->>Ask: candidatos con scores
+    alt evidencia insuficiente
+        Ask-->>CLI: respuesta sin LLM con limite declarado
+        CLI-->>User: evidencia insuficiente
+    else evidencia suficiente
+        Ask->>Ctx: construir contexto
+        Ctx-->>Ask: fuentes F1..Fn y prompt context
+        alt --no-llm
+            Ask-->>CLI: contexto y fuentes
+        else con LLM
+            Ask->>LLM: prompt controlado
+            LLM-->>Ask: respuesta candidata
+            Ask->>Cite: validar citas
+            Cite-->>Ask: resultado de validacion
+            Ask-->>CLI: respuesta final estructurada
+        end
+        CLI-->>User: conclusion, evidencia, supuestos y limites
+    end

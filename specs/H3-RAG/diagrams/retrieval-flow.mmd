@@ -1,0 +1,24 @@
+flowchart TD
+    A["Query del usuario"] --> B["Validar filtros y top_k"]
+    B --> C{"Modo"}
+
+    C -->|semantic| D["Embedding de query"]
+    D --> E["Busqueda sqlite-vec"]
+
+    C -->|keyword| F["Busqueda keyword SQLite"]
+
+    C -->|hybrid| G["Embedding de query"]
+    G --> H["Busqueda sqlite-vec"]
+    C -->|hybrid| I["Busqueda keyword SQLite"]
+
+    E --> J["Enriquecer metadata desde SQLite"]
+    F --> J
+    H --> K["Normalizar scores vector"]
+    I --> L["Normalizar scores keyword"]
+    K --> M["Combinar ranking"]
+    L --> M
+    M --> J
+
+    J --> N["Aplicar threshold y orden estable"]
+    N --> O["Deduplicar por chunk_id"]
+    O --> P["Devolver candidatos con scores y fuentes"]

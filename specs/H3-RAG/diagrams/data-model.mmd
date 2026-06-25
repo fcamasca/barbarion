@@ -1,0 +1,75 @@
+erDiagram
+    INGESTION_RUNS ||--o{ FILES : procesa
+    FILES ||--o| DOCUMENTS : produce
+    DOCUMENTS ||--o{ CHUNKS : contiene
+
+    EMBEDDING_MANIFESTS ||--o{ EMBEDDING_RUNS : usa
+    EMBEDDING_MANIFESTS ||--o{ CHUNK_EMBEDDINGS : versiona
+    EMBEDDING_RUNS ||--o{ CHUNK_EMBEDDINGS : actualiza
+    CHUNKS ||--o{ CHUNK_EMBEDDINGS : indexa
+    CHUNKS ||--o{ SYMBOL_OCCURRENCES : reserva
+
+    RAG_QUERIES }o--|| EMBEDDING_MANIFESTS : consulta
+
+    FILES {
+        integer id
+        string domain
+        string source_root
+        string relative_path
+        string status
+        string sha256
+    }
+    DOCUMENTS {
+        integer id
+        integer file_id
+        string source_sha256
+        string content_sha256
+    }
+    CHUNKS {
+        string id
+        integer document_id
+        integer ordinal
+        string content_sha256
+        string object_name
+        string symbol_name
+        string symbol_kind
+    }
+    EMBEDDING_MANIFESTS {
+        integer id
+        string version
+        string provider
+        string model
+        integer dimension
+        string collection_name
+        string status
+    }
+    EMBEDDING_RUNS {
+        integer id
+        integer manifest_id
+        string mode
+        string status
+        integer new_chunks
+        integer updated_chunks
+    }
+    CHUNK_EMBEDDINGS {
+        string chunk_id
+        integer manifest_id
+        string content_sha256
+        string status
+        string vector_ref
+    }
+    SYMBOL_OCCURRENCES {
+        integer id
+        string chunk_id
+        string symbol_name
+        string symbol_kind
+        integer line_start
+        integer line_end
+    }
+    RAG_QUERIES {
+        integer id
+        string query_text_sha256
+        string mode
+        integer top_k
+        string status
+    }

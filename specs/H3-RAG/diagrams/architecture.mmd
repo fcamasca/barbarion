@@ -1,0 +1,34 @@
+flowchart LR
+    U["Usuario CLI"] --> CLI["barbarion CLI"]
+    CLI --> APP["application/rag.py"]
+
+    APP --> IDX["IndexService"]
+    APP --> SRCH["SearchService"]
+    APP --> ASK["AskService"]
+    APP --> CTX["ContextBuilder"]
+
+    IDX --> EMB["EmbeddingProvider"]
+    SRCH --> EMB
+    ASK --> LLM["LLMProvider"]
+
+    EMB --> OLLAMA["Ollama local"]
+    LLM --> OLLAMA
+
+    IDX --> SQL["SQLiteRepository"]
+    SRCH --> SQL
+    CTX --> SQL
+    ASK --> SQL
+
+    IDX --> VEC["SQLiteVecStore"]
+    SRCH --> VEC
+
+    SQL --> DB[("SQLite v3\nmetadata H2 + manifest H3")]
+    VEC --> SVECS[("SQLite + sqlite-vec\nindices vectoriales")]
+
+    DB --> H2["Chunks vigentes H2"]
+    SVECS --> PAYLOAD["Metadata filtrable SQLite"]
+
+    SRCH --> RANK["Ranking hibrido"]
+    RANK --> CTX
+    CTX --> ASK
+    ASK --> OUT["Respuesta con evidencia"]

@@ -1,0 +1,25 @@
+flowchart TD
+    A["barbarion index/reindex"] --> B["Cargar configuracion H3"]
+    B --> C["Abrir SQLite v3 + WAL"]
+    C --> D["Resolver manifest de embeddings"]
+    D --> E["Preparar sqlite-vec"]
+    E --> F["Seleccionar chunks vigentes H2"]
+    F --> G["Construir plan incremental"]
+
+    G -->|unchanged| H["Contar sin cambios"]
+    G -->|new/changed| I["Generar embeddings por batch"]
+    I --> J["Validar dimension"]
+    J --> K["Upsert en sqlite-vec"]
+    K --> L["Persistir chunk_embeddings=indexed"]
+
+    G -->|deleted/stale| M["Delete/invalidate sqlite-vec"]
+    M --> N["Marcar deleted/stale"]
+
+    I -->|error recuperable| O["Registrar error por chunk"]
+    K -->|error| O
+
+    H --> P["Actualizar metricas del run"]
+    L --> P
+    N --> P
+    O --> P
+    P --> Q["Cerrar run y mostrar resumen"]

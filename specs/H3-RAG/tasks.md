@@ -334,7 +334,7 @@
 
 ### H3-T24 - Implementar CLI embeddings/stats
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T04, H3-T12.  
 **Requisitos:** H3-REQ-004, H3-REQ-019, H3-REQ-020.
@@ -348,7 +348,7 @@
 
 ### H3-T25 - Crear corpus y preguntas de evaluacion RAG
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H2 fixtures.  
 **Requisitos:** H3-REQ-021, H3-REQ-023.
@@ -364,7 +364,7 @@
 
 ### H3-T26 - Implementar Retrieval Benchmark Dataset
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T18, H3-T25.  
 **Requisitos:** H3-REQ-021, H3-REQ-023.
@@ -381,7 +381,7 @@
 
 ### H3-T27 - Completar pruebas de integracion
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T14, H3-T23, H3-T24.  
 **Requisitos:** todos los Must.
@@ -394,7 +394,7 @@
 
 ### H3-T28 - Completar smoke tests instalados
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T27.  
 **Requisitos:** H3-REQ-018, H3-REQ-019, H3-NFR-001.
@@ -407,7 +407,7 @@
 
 ### H3-T29 - Documentar operacion H3
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** S.  
 **Dependencias:** H3-T23, H3-T24.  
 **Requisitos:** H3-REQ-019, H3-NFR-007.

@@ -9,7 +9,8 @@ Esta carpeta reúne la definición pública del producto, su plan de ejecución 
 3. [ARCHITECTURE.md](ARCHITECTURE.md) — componentes, flujos, estructura del repositorio y límites técnicos.
 4. [DECISIONS.md](DECISIONS.md) — registro liviano de decisiones vigentes e históricas.
 5. [INGESTION.md](INGESTION.md) — operación local de ingesta H2.
-6. [`../specs/`](../specs/) — especificaciones por hito conforme sean elaboradas y aprobadas.
+6. [RAG.md](RAG.md) — operación local RAG H3.
+7. [`../specs/`](../specs/) — especificaciones por hito conforme sean elaboradas y aprobadas.
 
 ## Alcance público
 

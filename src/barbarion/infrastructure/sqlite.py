@@ -1025,6 +1025,42 @@ class PersistedEmbeddingManifest:
 
 
 @dataclass(frozen=True, slots=True)
+class EmbeddingManifestSummary:
+    """Resumen read-only de un manifest y sus chunks."""
+
+    id: int
+    version: str
+    provider: str
+    model: str
+    dimension: int
+    distance: str
+    normalize: bool
+    vector_provider: str
+    vector_table: str
+    status: str
+    indexed: int
+    stale: int
+    deleted: int
+    error: int
+
+
+@dataclass(frozen=True, slots=True)
+class RagInventoryStats:
+    """Metricas persistidas de RAG para CLI stats."""
+
+    manifests: int
+    active_manifests: int
+    indexed_chunks: int
+    stale_chunks: int
+    deleted_chunks: int
+    error_chunks: int
+    query_count: int
+    latest_query_id: int | None
+    latest_query_status: str | None
+    avg_candidate_count: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class SQLiteRagRepository:
     """Repositorio minimo H3 respaldado por SQLite local."""
 
@@ -1137,6 +1173,93 @@ class SQLiteRagRepository:
                 """
             ).fetchall()
         return tuple(_manifest_from_row(row) for row in rows)
+
+    def embedding_summaries(self) -> tuple[EmbeddingManifestSummary, ...]:
+        """Devuelve manifests y conteos por estado sin mutar SQLite."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    manifests.id,
+                    manifests.version,
+                    manifests.provider,
+                    manifests.model,
+                    manifests.dimension,
+                    manifests.distance,
+                    manifests.normalize,
+                    manifests.vector_provider,
+                    manifests.vector_table,
+                    manifests.status,
+                    COALESCE(SUM(CASE WHEN chunks.status = 'indexed' THEN 1 ELSE 0 END), 0) AS indexed,
+                    COALESCE(SUM(CASE WHEN chunks.status = 'stale' THEN 1 ELSE 0 END), 0) AS stale,
+                    COALESCE(SUM(CASE WHEN chunks.status = 'deleted' THEN 1 ELSE 0 END), 0) AS deleted,
+                    COALESCE(SUM(CASE WHEN chunks.status = 'error' THEN 1 ELSE 0 END), 0) AS error
+                FROM embedding_manifests AS manifests
+                LEFT JOIN chunk_embeddings AS chunks
+                  ON chunks.manifest_id = manifests.id
+                GROUP BY manifests.id
+                ORDER BY manifests.status = 'active' DESC, manifests.id DESC
+                """
+            ).fetchall()
+        return tuple(_embedding_summary_from_row(row) for row in rows)
+
+    def rag_inventory_stats(self) -> RagInventoryStats:
+        """Devuelve metricas RAG persistidas para stats."""
+        with self._connect_readonly() as connection:
+            manifest_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS manifests,
+                    COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0)
+                        AS active_manifests
+                FROM embedding_manifests
+                """
+            ).fetchone()
+            chunk_row = connection.execute(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN status = 'indexed' THEN 1 ELSE 0 END), 0) AS indexed,
+                    COALESCE(SUM(CASE WHEN status = 'stale' THEN 1 ELSE 0 END), 0) AS stale,
+                    COALESCE(SUM(CASE WHEN status = 'deleted' THEN 1 ELSE 0 END), 0) AS deleted,
+                    COALESCE(SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END), 0) AS error
+                FROM chunk_embeddings
+                """
+            ).fetchone()
+            query_row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS query_count,
+                    MAX(id) AS latest_query_id,
+                    AVG(candidate_count) AS avg_candidate_count
+                FROM rag_queries
+                """
+            ).fetchone()
+            latest_query_status = None
+            if query_row["latest_query_id"] is not None:
+                latest_query_status = connection.execute(
+                    "SELECT status FROM rag_queries WHERE id = ?",
+                    (query_row["latest_query_id"],),
+                ).fetchone()["status"]
+        return RagInventoryStats(
+            manifests=int(manifest_row["manifests"]),
+            active_manifests=int(manifest_row["active_manifests"]),
+            indexed_chunks=int(chunk_row["indexed"]),
+            stale_chunks=int(chunk_row["stale"]),
+            deleted_chunks=int(chunk_row["deleted"]),
+            error_chunks=int(chunk_row["error"]),
+            query_count=int(query_row["query_count"]),
+            latest_query_id=(
+                None
+                if query_row["latest_query_id"] is None
+                else int(query_row["latest_query_id"])
+            ),
+            latest_query_status=latest_query_status,
+            avg_candidate_count=(
+                None
+                if query_row["avg_candidate_count"] is None
+                else float(query_row["avg_candidate_count"])
+            ),
+        )
 
     def indexable_chunks(
         self,
@@ -1605,6 +1728,25 @@ def _manifest_from_row(row: sqlite3.Row) -> PersistedEmbeddingManifest:
         vector_provider=str(row["vector_provider"]),
         vector_table=str(row["vector_table"]),
         status=EmbeddingManifestStatus(str(row["status"])),
+    )
+
+
+def _embedding_summary_from_row(row: sqlite3.Row) -> EmbeddingManifestSummary:
+    return EmbeddingManifestSummary(
+        id=int(row["id"]),
+        version=str(row["version"]),
+        provider=str(row["provider"]),
+        model=str(row["model"]),
+        dimension=int(row["dimension"]),
+        distance=str(row["distance"]),
+        normalize=bool(row["normalize"]),
+        vector_provider=str(row["vector_provider"]),
+        vector_table=str(row["vector_table"]),
+        status=str(row["status"]),
+        indexed=int(row["indexed"]),
+        stale=int(row["stale"]),
+        deleted=int(row["deleted"]),
+        error=int(row["error"]),
     )
 
 

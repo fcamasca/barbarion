@@ -9,7 +9,7 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 ## Estado
 
 `H1-Foundation` está completado y aceptado en la versión `0.1.0`.
-`H2-Ingestion` está completado y aceptado:
+`H2-Ingestion` está completado y aceptado. `H3-RAG` está en implementación avanzada:
 
 - paquete Python instalable;
 - CLI local en español;
@@ -21,9 +21,12 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 - ingesta local incremental de corpus autorizado;
 - parsers heurísticos para Oracle/PLSQL, PowerBuilder textual, Markdown, texto, configuración, PDF y DOCX;
 - métricas, stats e inventario consultable desde SQLite;
-- pruebas unitarias, de integración y smoke.
+- pruebas unitarias, de integración y smoke;
+- indexación RAG local sobre SQLite + sqlite-vec;
+- búsqueda `semantic`, `keyword` e `hybrid`;
+- `ask` con contexto trazable, citas y modo `--no-llm`.
 
-Todavía no se implementan RAG, embeddings, Qdrant, ingeniería inversa ni generación de documentos. Estas capacidades pertenecen a hitos posteriores.
+Qdrant no es dependencia inicial de H3; queda diferido como alternativa futura. Ingeniería inversa profunda y generación de documentos pertenecen a hitos posteriores.
 
 ## Requisitos
 
@@ -114,7 +117,7 @@ barbarion config show
 barbarion --config ruta/al/archivo.toml config show
 ```
 
-Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[llm]` ya pueden validarse y mostrarse con `config show`. En esta etapa inicial, `vector_store.provider = "sqlite_vec"` es el valor soportado para el MVP; Qdrant queda diferido como alternativa futura. La presencia de estas claves no implica todavía que los comandos RAG completos estén disponibles.
+Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[llm]` ya pueden validarse y mostrarse con `config show`. `vector_store.provider = "sqlite_vec"` es el valor soportado para el MVP; Qdrant queda diferido como alternativa futura.
 
 ## Comandos disponibles
 
@@ -128,6 +131,14 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion ingest --full` | Reprocesa archivos compatibles sin truncar el corpus previo | Escribe metadata/chunks en SQLite |
 | `barbarion ingest --path RUTA` | Usa roots ad hoc; puede repetirse | Escribe metadata/chunks en SQLite |
 | `barbarion ingest --stats` | Muestra métricas e inventario persistidos | Ninguno |
+| `barbarion index` | Indexa chunks vigentes para RAG | Escribe manifests, estados y vectores locales |
+| `barbarion index --dry-run` | Muestra alcance sin escribir ni llamar modelos | Ninguno |
+| `barbarion reindex --full` | Reindexa todos los chunks vigentes | Escribe estados y vectores locales |
+| `barbarion search "consulta"` | Recupera evidencia RAG | Registra métricas de consulta |
+| `barbarion ask "pregunta"` | Responde con evidencia y citas | Registra métricas de consulta/contexto |
+| `barbarion ask "pregunta" --no-llm` | Muestra contexto sin invocar LLM | Registra métricas de consulta/contexto |
+| `barbarion embeddings` | Muestra manifests, versiones y conteos | Ninguno |
+| `barbarion stats` | Muestra estadísticas H2 + H3 | Ninguno |
 
 `doctor` comprueba, en orden:
 
@@ -213,6 +224,7 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Decisiones técnicas](docs/DECISIONS.md)
 - [Operación de ingesta H2](docs/INGESTION.md)
+- [Operación RAG H3](docs/RAG.md)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)
 

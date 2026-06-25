@@ -56,9 +56,10 @@ def installed_cli() -> Path:
     scripts_dir = Path(sys.executable).parent
     executable_name = "barbarion.exe" if os.name == "nt" else "barbarion"
     executable = scripts_dir / executable_name
-    assert executable.is_file(), (
-        "Barbarion debe instalarse en modo editable antes de ejecutar smoke tests."
-    )
+    if not executable.is_file():
+        pytest.skip(
+            "Barbarion debe instalarse en modo editable antes de ejecutar smoke tests."
+        )
     return executable
 
 
@@ -240,6 +241,14 @@ def test_ingest_help_from_installed_cli_has_no_side_effects(tmp_path: Path) -> N
     assert list(tmp_path.iterdir()) == []
 
 
+def test_h3_help_from_installed_cli_has_no_side_effects(tmp_path: Path) -> None:
+    for command in ("index", "reindex", "search", "ask", "embeddings", "stats"):
+        result = run_barbarion(command, "--help", cwd=tmp_path)
+        assert result.returncode == 0
+        assert "uso:" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_ingest_requires_doctor_bootstrap(
     tmp_path: Path,
     ollama_url: str,
@@ -280,7 +289,35 @@ def test_ingest_incremental_full_and_stats_from_installed_cli(
     database_path = tmp_path / "data" / "barbarion.db"
     before = database_path.stat()
     stats = run_barbarion("--config", str(source), "ingest", "--stats", cwd=tmp_path)
-    after = database_path.stat()
+    h3_stats = run_barbarion("--config", str(source), "stats", cwd=tmp_path)
+    embeddings = run_barbarion("--config", str(source), "embeddings", cwd=tmp_path)
+    dry_index = run_barbarion(
+        "--config",
+        str(source),
+        "index",
+        "--dry-run",
+        cwd=tmp_path,
+    )
+    after_read_only = database_path.stat()
+    search = run_barbarion(
+        "--config",
+        str(source),
+        "search",
+        "Manual",
+        "--mode",
+        "keyword",
+        cwd=tmp_path,
+    )
+    ask = run_barbarion(
+        "--config",
+        str(source),
+        "ask",
+        "Que documentos hablan de Manual?",
+        "--mode",
+        "keyword",
+        "--no-llm",
+        cwd=tmp_path,
+    )
     invalid = run_barbarion(
         "--config",
         str(source),
@@ -300,7 +337,17 @@ def test_ingest_incremental_full_and_stats_from_installed_cli(
     assert "Ingesta finalizada: completed" in full.stdout
     assert stats.returncode == 0
     assert "Estadisticas de ingesta" in stats.stdout
-    assert before.st_size == after.st_size
-    assert before.st_mtime_ns == after.st_mtime_ns
+    assert h3_stats.returncode == 0
+    assert "Estadisticas RAG" in h3_stats.stdout
+    assert embeddings.returncode == 0
+    assert "Embeddings RAG" in embeddings.stdout
+    assert dry_index.returncode == 0
+    assert "Dry-run de indexacion RAG" in dry_index.stdout
+    assert search.returncode == 0
+    assert "Busqueda RAG: keyword" in search.stdout
+    assert ask.returncode == 0
+    assert "Modo sin LLM" in ask.stdout
+    assert before.st_size == after_read_only.st_size
+    assert before.st_mtime_ns == after_read_only.st_mtime_ns
     assert invalid.returncode == 2
     assert "--stats no se combina" in invalid.stderr

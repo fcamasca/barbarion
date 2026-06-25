@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "id": "rag-001",
+      "category": "ubicacion de objetos",
+      "question": "Donde se calcula COSTO_AMORT_DIA?",
+      "expected_chunks": ["oracle/costos.pkb::COSTO_AMORT_DIA"],
+      "expected_documents": ["oracle/costos.pkb"]
+    },
+    {
+      "id": "rag-002",
+      "category": "dependencias",
+      "question": "Que objetos llaman p_insertarCompraVenta?",
+      "expected_chunks": ["oracle/operaciones.pkb::p_insertarCompraVenta"],
+      "expected_documents": ["oracle/operaciones.pkb"]
+    },
+    {
+      "id": "rag-003",
+      "category": "navegacion",
+      "question": "Donde se usa NOM_OPERACION_DIA?",
+      "expected_chunks": ["powerbuilder/w_operaciones.srw::NOM_OPERACION_DIA"],
+      "expected_documents": ["powerbuilder/w_operaciones.srw"]
+    },
+    {
+      "id": "rag-004",
+      "category": "documentacion",
+      "question": "Que documentos hablan de CDVAL?",
+      "expected_chunks": ["docs/manual-cdval.md::CDVAL"],
+      "expected_documents": ["docs/manual-cdval.md"]
+    },
+    {
+      "id": "rag-005",
+      "category": "explicaciones",
+      "question": "Como se calcula la amortizacion diaria?",
+      "expected_chunks": ["oracle/costos.pkb::calculo_amortizacion"],
+      "expected_documents": ["oracle/costos.pkb", "docs/manual-costos.md"]
+    },
+    {
+      "id": "rag-006",
+      "category": "impacto",
+      "question": "Que impacto tiene cambiar CDVAL?",
+      "expected_chunks": ["oracle/validaciones.pkb::CDVAL", "docs/manual-cdval.md::CDVAL"],
+      "expected_documents": ["oracle/validaciones.pkb", "docs/manual-cdval.md"]
+    },
+    {
+      "id": "rag-007",
+      "category": "navegacion",
+      "question": "Donde esta la ventana que muestra operaciones del dia?",
+      "expected_chunks": ["powerbuilder/w_operaciones.srw::open"],
+      "expected_documents": ["powerbuilder/w_operaciones.srw"]
+    },
+    {
+      "id": "rag-008",
+      "category": "dependencias",
+      "question": "Que paquete valida compras y ventas antes de insertar?",
+      "expected_chunks": ["oracle/operaciones.pkb::validar_compra_venta"],
+      "expected_documents": ["oracle/operaciones.pkb"]
+    },
+    {
+      "id": "rag-009",
+      "category": "explicaciones",
+      "question": "Que hace el proceso de cierre diario?",
+      "expected_chunks": ["oracle/cierre.pkb::cierre_diario", "docs/cierre-diario.md::resumen"],
+      "expected_documents": ["oracle/cierre.pkb", "docs/cierre-diario.md"]
+    },
+    {
+      "id": "rag-010",
+      "category": "impacto",
+      "question": "Que pantallas dependen del nombre de operacion diaria?",
+      "expected_chunks": ["powerbuilder/w_operaciones.srw::NOM_OPERACION_DIA"],
+      "expected_documents": ["powerbuilder/w_operaciones.srw"]
+    }
+  ]
+}

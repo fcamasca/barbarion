@@ -271,6 +271,79 @@ def _run_ask(args: argparse.Namespace) -> int:
     return 0 if result.citations_valid else 1
 
 
+def _run_embeddings(args: argparse.Namespace) -> int:
+    """Muestra estado de manifests de embeddings."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print("No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor'.")
+        return 0
+    repository = SQLiteRagRepository(settings.database_path)
+    summaries = repository.embedding_summaries()
+    if args.format == "json":
+        print(
+            json.dumps(
+                {"manifests": [_embedding_summary_json(item) for item in summaries]},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    print("Embeddings RAG")
+    if not summaries:
+        print("manifests = ninguno")
+        return 0
+    for item in summaries:
+        print(
+            f"- id={item.id} estado={item.status} proveedor={item.provider} "
+            f"modelo={item.model} dimension={item.dimension} "
+            f"version={item.version[:12]} vector_store={item.vector_provider}/"
+            f"{item.vector_table}"
+        )
+        print(
+            f"  indexed={item.indexed} stale={item.stale} "
+            f"deleted={item.deleted} error={item.error}"
+        )
+    return 0
+
+
+def _run_stats(args: argparse.Namespace) -> int:
+    """Muestra estadisticas H2 + H3 sin mutar la DB."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print("No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor'.")
+        return 0
+    ingestion = SQLiteIngestionRepository(
+        settings.database_path,
+        domain=settings.domain,
+    ).inventory_stats()
+    rag = SQLiteRagRepository(settings.database_path).rag_inventory_stats()
+    if args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "ingestion": {
+                        "latest_run_id": ingestion.latest_run_id,
+                        "latest_run_status": ingestion.latest_run_status,
+                        "files_current": ingestion.files_current,
+                        "documents_current": ingestion.documents_current,
+                        "chunks_current": ingestion.chunks_current,
+                        "artifact_kinds": list(ingestion.artifact_kinds),
+                    },
+                    "rag": _rag_stats_json(rag),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    print("Estadisticas de ingesta")
+    _render_ingestion_stats(ingestion)
+    print()
+    print("Estadisticas RAG")
+    _render_rag_stats(rag)
+    return 0
+
+
 def _show_ingestion_stats(args: argparse.Namespace) -> int:
     """Muestra estadisticas persistidas sin crear ni escanear recursos."""
     settings = load_settings(args.config)
@@ -280,6 +353,11 @@ def _show_ingestion_stats(args: argparse.Namespace) -> int:
     repository = SQLiteIngestionRepository(settings.database_path, domain=settings.domain)
     stats = repository.inventory_stats()
     print("Estadisticas de ingesta")
+    _render_ingestion_stats(stats)
+    return 0
+
+
+def _render_ingestion_stats(stats) -> None:
     print(f"ultimo_run = {stats.latest_run_id if stats.latest_run_id is not None else 'ninguno'}")
     print(f"ultimo_estado = {stats.latest_run_status or 'ninguno'}")
     print(f"archivos_vigentes = {stats.files_current}")
@@ -289,7 +367,54 @@ def _show_ingestion_stats(args: argparse.Namespace) -> int:
         print("artefactos = " + ", ".join(f"{kind}:{count}" for kind, count in stats.artifact_kinds))
     else:
         print("artefactos = ninguno")
-    return 0
+
+
+def _render_rag_stats(stats) -> None:
+    print(f"manifests = {stats.manifests}")
+    print(f"manifests_activos = {stats.active_manifests}")
+    print(f"chunks_indexed = {stats.indexed_chunks}")
+    print(f"chunks_stale = {stats.stale_chunks}")
+    print(f"chunks_deleted = {stats.deleted_chunks}")
+    print(f"chunks_error = {stats.error_chunks}")
+    print(f"consultas = {stats.query_count}")
+    print(f"ultima_consulta = {stats.latest_query_id if stats.latest_query_id is not None else 'ninguna'}")
+    print(f"ultimo_estado_consulta = {stats.latest_query_status or 'ninguno'}")
+
+
+def _embedding_summary_json(item) -> dict[str, object]:
+    return {
+        "id": item.id,
+        "version": item.version,
+        "provider": item.provider,
+        "model": item.model,
+        "dimension": item.dimension,
+        "distance": item.distance,
+        "normalize": item.normalize,
+        "vector_provider": item.vector_provider,
+        "vector_table": item.vector_table,
+        "status": item.status,
+        "counts": {
+            "indexed": item.indexed,
+            "stale": item.stale,
+            "deleted": item.deleted,
+            "error": item.error,
+        },
+    }
+
+
+def _rag_stats_json(stats) -> dict[str, object]:
+    return {
+        "manifests": stats.manifests,
+        "active_manifests": stats.active_manifests,
+        "indexed_chunks": stats.indexed_chunks,
+        "stale_chunks": stats.stale_chunks,
+        "deleted_chunks": stats.deleted_chunks,
+        "error_chunks": stats.error_chunks,
+        "query_count": stats.query_count,
+        "latest_query_id": stats.latest_query_id,
+        "latest_query_status": stats.latest_query_status,
+        "avg_candidate_count": stats.avg_candidate_count,
+    }
 
 
 def _index_scope(args: argparse.Namespace) -> IndexScope | None:
@@ -829,6 +954,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="muestra contexto y fuentes sin invocar LLM",
     )
     ask_parser.set_defaults(handler=_run_ask)
+
+    embeddings_parser = commands.add_parser(
+        "embeddings",
+        help="muestra manifests de embeddings",
+        description="Muestra manifests, versiones y conteos de embeddings RAG.",
+        add_help=False,
+    )
+    _add_help_option(embeddings_parser)
+    embeddings_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida",
+    )
+    embeddings_parser.set_defaults(handler=_run_embeddings)
+
+    stats_parser = commands.add_parser(
+        "stats",
+        help="muestra estadisticas locales",
+        description="Muestra estadisticas H2 y H3 sin mutar SQLite.",
+        add_help=False,
+    )
+    _add_help_option(stats_parser)
+    stats_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida",
+    )
+    stats_parser.set_defaults(handler=_run_stats)
 
     return parser
 

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -82,6 +83,8 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
         (("reindex", "--help"), "Ejecuta reindexacion RAG"),
         (("search", "--help"), "Busca evidencia RAG local"),
         (("ask", "--help"), "Responde una pregunta"),
+        (("embeddings", "--help"), "Muestra manifests"),
+        (("stats", "--help"), "Muestra estadisticas"),
     ],
 )
 def test_help_is_in_spanish_and_has_no_side_effects(
@@ -619,3 +622,64 @@ def test_ask_no_llm_markdown_invokes_service(
     assert service.calls[0][1]["no_llm"] is True
     assert "## Conclusion" in captured.out
     assert "## Fuentes" in captured.out
+
+
+def test_embeddings_and_stats_are_read_only(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from barbarion.domain.rag import EmbeddingManifest
+    from barbarion.infrastructure.sqlite import SQLiteRagRepository
+    from tests.unit.test_rag_index_service import seed_chunks
+
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    db_path = tmp_path / "data" / "barbarion.db"
+    initialize_database(db_path)
+    seed_chunks(db_path)
+    repository = SQLiteRagRepository(db_path)
+    manifest = repository.get_or_create_manifest(
+        EmbeddingManifest("fake", "sha256", 4)
+    )
+    run_id = repository.begin_embedding_run(
+        manifest_id=manifest.id,
+        mode=cli.EmbeddingRunMode.INCREMENTAL,
+        scope=None,
+    )
+    chunk = repository.indexable_chunks(domain="default")[0]
+    repository.record_chunk_indexed(
+        run_id=run_id,
+        manifest_id=manifest.id,
+        chunk=chunk,
+    )
+    with sqlite3.connect(db_path) as connection:
+        before_counts = connection.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM embedding_manifests),
+                (SELECT COUNT(*) FROM chunk_embeddings),
+                (SELECT COUNT(*) FROM rag_queries)
+            """
+        ).fetchone()
+
+    embeddings_exit = cli.main(["--config", str(source), "embeddings"])
+    embeddings_out = capsys.readouterr().out
+    stats_exit = cli.main(["--config", str(source), "stats"])
+    stats_out = capsys.readouterr().out
+    with sqlite3.connect(db_path) as connection:
+        after_counts = connection.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM embedding_manifests),
+                (SELECT COUNT(*) FROM chunk_embeddings),
+                (SELECT COUNT(*) FROM rag_queries)
+            """
+        ).fetchone()
+
+    assert embeddings_exit == 0
+    assert "Embeddings RAG" in embeddings_out
+    assert "indexed=1" in embeddings_out
+    assert stats_exit == 0
+    assert "Estadisticas RAG" in stats_out
+    assert "chunks_indexed = 1" in stats_out
+    assert before_counts == after_counts

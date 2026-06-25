@@ -80,7 +80,7 @@ barbarion --help
 
 ## Configuración
 
-El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles en H1. Para crear una configuración local:
+El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles para la base local y la ingesta H2. Para crear una configuración local:
 
 ```powershell
 # Windows PowerShell

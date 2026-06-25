@@ -13,7 +13,7 @@
 
 ### H2-T01 — Extender el modelo de configuración
 
-**Estado:** completado.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H1 completado.  
 **Requisitos:** H2-REQ-001, H2-NFR-005.
@@ -27,7 +27,7 @@
 
 ### H2-T02 — Actualizar configuración de ejemplo
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T01.  
 **Requisitos:** H2-REQ-001.

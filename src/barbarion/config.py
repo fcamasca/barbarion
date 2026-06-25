@@ -1,8 +1,8 @@
 """Carga y validación de la configuración local de Barbarion."""
 
+import codecs
 import os
 import tomllib
-import codecs
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -170,12 +170,38 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("log_level", settings.log_level),
         ("ollama_url", settings.ollama_url),
         ("ollama_timeout_seconds", str(settings.ollama_timeout_seconds)),
+        ("ingestion.paths", _format_paths(settings.ingestion.paths)),
+        ("ingestion.extensions", _format_items(settings.ingestion.extensions)),
+        ("ingestion.chunk_size", str(settings.ingestion.chunk_size)),
+        ("ingestion.chunk_overlap", str(settings.ingestion.chunk_overlap)),
+        (
+            "ingestion.ignore_patterns",
+            _format_items(settings.ingestion.ignore_patterns),
+        ),
+        ("ingestion.max_file_size_mb", str(settings.ingestion.max_file_size_mb)),
+        (
+            "ingestion.max_extracted_chars",
+            str(settings.ingestion.max_extracted_chars),
+        ),
+        ("ingestion.max_pdf_pages", str(settings.ingestion.max_pdf_pages)),
+        ("ingestion.encodings", _format_items(settings.ingestion.encodings)),
     )
+
 
 def _normalize_working_dir(cwd: Path | None) -> Path:
     """Normaliza el directorio base sin exigir recursos adicionales."""
     candidate = Path.cwd() if cwd is None else Path(cwd)
     return candidate.expanduser().resolve(strict=False)
+
+
+def _format_paths(paths: tuple[Path, ...]) -> str:
+    """Formatea rutas para la salida humana de configuracion."""
+    return _format_items(tuple(str(path) for path in paths))
+
+
+def _format_items(items: tuple[str, ...]) -> str:
+    """Formatea listas pequenas para `config show`."""
+    return "[" + ", ".join(items) + "]"
 
 
 def _resolve_config_source(

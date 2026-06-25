@@ -317,6 +317,29 @@ def test_example_configuration_is_valid(tmp_path: Path) -> None:
     assert settings.domain == "default"
     assert settings.data_dir == tmp_path / "data"
     assert settings.database_path == tmp_path / "data" / "barbarion.db"
+    assert settings.ingestion.paths == (
+        tmp_path / "sources" / "oracle",
+        tmp_path / "sources" / "powerbuilder",
+        tmp_path / "sources" / "docs",
+    )
+    assert settings.ingestion.extensions[:11] == (
+        ".sql",
+        ".pks",
+        ".pkb",
+        ".prc",
+        ".fnc",
+        ".trg",
+        ".pck",
+        ".vw",
+        ".vws",
+        ".pkg",
+        ".tps",
+    )
+    assert settings.ingestion.max_file_size_mb == 50
+    assert settings.ingestion.max_extracted_chars == 5_000_000
+    assert settings.ingestion.max_pdf_pages == 1000
+    assert settings.ingestion.encodings == ("utf-8", "cp1252", "iso8859-1")
+
 
 def test_relative_explicit_source_is_resolved_from_cwd(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"

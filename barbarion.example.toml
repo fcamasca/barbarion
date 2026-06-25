@@ -6,3 +6,24 @@ database_path = "./data/barbarion.db"
 log_level = "INFO"
 ollama_url = "http://127.0.0.1:11434"
 ollama_timeout_seconds = 2.0
+
+[ingestion]
+paths = ["sources/oracle", "sources/powerbuilder", "sources/docs"]
+extensions = [
+  ".sql", ".pks", ".pkb", ".prc", ".fnc", ".trg",
+  ".pck", ".vw", ".vws", ".pkg", ".tps",
+  ".srw", ".sru", ".srf", ".srm", ".srj", ".srd", ".pbl",
+  ".md", ".txt", ".docx", ".pdf",
+  ".yaml", ".yml", ".json", ".ini"
+]
+chunk_size = 4000
+chunk_overlap = 400
+ignore_patterns = [
+  ".git/**", ".barbarion/**", ".venv/**",
+  "**/__pycache__/**", "data/**", "output/**", "logs/**",
+  "**/node_modules/**"
+]
+max_file_size_mb = 50
+max_extracted_chars = 5000000
+max_pdf_pages = 1000
+encodings = ["utf-8", "cp1252", "latin-1"]

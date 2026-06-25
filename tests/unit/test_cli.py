@@ -91,6 +91,7 @@ def test_config_show_uses_defaults_without_side_effects(tmp_path: Path) -> None:
     assert lines[1] == "archivo_configuracion = ninguno"
     assert f"data_dir = {tmp_path / 'data'}" in lines
     assert f"database_path = {tmp_path / 'data' / 'barbarion.db'}" in lines
+    assert "ingestion.max_file_size_mb = 50" in lines
     assert list(tmp_path.iterdir()) == []
 
 
@@ -114,11 +115,22 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "log_level",
         "ollama_url",
         "ollama_timeout_seconds",
+        "ingestion.paths",
+        "ingestion.extensions",
+        "ingestion.chunk_size",
+        "ingestion.chunk_overlap",
+        "ingestion.ignore_patterns",
+        "ingestion.max_file_size_mb",
+        "ingestion.max_extracted_chars",
+        "ingestion.max_pdf_pages",
+        "ingestion.encodings",
     ]
     assert lines[0] == "origen = archivo"
     assert lines[1] == f"archivo_configuracion = {source}"
     assert "domain = legacy" in lines
     assert "log_level = DEBUG" in lines
+    assert "ingestion.chunk_size = 4000" in lines
+    assert "ingestion.max_file_size_mb = 50" in lines
     assert list(tmp_path.iterdir()) == [source]
 
 

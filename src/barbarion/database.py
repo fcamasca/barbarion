@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from barbarion.infrastructure.sqlite import INGESTION_SCHEMA_STATEMENTS
+
 DATABASE_TIMEOUT_SECONDS = 5.0
 FUTURE_SCHEMA_MESSAGE = (
     "La versión {version} del esquema de base de datos es más reciente que la "
@@ -44,6 +46,10 @@ _MIGRATIONS = (
             )
             """,
         ),
+    ),
+    _Migration(
+        version=2,
+        statements=INGESTION_SCHEMA_STATEMENTS,
     ),
 )
 

@@ -54,7 +54,7 @@
 
 ### H2-T04 — Crear migración SQLite v2
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T03.  
 **Requisitos:** H2-REQ-019, H2-NFR-006.

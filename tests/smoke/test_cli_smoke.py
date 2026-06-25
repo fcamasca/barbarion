@@ -183,9 +183,9 @@ def test_repeated_doctor_is_idempotent(
     assert sentinel.read_text(encoding="utf-8") == "preservar"
     with sqlite3.connect(tmp_path / "data" / "barbarion.db") as connection:
         rows = connection.execute(
-            "SELECT version FROM schema_migrations"
+            "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
-    assert rows == [(1,)]
+    assert rows == [(1,), (2,)]
     log_content = (tmp_path / "logs" / "barbarion.log").read_text(
         encoding="utf-8"
     )

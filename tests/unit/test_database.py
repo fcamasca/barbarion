@@ -22,19 +22,18 @@ def migration_rows(path: Path) -> list[tuple[int, str]]:
         ).fetchall()
 
 
-def test_new_database_creates_schema_version_one(tmp_path: Path) -> None:
+def test_new_database_creates_schema_version_two(tmp_path: Path) -> None:
     path = tmp_path / "barbarion.db"
 
     status = initialize_database(path)
 
     assert status.path == path
-    assert status.schema_version == 1
+    assert status.schema_version == 2
     assert status.foreign_keys_enabled is True
     assert path.is_file()
     rows = migration_rows(path)
-    assert len(rows) == 1
-    assert rows[0][0] == 1
-    assert datetime.fromisoformat(rows[0][1]).tzinfo is not None
+    assert [row[0] for row in rows] == [1, 2]
+    assert all(datetime.fromisoformat(row[1]).tzinfo is not None for row in rows)
 
 
 def test_second_initialization_is_idempotent(tmp_path: Path) -> None:
@@ -48,7 +47,7 @@ def test_second_initialization_is_idempotent(tmp_path: Path) -> None:
     assert migration_rows(path) == first_rows
 
 
-def test_schema_contains_only_migration_table(tmp_path: Path) -> None:
+def test_schema_contains_h2_tables(tmp_path: Path) -> None:
     path = tmp_path / "barbarion.db"
     initialize_database(path)
 
@@ -65,7 +64,14 @@ def test_schema_contains_only_migration_table(tmp_path: Path) -> None:
             "PRAGMA table_info(schema_migrations)"
         ).fetchall()
 
-    assert tables == [("schema_migrations",)]
+    assert tables == [
+        ("chunks",),
+        ("documents",),
+        ("errors",),
+        ("files",),
+        ("ingestion_runs",),
+        ("schema_migrations",),
+    ]
     assert [
         (column[1], column[2], column[3], column[5])
         for column in columns
@@ -73,6 +79,31 @@ def test_schema_contains_only_migration_table(tmp_path: Path) -> None:
         ("version", "INTEGER", 0, 1),
         ("applied_at", "TEXT", 1, 0),
     ]
+
+
+def test_existing_v1_database_upgrades_to_v2(tmp_path: Path) -> None:
+    path = tmp_path / "barbarion.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO schema_migrations VALUES (1, '2026-01-01T00:00:00+00:00')"
+        )
+
+    status = initialize_database(path)
+
+    assert status.schema_version == 2
+    assert [row[0] for row in migration_rows(path)] == [1, 2]
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'ingestion_runs'"
+        ).fetchone() == ("ingestion_runs",)
 
 
 def test_connection_uses_five_second_timeout_and_foreign_keys(
@@ -98,6 +129,142 @@ def test_connection_uses_five_second_timeout_and_foreign_keys(
 
     assert received_timeouts == [DATABASE_TIMEOUT_SECONDS]
     assert status.foreign_keys_enabled is True
+
+
+def test_h2_schema_contains_expected_indexes(tmp_path: Path) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+
+    with sqlite3.connect(path) as connection:
+        indexes = {
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND name NOT LIKE 'sqlite_%'
+                """
+            )
+        }
+
+    assert {
+        "idx_ingestion_runs_started_at",
+        "idx_ingestion_runs_status",
+        "idx_files_status",
+        "idx_files_artifact_kind",
+        "idx_files_sha256",
+        "idx_files_last_seen_run_id",
+        "idx_files_source_root_last_seen_run_id",
+        "idx_documents_content_sha256",
+        "idx_chunks_document_ordinal",
+        "idx_chunks_object",
+        "idx_chunks_content_sha256",
+        "idx_errors_run_id",
+        "idx_errors_file_id",
+        "idx_errors_error_code",
+    }.issubset(indexes)
+
+
+def test_h2_foreign_keys_and_cascade_are_enforced(tmp_path: Path) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO ingestion_runs(
+                id, domain, mode, status, roots_json, config_sha256, started_at
+            )
+            VALUES (1, 'default', 'incremental', 'running', '[]', ?, ?)
+            """,
+            ("a" * 64, "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            """
+            INSERT INTO files(
+                id, domain, source_root, relative_path, extension, artifact_kind,
+                media_type, size_bytes, modified_at_ns, status,
+                first_seen_run_id, last_seen_run_id, created_at, updated_at
+            )
+            VALUES (
+                10, 'default', 'sources/oracle', 'pkg/body.sql', '.sql',
+                'oracle', 'text/plain', 42, 100, 'processed',
+                1, 1, ?, ?
+            )
+            """,
+            (
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, file_id, source_sha256, parser_id, parser_version,
+                normalizer_version, normalized_text, content_sha256,
+                metadata_json, warnings_json, extracted_at
+            )
+            VALUES (20, 10, ?, 'oracle', '1', '1', 'select 1;', ?, '{}', '[]', ?)
+            """,
+            ("b" * 64, "c" * 64, "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            """
+            INSERT INTO chunks(
+                id, document_id, ordinal, chunk_type, content, content_sha256,
+                metadata_json, chunker_version, created_at
+            )
+            VALUES (?, 20, 0, 'file', 'select 1;', ?, '{}', '1', ?)
+            """,
+            ("chunk-1", "c" * 64, "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            """
+            INSERT INTO errors(
+                run_id, file_id, stage, error_code, message, recoverable,
+                details_json, occurred_at
+            )
+            VALUES (1, 10, 'extraction', 'WARN', 'detalle', 1, '{}', ?)
+            """,
+            ("2026-01-01T00:00:00+00:00",),
+        )
+
+        connection.execute("DELETE FROM files WHERE id = 10")
+
+        assert connection.execute("SELECT COUNT(*) FROM documents").fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM chunks").fetchone() == (0,)
+        assert connection.execute("SELECT file_id FROM errors").fetchone() == (None,)
+
+
+def test_h2_constraints_reject_invalid_status_and_negative_counts(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+
+    with sqlite3.connect(path) as connection:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO ingestion_runs(
+                    domain, mode, status, roots_json, config_sha256, started_at
+                )
+                VALUES ('default', 'incremental', 'unknown', '[]', ?, ?)
+                """,
+                ("a" * 64, "2026-01-01T00:00:00+00:00"),
+            )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO ingestion_runs(
+                    domain, mode, status, roots_json, config_sha256, started_at,
+                    discovered_files
+                )
+                VALUES ('default', 'incremental', 'running', '[]', ?, ?, -1)
+                """,
+                ("a" * 64, "2026-01-01T00:00:00+00:00"),
+            )
 
 
 def test_future_schema_fails_with_stable_message_and_preserves_database(
@@ -161,6 +328,42 @@ def test_failed_migration_rolls_back_schema_and_version(
             "SELECT name FROM sqlite_master WHERE name = 'schema_migrations'"
         ).fetchone()
     assert table is None
+
+
+def test_failed_v2_migration_preserves_v1_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE errors")
+        connection.execute("DROP TABLE chunks")
+        connection.execute("DROP TABLE documents")
+        connection.execute("DROP TABLE files")
+        connection.execute("DROP TABLE ingestion_runs")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+
+    broken_v2 = database._Migration(
+        version=2,
+        statements=(
+            "CREATE TABLE ingestion_runs(id INTEGER PRIMARY KEY)",
+            "SQL NO VALIDO",
+        ),
+    )
+    monkeypatch.setattr(database, "_MIGRATIONS", (database._MIGRATIONS[0], broken_v2))
+
+    with pytest.raises(DatabaseError, match="No se pudo inicializar"):
+        initialize_database(path)
+
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall() == [(1,)]
+        assert connection.execute(
+            "SELECT name FROM sqlite_master WHERE name = 'ingestion_runs'"
+        ).fetchone() is None
 
 
 def test_open_error_is_reported_without_deleting_path(tmp_path: Path) -> None:

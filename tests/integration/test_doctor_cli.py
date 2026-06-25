@@ -87,8 +87,8 @@ def test_doctor_success_initializes_resources_and_renders_report(
     assert database_path.is_file()
     with sqlite3.connect(database_path) as connection:
         assert connection.execute(
-            "SELECT version FROM schema_migrations"
-        ).fetchone() == (1,)
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall() == [(1,), (2,)]
     log_content = (tmp_path / "logs" / LOG_FILENAME).read_text(
         encoding="utf-8"
     )

@@ -162,7 +162,7 @@
 
 ### H2-T12 — Implementar decodificación textual
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T01, H2-T11.  
 **Requisitos:** H2-REQ-010.
@@ -176,7 +176,7 @@
 
 ### H2-T13 — Implementar MarkdownParser
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T11, H2-T12.  
 **Requisitos:** H2-REQ-013.
@@ -189,7 +189,7 @@
 
 ### H2-T14 — Implementar TextParser
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T11, H2-T12.  
 **Requisitos:** H2-REQ-013.

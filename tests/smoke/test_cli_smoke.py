@@ -139,7 +139,7 @@ def test_version_from_installed_cli_has_no_side_effects(tmp_path: Path) -> None:
     result = run_barbarion("--version", cwd=tmp_path)
 
     assert result.returncode == 0
-    assert result.stdout.strip() == "barbarion 0.1.0"
+    assert result.stdout.strip() == "barbarion 0.2.0"
     assert list(tmp_path.iterdir()) == []
 
 

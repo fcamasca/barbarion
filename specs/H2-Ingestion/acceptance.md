@@ -4,7 +4,7 @@
 
 **Fecha:** 2026-06-24  
 **Estado:** aceptado  
-**Version:** `0.1.0`  
+**Version:** `0.2.0`  
 **Base evaluada:** `9b08a8e` con cambios H2 pendientes en el working tree.
 
 H2 cumple los requisitos Must del hito y puede cerrarse. La aceptacion se ejecuto con una instalacion editable en un entorno virtual temporal limpio y con el entry point instalado `barbarion.exe`.

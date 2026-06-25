@@ -19,6 +19,7 @@ from barbarion.domain.models import (
     PipelineError,
     SourceFile,
 )
+from barbarion.domain.ingestion import PersistedFileState
 
 
 class ParserPort(Protocol):
@@ -75,13 +76,58 @@ class IngestionRepositoryPort(Protocol):
         run_id: int,
         discovered_file: DiscoveredFile,
         fingerprint: FileFingerprint,
+        processing_signature: str,
+        parser_id: str,
+        parser_version: str,
+        encoding: str | None,
         document: NormalizedDocument,
         chunks: Sequence[ChunkCandidate],
     ) -> None:
         """Reemplaza documento y chunks de un archivo en una transaccion."""
 
-    def record_error(self, *, run_id: int, error: PipelineError) -> None:
+    def mark_seen(
+        self,
+        *,
+        run_id: int,
+        discovered_file: DiscoveredFile,
+        state: PersistedFileState,
+    ) -> None:
+        """Actualiza metadata de un archivo vigente sin reemplazar contenido."""
+
+    def record_skipped(
+        self,
+        *,
+        run_id: int,
+        discovered_file: DiscoveredFile,
+        error: PipelineError,
+    ) -> None:
+        """Registra un archivo omitido con razon recuperable."""
+
+    def record_error(
+        self,
+        *,
+        run_id: int,
+        error: PipelineError,
+        discovered_file: DiscoveredFile | None = None,
+    ) -> None:
         """Registra un error tipado sin contenido fuente."""
+
+    def get_file_state(
+        self,
+        *,
+        domain: str,
+        discovered_file: DiscoveredFile,
+    ) -> PersistedFileState | None:
+        """Devuelve el estado vigente conocido de un archivo."""
+
+    def reconcile_deleted(
+        self,
+        *,
+        run_id: int,
+        domain: str,
+        completed_roots: Sequence[Path],
+    ) -> int:
+        """Marca como deleted archivos no vistos en roots completas."""
 
     def finish_run(
         self,
@@ -93,4 +139,3 @@ class IngestionRepositoryPort(Protocol):
 
     def current_metrics(self) -> IngestionMetrics:
         """Devuelve metricas de solo lectura del inventario vigente."""
-

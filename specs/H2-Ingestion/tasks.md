@@ -335,7 +335,7 @@
 
 ### H2-T25 — Implementar persistencia por archivo
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T04, H2-T24.  
 **Requisitos:** H2-REQ-021, H2-NFR-006.
@@ -349,7 +349,7 @@
 
 ### H2-T26 — Implementar IngestionService
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T06–H2-T25.  
 **Requisitos:** H2-REQ-002, H2-REQ-022.
@@ -363,7 +363,7 @@
 
 ### H2-T27 — Implementar reconciliación
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T25, H2-T26.  
 **Requisitos:** H2-REQ-008.

@@ -17,6 +17,8 @@ from barbarion.domain.models import (
     SourceFile,
 )
 from barbarion.domain.ports import ParserPort
+from barbarion.domain.ports import EmbeddingProviderPort
+from barbarion.domain.rag import EmbeddingRequest, EmbeddingVector
 
 
 VALID_SHA = "a" * 64
@@ -86,4 +88,37 @@ def test_repository_related_models_compose_without_adapters() -> None:
     assert document.content_sha256 == VALID_SHA
     assert outcome.status == IngestionRunStatus.COMPLETED
     assert IngestionMode.INCREMENTAL.value == "incremental"
+
+
+class FakeEmbeddingProvider:
+    """Proveedor de embeddings de prueba estructural."""
+
+    provider = "fake"
+    model = "fake-model"
+
+    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+        return tuple(
+            EmbeddingVector(
+                text_index=index,
+                values=(float(index), 1.0),
+                provider=self.provider,
+                model=self.model,
+            )
+            for index, _text in enumerate(request.texts)
+        )
+
+
+def test_embedding_provider_port_accepts_structural_implementation() -> None:
+    provider: EmbeddingProviderPort = FakeEmbeddingProvider()
+
+    vectors = provider.embed(
+        EmbeddingRequest(
+            texts=("uno", "dos"),
+            input_kind="query",
+            embedding_version=VALID_SHA,
+        )
+    )
+
+    assert [vector.text_index for vector in vectors] == [0, 1]
+    assert vectors[0].dimension == 2
 

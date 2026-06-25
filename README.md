@@ -84,7 +84,7 @@ barbarion --help
 
 ## Configuración
 
-El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles para la base local y la ingesta H2. Para crear una configuración local:
+El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles para la base local, la ingesta H2 y la configuración base H3. Para crear una configuración local:
 
 ```powershell
 # Windows PowerShell
@@ -113,6 +113,8 @@ Para inspeccionar los valores efectivos sin crear recursos:
 barbarion config show
 barbarion --config ruta/al/archivo.toml config show
 ```
+
+Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[llm]` ya pueden validarse y mostrarse con `config show`. En esta etapa inicial, `vector_store.provider = "sqlite_vec"` es el valor soportado para el MVP; Qdrant queda diferido como alternativa futura. La presencia de estas claves no implica todavía que los comandos RAG completos estén disponibles.
 
 ## Comandos disponibles
 

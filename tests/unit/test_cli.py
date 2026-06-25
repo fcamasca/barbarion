@@ -156,6 +156,28 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "ingestion.max_extracted_chars",
         "ingestion.max_pdf_pages",
         "ingestion.encodings",
+        "embeddings.provider",
+        "embeddings.model",
+        "embeddings.batch_size",
+        "embeddings.timeout_seconds",
+        "embeddings.normalize",
+        "vector_store.provider",
+        "vector_store.table_prefix",
+        "vector_store.distance",
+        "retrieval.mode",
+        "retrieval.top_k",
+        "retrieval.candidate_k",
+        "retrieval.similarity_threshold",
+        "retrieval.vector_weight",
+        "retrieval.keyword_weight",
+        "rag.context_token_budget",
+        "rag.max_chunk_tokens",
+        "rag.dedupe_min_hash_prefix",
+        "rag.include_snippets",
+        "llm.provider",
+        "llm.model",
+        "llm.timeout_seconds",
+        "llm.temperature",
     ]
     assert lines[0] == "origen = archivo"
     assert lines[1] == f"archivo_configuracion = {source}"
@@ -163,6 +185,9 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
     assert "log_level = DEBUG" in lines
     assert "ingestion.chunk_size = 4000" in lines
     assert "ingestion.max_file_size_mb = 50" in lines
+    assert "vector_store.provider = sqlite_vec" in lines
+    assert "retrieval.mode = hybrid" in lines
+    assert "rag.context_token_budget = 6000" in lines
     assert list(tmp_path.iterdir()) == [source]
 
 

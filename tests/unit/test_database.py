@@ -29,19 +29,19 @@ def journal_mode(path: Path) -> str:
         return str(connection.execute("PRAGMA journal_mode").fetchone()[0])
 
 
-def test_new_database_creates_schema_version_two(tmp_path: Path) -> None:
+def test_new_database_creates_schema_version_three(tmp_path: Path) -> None:
     path = tmp_path / "barbarion.db"
 
     status = initialize_database(path)
 
     assert status.path == path
-    assert status.schema_version == 2
+    assert status.schema_version == 3
     assert status.foreign_keys_enabled is True
     assert status.wal_enabled is True
     assert path.is_file()
     assert journal_mode(path) == "wal"
     rows = migration_rows(path)
-    assert [row[0] for row in rows] == [1, 2]
+    assert [row[0] for row in rows] == [1, 2, 3]
     assert all(datetime.fromisoformat(row[1]).tzinfo is not None for row in rows)
 
 
@@ -74,12 +74,17 @@ def test_schema_contains_h2_tables(tmp_path: Path) -> None:
         ).fetchall()
 
     assert tables == [
+        ("chunk_embeddings",),
         ("chunks",),
         ("documents",),
+        ("embedding_manifests",),
+        ("embedding_runs",),
         ("errors",),
         ("files",),
         ("ingestion_runs",),
+        ("rag_queries",),
         ("schema_migrations",),
+        ("symbol_occurrences",),
     ]
     assert [
         (column[1], column[2], column[3], column[5])
@@ -90,7 +95,7 @@ def test_schema_contains_h2_tables(tmp_path: Path) -> None:
     ]
 
 
-def test_existing_v1_database_upgrades_to_v2(tmp_path: Path) -> None:
+def test_existing_v1_database_upgrades_to_v3(tmp_path: Path) -> None:
     path = tmp_path / "barbarion.db"
     with sqlite3.connect(path) as connection:
         connection.execute(
@@ -107,11 +112,11 @@ def test_existing_v1_database_upgrades_to_v2(tmp_path: Path) -> None:
 
     status = initialize_database(path)
 
-    assert status.schema_version == 2
+    assert status.schema_version == 3
     assert status.foreign_keys_enabled is True
     assert status.wal_enabled is True
     assert journal_mode(path) == "wal"
-    assert [row[0] for row in migration_rows(path)] == [1, 2]
+    assert [row[0] for row in migration_rows(path)] == [1, 2, 3]
     with sqlite3.connect(path) as connection:
         assert connection.execute(
             "SELECT name FROM sqlite_master WHERE name = 'ingestion_runs'"
@@ -176,6 +181,63 @@ def test_h2_schema_contains_expected_indexes(tmp_path: Path) -> None:
         "idx_errors_file_id",
         "idx_errors_error_code",
     }.issubset(indexes)
+
+
+def test_h3_schema_contains_expected_tables_and_indexes(tmp_path: Path) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+
+    with sqlite3.connect(path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                """
+            )
+        }
+        indexes = {
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'index' AND name NOT LIKE 'sqlite_%'
+                """
+            )
+        }
+        symbol_columns = connection.execute(
+            "PRAGMA table_info(symbol_occurrences)"
+        ).fetchall()
+
+    assert {
+        "embedding_manifests",
+        "embedding_runs",
+        "chunk_embeddings",
+        "rag_queries",
+        "symbol_occurrences",
+    }.issubset(tables)
+    assert {
+        "idx_embedding_manifests_status",
+        "idx_embedding_manifests_provider_model",
+        "idx_embedding_runs_manifest_id",
+        "idx_embedding_runs_started_at",
+        "idx_chunk_embeddings_manifest_status",
+        "idx_chunk_embeddings_symbols",
+        "idx_rag_queries_created_at",
+        "idx_symbol_occurrences_chunk_id",
+        "idx_symbol_occurrences_symbol",
+    }.issubset(indexes)
+    assert [column[1] for column in symbol_columns] == [
+        "id",
+        "chunk_id",
+        "symbol_name",
+        "symbol_kind",
+        "line_start",
+        "line_end",
+    ]
 
 
 def test_h2_foreign_keys_and_cascade_are_enforced(tmp_path: Path) -> None:
@@ -351,12 +413,18 @@ def test_failed_v2_migration_preserves_v1_database(
     initialize_database(path)
 
     with sqlite3.connect(path) as connection:
+        connection.execute("DROP TABLE symbol_occurrences")
+        connection.execute("DROP TABLE rag_queries")
+        connection.execute("DROP TABLE chunk_embeddings")
+        connection.execute("DROP TABLE embedding_runs")
+        connection.execute("DROP TABLE embedding_manifests")
         connection.execute("DROP TABLE errors")
         connection.execute("DROP TABLE chunks")
         connection.execute("DROP TABLE documents")
         connection.execute("DROP TABLE files")
         connection.execute("DROP TABLE ingestion_runs")
         connection.execute("DELETE FROM schema_migrations WHERE version = 2")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 3")
 
     broken_v2 = database._Migration(
         version=2,

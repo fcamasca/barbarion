@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from barbarion.infrastructure.sqlite import INGESTION_SCHEMA_STATEMENTS
+from barbarion.infrastructure.sqlite import (
+    INGESTION_SCHEMA_STATEMENTS,
+    RAG_SCHEMA_STATEMENTS,
+)
 
 DATABASE_TIMEOUT_SECONDS = 5.0
 WAL_UNAVAILABLE_CODE = "DATABASE_WAL_UNAVAILABLE"
@@ -52,6 +55,10 @@ _MIGRATIONS = (
     _Migration(
         version=2,
         statements=INGESTION_SCHEMA_STATEMENTS,
+    ),
+    _Migration(
+        version=3,
+        statements=RAG_SCHEMA_STATEMENTS,
     ),
 )
 

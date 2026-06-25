@@ -5,7 +5,17 @@ from pathlib import Path
 
 import pytest
 
-from barbarion.config import ConfigError, IngestionSettings, Settings, load_settings
+from barbarion.config import (
+    ConfigError,
+    EmbeddingsSettings,
+    IngestionSettings,
+    LlmSettings,
+    RagSettings,
+    RetrievalSettings,
+    Settings,
+    VectorStoreSettings,
+    load_settings,
+)
 
 
 def write_config(path: Path, content: str) -> Path:
@@ -76,6 +86,38 @@ def test_defaults_are_resolved_from_working_directory(tmp_path: Path) -> None:
             max_extracted_chars=5_000_000,
             max_pdf_pages=1000,
             encodings=("utf-8", "cp1252", "iso8859-1"),
+        ),
+        embeddings=EmbeddingsSettings(
+            provider="ollama",
+            model="nomic-embed-text",
+            batch_size=16,
+            timeout_seconds=60.0,
+            normalize=True,
+        ),
+        vector_store=VectorStoreSettings(
+            provider="sqlite_vec",
+            table_prefix="rag",
+            distance="cosine",
+        ),
+        retrieval=RetrievalSettings(
+            mode="hybrid",
+            top_k=10,
+            candidate_k=40,
+            similarity_threshold=0.20,
+            vector_weight=0.70,
+            keyword_weight=0.30,
+        ),
+        rag=RagSettings(
+            context_token_budget=6000,
+            max_chunk_tokens=1200,
+            dedupe_min_hash_prefix=16,
+            include_snippets=True,
+        ),
+        llm=LlmSettings(
+            provider="ollama",
+            model="llama3.1:8b",
+            timeout_seconds=120.0,
+            temperature=0.1,
         ),
         config_source=None,
     )
@@ -179,6 +221,29 @@ def test_unknown_ingestion_keys_are_rejected(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ConfigError, match="ingestion.enabled"):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("section", "content", "expected_message"),
+    [
+        ("embeddings", "[embeddings]\nunknown = true\n", "embeddings.unknown"),
+        ("vector_store", "[vector_store]\nunknown = true\n", "vector_store.unknown"),
+        ("retrieval", "[retrieval]\nunknown = true\n", "retrieval.unknown"),
+        ("rag", "[rag]\nunknown = true\n", "rag.unknown"),
+        ("llm", "[llm]\nunknown = true\n", "llm.unknown"),
+    ],
+)
+def test_unknown_h3_section_keys_are_rejected(
+    section: str,
+    content: str,
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    del section
+    source = write_config(tmp_path / "unknown-h3.toml", content)
+
+    with pytest.raises(ConfigError, match=expected_message):
         load_settings(source, environ={}, cwd=tmp_path)
 
 
@@ -299,6 +364,113 @@ def test_invalid_ingestion_values_are_rejected(
         load_settings(source, environ={}, cwd=tmp_path)
 
 
+def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "h3.toml",
+        "\n".join(
+            [
+                "[embeddings]",
+                'provider = "OLLAMA"',
+                'model = "bge-small"',
+                "batch_size = 8",
+                "timeout_seconds = 30",
+                "normalize = false",
+                "[vector_store]",
+                'provider = "SQLITE_VEC"',
+                'table_prefix = "rag_test"',
+                'distance = "COSINE"',
+                "[retrieval]",
+                'mode = "SEMANTIC"',
+                "top_k = 5",
+                "candidate_k = 25",
+                "similarity_threshold = 0.15",
+                "vector_weight = 1.0",
+                "keyword_weight = 0.0",
+                "[rag]",
+                "context_token_budget = 2000",
+                "max_chunk_tokens = 500",
+                "dedupe_min_hash_prefix = 20",
+                "include_snippets = false",
+                "[llm]",
+                'provider = "OLLAMA"',
+                'model = "llama-local"',
+                "timeout_seconds = 90",
+                "temperature = 0.0",
+            ]
+        ),
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.embeddings == EmbeddingsSettings(
+        provider="ollama",
+        model="bge-small",
+        batch_size=8,
+        timeout_seconds=30.0,
+        normalize=False,
+    )
+    assert settings.vector_store == VectorStoreSettings(
+        provider="sqlite_vec",
+        table_prefix="rag_test",
+        distance="cosine",
+    )
+    assert settings.retrieval == RetrievalSettings(
+        mode="semantic",
+        top_k=5,
+        candidate_k=25,
+        similarity_threshold=0.15,
+        vector_weight=1.0,
+        keyword_weight=0.0,
+    )
+    assert settings.rag == RagSettings(
+        context_token_budget=2000,
+        max_chunk_tokens=500,
+        dedupe_min_hash_prefix=20,
+        include_snippets=False,
+    )
+    assert settings.llm == LlmSettings(
+        provider="ollama",
+        model="llama-local",
+        timeout_seconds=90.0,
+        temperature=0.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_message"),
+    [
+        ("[embeddings]\nprovider = \"other\"\n", "embeddings.provider"),
+        ("[embeddings]\nbatch_size = 0\n", "embeddings.batch_size"),
+        ("[embeddings]\ntimeout_seconds = 0\n", "embeddings.timeout_seconds"),
+        ("[embeddings]\nnormalize = \"yes\"\n", "embeddings.normalize"),
+        ("[vector_store]\nprovider = \"qdrant_local\"\n", "vector_store.provider"),
+        ("[vector_store]\ntable_prefix = \"1bad\"\n", "vector_store.table_prefix"),
+        ("[vector_store]\ndistance = \"dot\"\n", "vector_store.distance"),
+        ("[retrieval]\nmode = \"bad\"\n", "retrieval.mode"),
+        ("[retrieval]\ntop_k = 0\n", "retrieval.top_k"),
+        ("[retrieval]\ntop_k = 10\ncandidate_k = 5\n", "retrieval.candidate_k"),
+        ("[retrieval]\nsimilarity_threshold = 2\n", "retrieval.similarity_threshold"),
+        ("[retrieval]\nvector_weight = 0\nkeyword_weight = 0\n", "suma"),
+        ("[rag]\ncontext_token_budget = 500\n", "rag.context_token_budget"),
+        ("[rag]\ndedupe_min_hash_prefix = 7\n", "rag.dedupe_min_hash_prefix"),
+        ("[rag]\ninclude_snippets = 1\n", "rag.include_snippets"),
+        ("[llm]\nprovider = \"other\"\n", "llm.provider"),
+        ("[llm]\ntimeout_seconds = 0\n", "llm.timeout_seconds"),
+        ("[llm]\ntemperature = 2\n", "llm.temperature"),
+        ("embeddings = 1\n", "embeddings"),
+    ],
+)
+def test_invalid_h3_values_are_rejected(
+    content: str,
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    source = write_config(tmp_path / "invalid-h3.toml", content)
+
+    with pytest.raises(ConfigError, match=expected_message):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
 def test_settings_are_immutable(tmp_path: Path) -> None:
     settings = load_settings(environ={}, cwd=tmp_path)
 
@@ -339,6 +511,11 @@ def test_example_configuration_is_valid(tmp_path: Path) -> None:
     assert settings.ingestion.max_extracted_chars == 5_000_000
     assert settings.ingestion.max_pdf_pages == 1000
     assert settings.ingestion.encodings == ("utf-8", "cp1252", "iso8859-1")
+    assert settings.vector_store.provider == "sqlite_vec"
+    assert settings.embeddings.model == "nomic-embed-text"
+    assert settings.retrieval.mode == "hybrid"
+    assert settings.rag.context_token_budget == 6000
+    assert settings.llm.provider == "ollama"
 
 
 def test_relative_explicit_source_is_resolved_from_cwd(tmp_path: Path) -> None:

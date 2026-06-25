@@ -68,9 +68,54 @@ _DEFAULT_INGESTION: dict[str, object] = {
     "max_pdf_pages": 1000,
     "encodings": ("utf-8", "cp1252", "latin-1"),
 }
-_ALLOWED_KEYS = frozenset(_DEFAULTS) | {"ingestion"}
+_DEFAULT_EMBEDDINGS: dict[str, object] = {
+    "provider": "ollama",
+    "model": "nomic-embed-text",
+    "batch_size": 16,
+    "timeout_seconds": 60.0,
+    "normalize": True,
+}
+_DEFAULT_VECTOR_STORE: dict[str, object] = {
+    "provider": "sqlite_vec",
+    "table_prefix": "rag",
+    "distance": "cosine",
+}
+_DEFAULT_RETRIEVAL: dict[str, object] = {
+    "mode": "hybrid",
+    "top_k": 10,
+    "candidate_k": 40,
+    "similarity_threshold": 0.20,
+    "vector_weight": 0.70,
+    "keyword_weight": 0.30,
+}
+_DEFAULT_RAG: dict[str, object] = {
+    "context_token_budget": 6000,
+    "max_chunk_tokens": 1200,
+    "dedupe_min_hash_prefix": 16,
+    "include_snippets": True,
+}
+_DEFAULT_LLM: dict[str, object] = {
+    "provider": "ollama",
+    "model": "llama3.1:8b",
+    "timeout_seconds": 120.0,
+    "temperature": 0.1,
+}
+_ALLOWED_KEYS = frozenset(_DEFAULTS) | {
+    "ingestion",
+    "embeddings",
+    "vector_store",
+    "retrieval",
+    "rag",
+    "llm",
+}
 _ALLOWED_INGESTION_KEYS = frozenset(_DEFAULT_INGESTION)
+_ALLOWED_EMBEDDINGS_KEYS = frozenset(_DEFAULT_EMBEDDINGS)
+_ALLOWED_VECTOR_STORE_KEYS = frozenset(_DEFAULT_VECTOR_STORE)
+_ALLOWED_RETRIEVAL_KEYS = frozenset(_DEFAULT_RETRIEVAL)
+_ALLOWED_RAG_KEYS = frozenset(_DEFAULT_RAG)
+_ALLOWED_LLM_KEYS = frozenset(_DEFAULT_LLM)
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+_RETRIEVAL_MODES = frozenset({"semantic", "keyword", "hybrid"})
 
 
 class ConfigError(ValueError):
@@ -93,6 +138,58 @@ class IngestionSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class EmbeddingsSettings:
+    """Configuracion efectiva para embeddings locales."""
+
+    provider: str
+    model: str
+    batch_size: int
+    timeout_seconds: float
+    normalize: bool
+
+
+@dataclass(frozen=True, slots=True)
+class VectorStoreSettings:
+    """Configuracion efectiva del almacenamiento vectorial inicial."""
+
+    provider: str
+    table_prefix: str
+    distance: str
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalSettings:
+    """Configuracion efectiva de recuperacion semantica/hibrida."""
+
+    mode: str
+    top_k: int
+    candidate_k: int
+    similarity_threshold: float
+    vector_weight: float
+    keyword_weight: float
+
+
+@dataclass(frozen=True, slots=True)
+class RagSettings:
+    """Configuracion efectiva del ensamblado de contexto RAG."""
+
+    context_token_budget: int
+    max_chunk_tokens: int
+    dedupe_min_hash_prefix: int
+    include_snippets: bool
+
+
+@dataclass(frozen=True, slots=True)
+class LlmSettings:
+    """Configuracion efectiva del proveedor LLM local."""
+
+    provider: str
+    model: str
+    timeout_seconds: float
+    temperature: float
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """Configuración efectiva e inmutable de Barbarion."""
 
@@ -105,6 +202,11 @@ class Settings:
     ollama_url: str
     ollama_timeout_seconds: float
     ingestion: IngestionSettings
+    embeddings: EmbeddingsSettings
+    vector_store: VectorStoreSettings
+    retrieval: RetrievalSettings
+    rag: RagSettings
+    llm: LlmSettings
     config_source: Path | None
 
 
@@ -143,6 +245,11 @@ def load_settings(
             values["ollama_timeout_seconds"]
         ),
         ingestion=_build_ingestion_settings(values.get("ingestion"), base_dir),
+        embeddings=_build_embeddings_settings(values.get("embeddings")),
+        vector_store=_build_vector_store_settings(values.get("vector_store")),
+        retrieval=_build_retrieval_settings(values.get("retrieval")),
+        rag=_build_rag_settings(values.get("rag")),
+        llm=_build_llm_settings(values.get("llm")),
         config_source=source,
     )
 
@@ -185,6 +292,31 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ),
         ("ingestion.max_pdf_pages", str(settings.ingestion.max_pdf_pages)),
         ("ingestion.encodings", _format_items(settings.ingestion.encodings)),
+        ("embeddings.provider", settings.embeddings.provider),
+        ("embeddings.model", settings.embeddings.model),
+        ("embeddings.batch_size", str(settings.embeddings.batch_size)),
+        ("embeddings.timeout_seconds", str(settings.embeddings.timeout_seconds)),
+        ("embeddings.normalize", str(settings.embeddings.normalize).lower()),
+        ("vector_store.provider", settings.vector_store.provider),
+        ("vector_store.table_prefix", settings.vector_store.table_prefix),
+        ("vector_store.distance", settings.vector_store.distance),
+        ("retrieval.mode", settings.retrieval.mode),
+        ("retrieval.top_k", str(settings.retrieval.top_k)),
+        ("retrieval.candidate_k", str(settings.retrieval.candidate_k)),
+        (
+            "retrieval.similarity_threshold",
+            str(settings.retrieval.similarity_threshold),
+        ),
+        ("retrieval.vector_weight", str(settings.retrieval.vector_weight)),
+        ("retrieval.keyword_weight", str(settings.retrieval.keyword_weight)),
+        ("rag.context_token_budget", str(settings.rag.context_token_budget)),
+        ("rag.max_chunk_tokens", str(settings.rag.max_chunk_tokens)),
+        ("rag.dedupe_min_hash_prefix", str(settings.rag.dedupe_min_hash_prefix)),
+        ("rag.include_snippets", str(settings.rag.include_snippets).lower()),
+        ("llm.provider", settings.llm.provider),
+        ("llm.model", settings.llm.model),
+        ("llm.timeout_seconds", str(settings.llm.timeout_seconds)),
+        ("llm.temperature", str(settings.llm.temperature)),
     )
 
 
@@ -319,6 +451,16 @@ def _validate_timeout(value: object) -> float:
     return timeout
 
 
+def _validate_positive_timeout(value: object, key: str) -> float:
+    """Valida timeouts operativos de H3."""
+    timeout = _validate_float(value, key)
+    if timeout <= 0 or timeout > 600:
+        raise ConfigError(
+            f"La clave '{key}' debe ser mayor que 0 y menor o igual que 600."
+        )
+    return timeout
+
+
 def _validate_ollama_url(value: object) -> str:
     """Valida una URL HTTP(S) base y sin credenciales."""
     url = _require_non_empty_string(value, "ollama_url")
@@ -405,6 +547,173 @@ def _build_ingestion_settings(value: object, base_dir: Path) -> IngestionSetting
     )
 
 
+def _build_embeddings_settings(value: object) -> EmbeddingsSettings:
+    """Construye la configuracion de embeddings H3."""
+    values = _merge_section(
+        value,
+        "embeddings",
+        _DEFAULT_EMBEDDINGS,
+        _ALLOWED_EMBEDDINGS_KEYS,
+    )
+    provider = _validate_choice(
+        values["provider"],
+        "embeddings.provider",
+        {"ollama"},
+    )
+    return EmbeddingsSettings(
+        provider=provider,
+        model=_require_non_empty_string(values["model"], "embeddings.model"),
+        batch_size=_validate_int_range(
+            values["batch_size"],
+            "embeddings.batch_size",
+            minimum=1,
+            maximum=128,
+        ),
+        timeout_seconds=_validate_positive_timeout(
+            values["timeout_seconds"],
+            "embeddings.timeout_seconds",
+        ),
+        normalize=_validate_bool(values["normalize"], "embeddings.normalize"),
+    )
+
+
+def _build_vector_store_settings(value: object) -> VectorStoreSettings:
+    """Construye la configuracion del vector store H3."""
+    values = _merge_section(
+        value,
+        "vector_store",
+        _DEFAULT_VECTOR_STORE,
+        _ALLOWED_VECTOR_STORE_KEYS,
+    )
+    provider = _validate_choice(
+        values["provider"],
+        "vector_store.provider",
+        {"sqlite_vec"},
+    )
+    return VectorStoreSettings(
+        provider=provider,
+        table_prefix=_validate_identifier(
+            values["table_prefix"],
+            "vector_store.table_prefix",
+        ),
+        distance=_validate_choice(
+            values["distance"],
+            "vector_store.distance",
+            {"cosine"},
+        ),
+    )
+
+
+def _build_retrieval_settings(value: object) -> RetrievalSettings:
+    """Construye la configuracion de recuperacion H3."""
+    values = _merge_section(
+        value,
+        "retrieval",
+        _DEFAULT_RETRIEVAL,
+        _ALLOWED_RETRIEVAL_KEYS,
+    )
+    top_k = _validate_int_range(
+        values["top_k"],
+        "retrieval.top_k",
+        minimum=1,
+        maximum=100,
+    )
+    candidate_k = _validate_int_range(
+        values["candidate_k"],
+        "retrieval.candidate_k",
+        minimum=top_k,
+        maximum=1000,
+    )
+    vector_weight = _validate_unit_float(
+        values["vector_weight"],
+        "retrieval.vector_weight",
+    )
+    keyword_weight = _validate_unit_float(
+        values["keyword_weight"],
+        "retrieval.keyword_weight",
+    )
+    if vector_weight + keyword_weight <= 0:
+        raise ConfigError(
+            "La suma de 'retrieval.vector_weight' y "
+            "'retrieval.keyword_weight' debe ser mayor que 0."
+        )
+    return RetrievalSettings(
+        mode=_validate_choice(values["mode"], "retrieval.mode", _RETRIEVAL_MODES),
+        top_k=top_k,
+        candidate_k=candidate_k,
+        similarity_threshold=_validate_unit_float(
+            values["similarity_threshold"],
+            "retrieval.similarity_threshold",
+        ),
+        vector_weight=vector_weight,
+        keyword_weight=keyword_weight,
+    )
+
+
+def _build_rag_settings(value: object) -> RagSettings:
+    """Construye la configuracion del context builder H3."""
+    values = _merge_section(value, "rag", _DEFAULT_RAG, _ALLOWED_RAG_KEYS)
+    return RagSettings(
+        context_token_budget=_validate_int_range(
+            values["context_token_budget"],
+            "rag.context_token_budget",
+            minimum=501,
+            maximum=200_000,
+        ),
+        max_chunk_tokens=_validate_int_range(
+            values["max_chunk_tokens"],
+            "rag.max_chunk_tokens",
+            minimum=1,
+            maximum=200_000,
+        ),
+        dedupe_min_hash_prefix=_validate_int_range(
+            values["dedupe_min_hash_prefix"],
+            "rag.dedupe_min_hash_prefix",
+            minimum=8,
+            maximum=64,
+        ),
+        include_snippets=_validate_bool(
+            values["include_snippets"],
+            "rag.include_snippets",
+        ),
+    )
+
+
+def _build_llm_settings(value: object) -> LlmSettings:
+    """Construye la configuracion del LLM local H3."""
+    values = _merge_section(value, "llm", _DEFAULT_LLM, _ALLOWED_LLM_KEYS)
+    return LlmSettings(
+        provider=_validate_choice(values["provider"], "llm.provider", {"ollama"}),
+        model=_require_non_empty_string(values["model"], "llm.model"),
+        timeout_seconds=_validate_positive_timeout(
+            values["timeout_seconds"],
+            "llm.timeout_seconds",
+        ),
+        temperature=_validate_unit_float(values["temperature"], "llm.temperature"),
+    )
+
+
+def _merge_section(
+    value: object,
+    section: str,
+    defaults: dict[str, object],
+    allowed_keys: frozenset[str],
+) -> dict[str, object]:
+    """Mezcla defaults y una seccion TOML H3 validando claves."""
+    if value is None:
+        raw_section: dict[str, object] = {}
+    elif isinstance(value, dict):
+        raw_section = value
+    else:
+        raise ConfigError(f"La seccion '{section}' debe ser una tabla TOML.")
+
+    unknown_keys = sorted(set(raw_section) - allowed_keys)
+    if unknown_keys:
+        formatted = ", ".join(f"{section}.{key}" for key in unknown_keys)
+        raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
+    return {**defaults, **raw_section}
+
+
 def _validate_int_range(
     value: object,
     key: str,
@@ -420,6 +729,51 @@ def _validate_int_range(
     if maximum is not None and value > maximum:
         raise ConfigError(f"La clave '{key}' debe ser menor o igual que {maximum}.")
     return value
+
+
+def _validate_bool(value: object, key: str) -> bool:
+    """Valida un booleano TOML estricto."""
+    if not isinstance(value, bool):
+        raise ConfigError(f"La clave '{key}' debe ser booleana.")
+    return value
+
+
+def _validate_float(value: object, key: str) -> float:
+    """Valida un numero real TOML."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"La clave '{key}' debe ser un numero.")
+    return float(value)
+
+
+def _validate_unit_float(value: object, key: str) -> float:
+    """Valida un flotante entre 0 y 1 inclusivo."""
+    number = _validate_float(value, key)
+    if not 0 <= number <= 1:
+        raise ConfigError(f"La clave '{key}' debe estar entre 0 y 1.")
+    return number
+
+
+def _validate_choice(value: object, key: str, allowed: frozenset[str] | set[str]) -> str:
+    """Valida una cadena contra un conjunto de opciones."""
+    normalized = _require_non_empty_string(value, key).lower()
+    if normalized not in allowed:
+        formatted = ", ".join(sorted(allowed))
+        raise ConfigError(f"La clave '{key}' debe ser uno de estos valores: {formatted}.")
+    return normalized
+
+
+def _validate_identifier(value: object, key: str) -> str:
+    """Valida identificadores simples para prefijos de tablas locales."""
+    identifier = _require_non_empty_string(value, key)
+    if (
+        not (identifier[0].isalpha() or identifier[0] == "_")
+        or any(not (character.isalnum() or character == "_") for character in identifier)
+    ):
+        raise ConfigError(
+            f"La clave '{key}' debe ser un identificador compuesto por letras, "
+            "numeros o guion bajo, y no debe iniciar con numero."
+        )
+    return identifier
 
 
 def _resolve_path_list(value: object, key: str, base_dir: Path) -> tuple[Path, ...]:

@@ -31,6 +31,10 @@ from barbarion.domain.models import (
     NormalizedDocument,
     PipelineError,
 )
+from barbarion.domain.rag import (
+    EmbeddingManifest,
+    EmbeddingManifestStatus,
+)
 
 
 DATABASE_LOCKED = "DATABASE_LOCKED"
@@ -209,6 +213,159 @@ INGESTION_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE INDEX IF NOT EXISTS idx_errors_error_code
     ON errors(error_code)
+    """,
+)
+
+RAG_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS embedding_manifests (
+        id INTEGER PRIMARY KEY,
+        version TEXT NOT NULL UNIQUE,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        dimension INTEGER NOT NULL CHECK (dimension > 0),
+        distance TEXT NOT NULL,
+        normalize INTEGER NOT NULL CHECK (normalize IN (0, 1)),
+        vector_provider TEXT NOT NULL,
+        vector_table TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('active', 'obsolete', 'failed')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_embedding_manifests_status
+    ON embedding_manifests(status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_embedding_manifests_provider_model
+    ON embedding_manifests(provider, model)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS embedding_runs (
+        id INTEGER PRIMARY KEY,
+        manifest_id INTEGER NOT NULL REFERENCES embedding_manifests(id),
+        mode TEXT NOT NULL CHECK (mode IN ('incremental', 'full', 'partial')),
+        status TEXT NOT NULL CHECK (
+            status IN (
+                'running',
+                'completed',
+                'completed_with_errors',
+                'failed',
+                'interrupted'
+            )
+        ),
+        scope_json TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        new_chunks INTEGER NOT NULL DEFAULT 0 CHECK (new_chunks >= 0),
+        updated_chunks INTEGER NOT NULL DEFAULT 0 CHECK (updated_chunks >= 0),
+        unchanged_chunks INTEGER NOT NULL DEFAULT 0 CHECK (unchanged_chunks >= 0),
+        deleted_chunks INTEGER NOT NULL DEFAULT 0 CHECK (deleted_chunks >= 0),
+        failed_chunks INTEGER NOT NULL DEFAULT 0 CHECK (failed_chunks >= 0),
+        duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0),
+        embedding_ms INTEGER CHECK (embedding_ms IS NULL OR embedding_ms >= 0),
+        vector_ms INTEGER CHECK (vector_ms IS NULL OR vector_ms >= 0)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_embedding_runs_manifest_id
+    ON embedding_runs(manifest_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_embedding_runs_started_at
+    ON embedding_runs(started_at DESC)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chunk_embeddings (
+        chunk_id TEXT NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+        manifest_id INTEGER NOT NULL REFERENCES embedding_manifests(id),
+        content_sha256 TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (
+            status IN ('indexed', 'stale', 'deleted', 'error')
+        ),
+        vector_ref TEXT NOT NULL,
+        last_run_id INTEGER REFERENCES embedding_runs(id),
+        error_code TEXT,
+        error_message TEXT,
+        symbol_name TEXT,
+        symbol_kind TEXT,
+        parent_symbol TEXT,
+        package_name TEXT,
+        procedure_name TEXT,
+        class_name TEXT,
+        event_name TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(chunk_id, manifest_id)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_manifest_status
+    ON chunk_embeddings(manifest_id, status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_symbols
+    ON chunk_embeddings(symbol_name, symbol_kind)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS rag_queries (
+        id INTEGER PRIMARY KEY,
+        manifest_id INTEGER REFERENCES embedding_manifests(id),
+        query_text_sha256 TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK (mode IN ('semantic', 'keyword', 'hybrid')),
+        top_k INTEGER NOT NULL CHECK (top_k > 0),
+        filters_json TEXT NOT NULL,
+        candidate_count INTEGER NOT NULL DEFAULT 0 CHECK (candidate_count >= 0),
+        context_sources INTEGER NOT NULL DEFAULT 0 CHECK (context_sources >= 0),
+        vector_ms INTEGER CHECK (vector_ms IS NULL OR vector_ms >= 0),
+        keyword_ms INTEGER CHECK (keyword_ms IS NULL OR keyword_ms >= 0),
+        ranking_ms INTEGER CHECK (ranking_ms IS NULL OR ranking_ms >= 0),
+        context_ms INTEGER CHECK (context_ms IS NULL OR context_ms >= 0),
+        llm_ms INTEGER CHECK (llm_ms IS NULL OR llm_ms >= 0),
+        context_precision REAL CHECK (
+            context_precision IS NULL
+            OR (context_precision >= 0 AND context_precision <= 1)
+        ),
+        context_recall REAL CHECK (
+            context_recall IS NULL
+            OR (context_recall >= 0 AND context_recall <= 1)
+        ),
+        duplicate_ratio REAL CHECK (
+            duplicate_ratio IS NULL
+            OR (duplicate_ratio >= 0 AND duplicate_ratio <= 1)
+        ),
+        token_waste REAL CHECK (
+            token_waste IS NULL OR (token_waste >= 0 AND token_waste <= 1)
+        ),
+        status TEXT NOT NULL CHECK (
+            status IN ('completed', 'insufficient_evidence', 'error')
+        ),
+        created_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_rag_queries_created_at
+    ON rag_queries(created_at DESC)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS symbol_occurrences (
+        id INTEGER PRIMARY KEY,
+        chunk_id TEXT NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+        symbol_name TEXT,
+        symbol_kind TEXT,
+        line_start INTEGER CHECK (line_start IS NULL OR line_start > 0),
+        line_end INTEGER CHECK (line_end IS NULL OR line_end > 0),
+        CHECK ((line_start IS NULL AND line_end IS NULL) OR line_end >= line_start)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_symbol_occurrences_chunk_id
+    ON symbol_occurrences(chunk_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_symbol_occurrences_symbol
+    ON symbol_occurrences(symbol_name, symbol_kind)
     """,
 )
 
@@ -839,6 +996,136 @@ class SQLiteIngestionRepository:
                 _utc_now(),
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class PersistedEmbeddingManifest:
+    """Manifest de embeddings persistido en SQLite."""
+
+    id: int
+    manifest: EmbeddingManifest
+    vector_provider: str
+    vector_table: str
+    status: EmbeddingManifestStatus
+
+
+@dataclass(frozen=True, slots=True)
+class SQLiteRagRepository:
+    """Repositorio minimo H3 respaldado por SQLite local."""
+
+    database_path: Path
+    vector_provider: str = "sqlite_vec"
+    vector_table: str = "rag_chunk_vectors"
+
+    def get_or_create_manifest(
+        self,
+        manifest: EmbeddingManifest,
+        *,
+        status: EmbeddingManifestStatus = EmbeddingManifestStatus.ACTIVE,
+    ) -> PersistedEmbeddingManifest:
+        """Obtiene o crea un manifest de embeddings por version canonica."""
+        now = _utc_now()
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, version, provider, model, dimension, distance,
+                       normalize, vector_provider, vector_table, status
+                FROM embedding_manifests
+                WHERE version = ?
+                """,
+                (manifest.version,),
+            ).fetchone()
+            if row is None:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO embedding_manifests(
+                        version, provider, model, dimension, distance, normalize,
+                        vector_provider, vector_table, status, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        manifest.version,
+                        manifest.provider,
+                        manifest.model,
+                        manifest.dimension,
+                        manifest.distance,
+                        1 if manifest.normalize else 0,
+                        self.vector_provider,
+                        self.vector_table,
+                        status.value,
+                        now,
+                        now,
+                    ),
+                )
+                connection.commit()
+                manifest_id = int(cursor.lastrowid)
+                return PersistedEmbeddingManifest(
+                    id=manifest_id,
+                    manifest=manifest,
+                    vector_provider=self.vector_provider,
+                    vector_table=self.vector_table,
+                    status=status,
+                )
+        return _manifest_from_row(row)
+
+    def mark_other_manifests_obsolete(self, active_version: str) -> int:
+        """Marca obsoletos los manifests activos que no coinciden con la version."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE embedding_manifests
+                SET status = 'obsolete', updated_at = ?
+                WHERE version <> ? AND status = 'active'
+                """,
+                (_utc_now(), active_version),
+            )
+            connection.commit()
+            return int(cursor.rowcount)
+
+    def list_manifests(self) -> tuple[PersistedEmbeddingManifest, ...]:
+        """Lista manifests de embeddings en orden estable."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, version, provider, model, dimension, distance,
+                       normalize, vector_provider, vector_table, status
+                FROM embedding_manifests
+                ORDER BY id
+                """
+            ).fetchall()
+        return tuple(_manifest_from_row(row) for row in rows)
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.database_path, timeout=5.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    def _connect_readonly(self) -> sqlite3.Connection:
+        uri = self.database_path.resolve(strict=False).as_uri() + "?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=5.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+
+def _manifest_from_row(row: sqlite3.Row) -> PersistedEmbeddingManifest:
+    manifest = EmbeddingManifest(
+        provider=str(row["provider"]),
+        model=str(row["model"]),
+        dimension=int(row["dimension"]),
+        distance=str(row["distance"]),
+        normalize=bool(row["normalize"]),
+        version=str(row["version"]),
+    )
+    return PersistedEmbeddingManifest(
+        id=int(row["id"]),
+        manifest=manifest,
+        vector_provider=str(row["vector_provider"]),
+        vector_table=str(row["vector_table"]),
+        status=EmbeddingManifestStatus(str(row["status"])),
+    )
 
 
 def _execute_with_retries(

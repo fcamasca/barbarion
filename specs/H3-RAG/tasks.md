@@ -13,7 +13,7 @@
 
 ### H3-T01 - Extender configuracion RAG
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H2 aceptado.  
 **Requisitos:** H3-REQ-001, H3-NFR-005.
@@ -27,7 +27,7 @@
 
 ### H3-T02 - Actualizar configuracion de ejemplo y docs operativas
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** S.  
 **Dependencias:** H3-T01.  
 **Requisitos:** H3-REQ-001, H3-REQ-019.
@@ -40,7 +40,7 @@
 
 ### H3-T03 - Definir modelos y puertos RAG
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T01.  
 **Requisitos:** H3-REQ-002, H3-REQ-015, H3-REQ-016, H3-NFR-006.
@@ -54,7 +54,7 @@
 
 ### H3-T04 - Crear migracion SQLite v3
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T03.  
 **Requisitos:** H3-REQ-006, H3-NFR-008.
@@ -69,7 +69,7 @@
 
 ### H3-T05 - Implementar manifest de embeddings
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T04.  
 **Requisitos:** H3-REQ-004.
@@ -83,7 +83,7 @@
 
 ### H3-T06 - Implementar provider fake de embeddings
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** S.  
 **Dependencias:** H3-T03.  
 **Requisitos:** H3-REQ-002, H3-NFR-008.
@@ -96,7 +96,7 @@
 
 ### H3-T07 - Implementar adaptador Ollama embeddings
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T03, H3-T05.  
 **Requisitos:** H3-REQ-003, H3-NFR-001.
@@ -110,7 +110,7 @@
 
 ### H3-T08 - Incorporar dependencia sqlite-vec
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** S.  
 **Dependencias:** packaging vigente.  
 **Requisitos:** H3-REQ-005, H3-NFR-005.
@@ -123,7 +123,7 @@
 
 ### H3-T09 - Implementar adaptador sqlite-vec
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T08, H3-T05.  
 **Requisitos:** H3-REQ-005.

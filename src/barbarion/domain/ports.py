@@ -19,6 +19,14 @@ from barbarion.domain.models import (
     PipelineError,
     SourceFile,
 )
+from barbarion.domain.rag import (
+    EmbeddingManifest,
+    EmbeddingRequest,
+    EmbeddingVector,
+    RetrievalCandidate,
+    RetrievalFilter,
+    VectorMetadata,
+)
 from barbarion.domain.ingestion import PersistedFileState
 
 
@@ -147,3 +155,50 @@ class IngestionRepositoryPort(Protocol):
 
     def current_metrics(self) -> IngestionMetrics:
         """Devuelve metricas de solo lectura del inventario vigente."""
+
+
+class EmbeddingProviderPort(Protocol):
+    """Contrato para proveedores de embeddings locales."""
+
+    provider: str
+    model: str
+
+    def embed(self, request: EmbeddingRequest) -> tuple[EmbeddingVector, ...]:
+        """Genera embeddings para un batch de textos."""
+
+
+class VectorStorePort(Protocol):
+    """Contrato para almacenamiento vectorial local inicial."""
+
+    def upsert(
+        self,
+        *,
+        manifest: EmbeddingManifest,
+        chunk_id: str,
+        vector: Sequence[float],
+        metadata: VectorMetadata,
+    ) -> None:
+        """Inserta o reemplaza un vector asociado a un chunk."""
+
+    def delete(self, *, manifest: EmbeddingManifest, chunk_id: str) -> None:
+        """Elimina o invalida un vector asociado a un chunk."""
+
+    def search(
+        self,
+        *,
+        manifest: EmbeddingManifest,
+        query_vector: Sequence[float],
+        filters: RetrievalFilter,
+        top_k: int,
+    ) -> tuple[RetrievalCandidate, ...]:
+        """Devuelve candidatos ordenados por similitud."""
+
+
+class LlmProviderPort(Protocol):
+    """Contrato para generacion local asistida por LLM."""
+
+    provider: str
+    model: str
+
+    def generate(self, *, prompt: str, timeout_seconds: float) -> str:
+        """Genera una respuesta desde un prompt controlado."""

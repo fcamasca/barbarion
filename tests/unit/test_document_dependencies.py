@@ -11,6 +11,7 @@ def test_document_dependencies_are_declared_for_runtime() -> None:
     assert pyproject["project"]["dependencies"] == [
         "pypdf>=6.0,<7",
         "python-docx>=1.1,<2",
+        "sqlite-vec>=0.1,<1",
     ]
 
 

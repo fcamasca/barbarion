@@ -149,7 +149,7 @@
 
 ### H2-T11 — Crear BaseParser y registro
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T03.  
 **Requisitos:** H2-REQ-009.

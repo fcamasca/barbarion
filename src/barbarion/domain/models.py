@@ -189,6 +189,7 @@ class ChunkCandidate:
     chunk_type: str
     content: str
     content_sha256: str
+    chunk_id: str | None = None
     start_line: int | None = None
     end_line: int | None = None
     start_char: int | None = None
@@ -201,6 +202,8 @@ class ChunkCandidate:
 
     def __post_init__(self) -> None:
         _require_non_negative(self.ordinal, "ordinal")
+        if self.chunk_id is not None:
+            _require_sha256(self.chunk_id, "chunk_id")
         _require_non_empty(self.chunk_type, "chunk_type")
         _require_non_empty(self.content, "content")
         _require_sha256(self.content_sha256, "content_sha256")
@@ -334,4 +337,3 @@ def _validate_optional_range(
 
 def _freeze_mapping(values: dict[str, Any]) -> MappingProxyType[str, Any]:
     return MappingProxyType(dict(values))
-

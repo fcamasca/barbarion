@@ -129,6 +129,7 @@ def test_normalized_document_and_chunk_candidate_validate_hashes() -> None:
     )
     chunk = ChunkCandidate(
         ordinal=0,
+        chunk_id=None,
         chunk_type="file",
         content=document.text,
         content_sha256=OTHER_SHA,
@@ -146,6 +147,7 @@ def test_chunk_candidate_requires_content() -> None:
     with pytest.raises(ValueError, match="content"):
         ChunkCandidate(
             ordinal=0,
+            chunk_id=None,
             chunk_type="file",
             content="",
             content_sha256=VALID_SHA,
@@ -183,4 +185,3 @@ def test_failed_outcome_requires_typed_error() -> None:
             status=IngestionRunStatus.FAILED,
             metrics=IngestionMetrics(),
         )
-

@@ -294,7 +294,7 @@
 
 ### H2-T22 — Implementar normalización
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T03.  
 **Requisitos:** H2-REQ-016.
@@ -308,7 +308,7 @@
 
 ### H2-T23 — Implementar chunking base
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T22.  
 **Requisitos:** H2-REQ-017.
@@ -322,7 +322,7 @@
 
 ### H2-T24 — Implementar trazabilidad e IDs
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T09, H2-T23.  
 **Requisitos:** H2-REQ-018, H2-NFR-002.

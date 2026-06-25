@@ -182,6 +182,40 @@ def test_chunking_splits_large_units_by_lines_and_overlap() -> None:
     assert chunks[1].content.startswith("bb")
 
 
+def test_chunking_overlap_does_not_repeat_break_inside_previous_overlap() -> None:
+    text = "\n".join(
+        [
+            "global type w_overlap from window",
+            "a" * 3650,
+            "b" * 1590,
+            "c" * 5000,
+            "end type",
+        ]
+    )
+    unit = LogicalUnit(
+        unit_type="window",
+        name="w_overlap",
+        confidence=Confidence.HIGH,
+        start_line=1,
+        end_line=5,
+        metadata={"object_type": "window", "object_name": "w_overlap"},
+    )
+    document = normalize_extraction(extraction(text, (unit,)), source_sha256=SOURCE_SHA)
+
+    chunks = chunk_document(
+        document,
+        file_identity="powerbuilder/w_overlap.srw",
+        processing_signature=PROCESSING_SIGNATURE,
+        chunk_size=4000,
+        chunk_overlap=400,
+    )
+    chunk_ids = [chunk.chunk_id for chunk in chunks]
+
+    assert len(chunks) > 2
+    assert len(chunk_ids) == len(set(chunk_ids))
+    assert all(len(chunk.content) <= 4000 for chunk in chunks)
+
+
 def test_chunking_uses_paragraphs_when_document_has_no_units() -> None:
     document = NormalizedDocument(
         text="primer parrafo\n\nsegundo parrafo",

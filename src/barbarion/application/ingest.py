@@ -85,6 +85,7 @@ class IngestionService:
             Path(root).expanduser().resolve(strict=False) for root in effective_roots
         }
         seen_files: list[tuple[DiscoveredFile, PersistedFileState]] = []
+        current_file: DiscoveredFile | None = None
         interrupted = False
 
         try:
@@ -119,6 +120,7 @@ class IngestionService:
                         completed_roots = _remove_unsafe_roots(completed_roots, item)
                     continue
                 metrics = _add_discovered(metrics, item)
+                current_file = item
                 try:
                     metrics = self._process_file(
                         run_id=run_id,
@@ -163,7 +165,9 @@ class IngestionService:
                             discovered_file=item,
                         )
                         metrics = _add_error(metrics)
+                current_file = None
             if not interrupted:
+                current_file = None
                 _mark_seen_many(
                     self.repository,
                     run_id=run_id,
@@ -201,17 +205,22 @@ class IngestionService:
             self.repository.finish_run(run_id=run_id, outcome=outcome)
             return outcome
         except Exception as exc:
+            error = _fatal_pipeline_error(exc, current_file)
+            self._log_fatal_error(error, exc)
+            metrics = _add_error(metrics)
             outcome = IngestionOutcome(
                 status=IngestionRunStatus.FAILED,
                 metrics=_with_duration(metrics, started),
-                error=PipelineError(
-                    stage=ErrorStage.PERSISTENCE,
-                    error_code=_fatal_error_code(exc),
-                    message="La ingesta fallo por un error fatal.",
-                    recoverable=False,
-                    exception_type=type(exc).__name__,
-                ),
+                error=error,
             )
+            try:
+                self.repository.record_error(
+                    run_id=run_id,
+                    error=error,
+                    discovered_file=current_file,
+                )
+            except Exception as record_exc:
+                self._log_fatal_record_failure(record_exc)
             self.repository.finish_run(run_id=run_id, outcome=outcome)
             return outcome
 
@@ -305,6 +314,39 @@ class IngestionService:
             error.error_code,
         )
 
+    def _log_fatal_error(self, error: PipelineError, exc: Exception) -> None:
+        if self.logger is None:
+            return
+        self.logger.error(
+            "Error fatal de ingesta stage=%s path=%s code=%s "
+            "exception_type=%s technical_message=%s recoverable=%s",
+            error.stage.value,
+            error.relative_path.as_posix() if error.relative_path is not None else "n/a",
+            error.error_code,
+            error.exception_type or "n/a",
+            error.details.get("technical_message", str(exc)),
+            error.recoverable,
+        )
+        self.logger.debug(
+            "Traceback de ingesta fatal",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
+    def _log_fatal_record_failure(self, exc: Exception) -> None:
+        if self.logger is None:
+            return
+        root = _root_exception(exc)
+        self.logger.error(
+            "No se pudo persistir el error fatal de ingesta "
+            "exception_type=%s technical_message=%s",
+            type(root).__name__,
+            str(root),
+        )
+        self.logger.debug(
+            "Traceback al persistir error fatal",
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
 
 def _pipeline_error(
     stage: ErrorStage,
@@ -335,6 +377,38 @@ def _fatal_error_code(exc: Exception) -> str:
     if type(exc).__name__.endswith("SQLiteIngestionError"):
         return "DATABASE_WRITE_FAILED"
     return "INGEST_FAILED"
+
+
+def _fatal_pipeline_error(
+    exc: Exception,
+    discovered_file: DiscoveredFile | None,
+) -> PipelineError:
+    root = _root_exception(exc)
+    details = {
+        "technical_message": str(root),
+        "wrapped_exception_type": type(exc).__name__,
+        "wrapped_message": str(exc),
+    }
+    if root is not exc:
+        details["root_exception_type"] = type(root).__name__
+    return PipelineError(
+        stage=ErrorStage.PERSISTENCE,
+        error_code=_fatal_error_code(exc),
+        message="La ingesta fallo por un error fatal de persistencia.",
+        recoverable=False,
+        relative_path=None if discovered_file is None else discovered_file.relative_path,
+        exception_type=type(root).__name__,
+        details=details,
+    )
+
+
+def _root_exception(exc: Exception) -> BaseException:
+    current: BaseException = exc
+    seen: set[int] = set()
+    while current.__cause__ is not None and id(current.__cause__) not in seen:
+        seen.add(id(current))
+        current = current.__cause__
+    return current
 
 
 def _remove_unsafe_roots(

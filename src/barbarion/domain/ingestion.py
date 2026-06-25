@@ -488,12 +488,18 @@ def _split_text(text: str, *, chunk_size: int, overlap: int) -> tuple[str, ...]:
         return (text,)
     chunks: list[str] = []
     start = 0
+    previous_end = 0
     while start < len(text):
         hard_end = min(len(text), start + chunk_size)
         end = _best_break(text, start=start, hard_end=hard_end)
+        if chunks and end <= previous_end:
+            end = hard_end
+        if end <= start:
+            end = hard_end
         piece = text[start:end].strip()
         if piece:
             chunks.append(piece)
+            previous_end = end
         if end >= len(text):
             break
         start = max(end - overlap, start + 1)

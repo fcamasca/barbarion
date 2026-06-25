@@ -48,6 +48,7 @@ def build_h2_corpus(target: Path, *, include_errors: bool = False) -> Path:
     shutil.copytree(FIXTURE_ROOT, target)
     _write_binary_samples(target)
     _write_cp1252_sample(target)
+    _write_powerbuilder_overlap_sample(target)
     _write_large_text(target)
     if not include_errors:
         shutil.rmtree(target / "errors")
@@ -97,6 +98,31 @@ def _write_cp1252_sample(root: Path) -> None:
 def _write_large_text(root: Path) -> None:
     lines = [f"Linea sintetica {index:03d}" for index in range(120)]
     (root / "docs" / "large.txt").write_text("\n\n".join(lines), encoding="utf-8")
+
+
+def _write_powerbuilder_overlap_sample(root: Path) -> None:
+    (root / "powerbuilder" / "w_overlap.srw").write_text(
+        powerbuilder_overlap_content("w_overlap"),
+        encoding="utf-8",
+    )
+
+
+def powerbuilder_overlap_content(name: str) -> str:
+    """Genera un export PowerBuilder que fuerza overlap cerca de un corte."""
+    return "\n".join(
+        [
+            f"$PBExportHeader${name}.srw",
+            f"global type {name} from window",
+            "a" * 3650,
+            "b" * 1590,
+            "c" * 5000,
+            "end type",
+            "",
+            "event open;",
+            "messagebox('ok', 'ok')",
+            "end event",
+        ]
+    )
 
 
 def _write_text_pdf(path: Path, pages: tuple[str, ...]) -> None:

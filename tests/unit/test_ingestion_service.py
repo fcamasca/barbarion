@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
@@ -22,7 +24,6 @@ from barbarion.infrastructure.parsers.base import BaseParser
 from barbarion.infrastructure.parsers.registry import ParserRegistry
 from barbarion.infrastructure.sqlite import SQLiteIngestionError, SQLiteIngestionRepository
 from barbarion.database import initialize_database
-import sqlite3
 
 
 def make_file(root: Path, relative: str, content: str) -> DiscoveredFile:
@@ -66,6 +67,8 @@ class FailingRepository:
     def __init__(self) -> None:
         self.finished = None
         self.reconciled = False
+        self.recorded_error = None
+        self.recorded_file = None
 
     def begin_run(self, *, domain, mode, roots, config_sha256):
         return 1
@@ -74,7 +77,12 @@ class FailingRepository:
         return None
 
     def replace_document(self, **kwargs):
-        raise SQLiteIngestionError("DATABASE_WRITE_FAILED: sin espacio")
+        try:
+            raise sqlite3.IntegrityError("UNIQUE constraint failed: chunks.id")
+        except sqlite3.IntegrityError as exc:
+            raise SQLiteIngestionError(
+                "DATABASE_WRITE_FAILED: UNIQUE constraint failed: chunks.id"
+            ) from exc
 
     def mark_seen(self, **kwargs):
         raise AssertionError("no esperado")
@@ -83,7 +91,8 @@ class FailingRepository:
         raise AssertionError("no esperado")
 
     def record_error(self, **kwargs):
-        raise AssertionError("no esperado")
+        self.recorded_error = kwargs["error"]
+        self.recorded_file = kwargs.get("discovered_file")
 
     def reconcile_deleted(self, **kwargs):
         self.reconciled = True
@@ -238,22 +247,37 @@ def test_ingestion_service_does_not_reconcile_after_interrupt(tmp_path: Path) ->
     assert repository.current_metrics().processed_files == 1
 
 
-def test_ingestion_service_marks_database_errors_as_fatal(tmp_path: Path) -> None:
+def test_ingestion_service_marks_database_errors_as_fatal(
+    tmp_path: Path,
+    caplog,
+) -> None:
     root = tmp_path / "sources"
     ok = make_file(root, "ok.txt", "contenido valido")
     settings = settings_for(tmp_path, root)
     repository = FailingRepository()
+    logger = logging.getLogger("tests.ingestion.fatal")
     service = IngestionService(
         settings=settings,
         discovery=FakeDiscovery((ok,)),
         fingerprint=FakeFingerprint(),
         repository=repository,
         parser_registry=ParserRegistry([FakeParser()]),
+        logger=logger,
     )
 
-    outcome = service.run(mode=IngestionMode.INCREMENTAL)
+    with caplog.at_level(logging.DEBUG, logger=logger.name):
+        outcome = service.run(mode=IngestionMode.INCREMENTAL)
 
     assert outcome.status == IngestionRunStatus.FAILED
     assert outcome.error is not None
     assert outcome.error.error_code == "DATABASE_WRITE_FAILED"
+    assert outcome.error.relative_path == PurePosixPath("ok.txt")
+    assert outcome.error.exception_type == "IntegrityError"
+    assert outcome.error.details["technical_message"] == "UNIQUE constraint failed: chunks.id"
+    assert outcome.metrics.error_count == 1
+    assert repository.recorded_error == outcome.error
+    assert repository.recorded_file == ok
     assert repository.reconciled is False
+    assert "exception_type=IntegrityError" in caplog.text
+    assert "technical_message=UNIQUE constraint failed: chunks.id" in caplog.text
+    assert "Traceback de ingesta fatal" in caplog.text

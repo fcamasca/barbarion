@@ -22,6 +22,7 @@ barbarion.toml
 data/
 output/
 logs/
+sources/
 *.db
 *.db-shm
 *.db-wal

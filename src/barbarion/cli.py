@@ -136,9 +136,17 @@ def _run_ingest(args: argparse.Namespace) -> int:
         )
         if outcome.error is not None:
             logger.error(
-                "Error de ingesta stage=%s code=%s recoverable=%s",
+                "Error de ingesta stage=%s path=%s code=%s exception_type=%s "
+                "technical_message=%s recoverable=%s",
                 outcome.error.stage.value,
+                (
+                    outcome.error.relative_path.as_posix()
+                    if outcome.error.relative_path is not None
+                    else "n/a"
+                ),
                 outcome.error.error_code,
+                outcome.error.exception_type or "n/a",
+                outcome.error.details.get("technical_message", "n/a"),
                 outcome.error.recoverable,
             )
     if outcome.status.value == "interrupted":

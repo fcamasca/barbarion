@@ -9,9 +9,16 @@ import pytest
 from barbarion import cli
 from barbarion.database import initialize_database
 from tests.support.h2_corpus import build_h2_corpus
+from tests.support.h2_corpus import powerbuilder_overlap_content
 
 
-def write_config(tmp_path: Path, corpus: Path) -> Path:
+def write_config(
+    tmp_path: Path,
+    corpus: Path,
+    *,
+    chunk_size: int = 500,
+    chunk_overlap: int = 0,
+) -> Path:
     source = tmp_path / "barbarion.toml"
     source.write_text(
         "\n".join(
@@ -24,8 +31,8 @@ def write_config(tmp_path: Path, corpus: Path) -> Path:
                 'log_level = "INFO"',
                 "[ingestion]",
                 f'paths = ["{corpus.as_posix()}"]',
-                "chunk_size = 500",
-                "chunk_overlap = 0",
+                f"chunk_size = {chunk_size}",
+                f"chunk_overlap = {chunk_overlap}",
                 'encodings = ["utf-8", "cp1252", "latin-1"]',
             ]
         ),
@@ -165,3 +172,45 @@ def test_cli_ingest_partial_errors_return_one_and_keep_valid_files(
     latest = metrics(tmp_path / "data" / "barbarion.db")
     assert latest["error_count"] >= 1
     assert latest["processed_files"] > 0
+
+
+def test_cli_ingest_powerbuilder_overlap_root_persists_unique_chunks(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "powerbuilder"
+    root.mkdir()
+    (root / "w_overlap.srw").write_text(
+        powerbuilder_overlap_content("w_overlap"),
+        encoding="utf-8",
+    )
+    (root / "w_other.srw").write_text(
+        "$PBExportHeader$w_other.srw\n"
+        "global type w_other from window\n"
+        "event open;\n"
+        "messagebox('ok', 'ok')\n"
+        "end event\n"
+        "end type\n",
+        encoding="utf-8",
+    )
+    for name in ("data", "output", "logs"):
+        (tmp_path / name).mkdir()
+    db_path = tmp_path / "data" / "barbarion.db"
+    initialize_database(db_path)
+    config = write_config(tmp_path, root, chunk_size=4000, chunk_overlap=400)
+
+    output = run_ingest(config, "--full", capsys=capsys)
+    latest = metrics(db_path)
+
+    assert "Ingesta finalizada: completed" in output
+    assert latest["status"] == "completed"
+    assert latest["discovered_files"] == 2
+    assert latest["processed_files"] == 2
+    assert latest["error_count"] == 0
+    assert scalar(db_path, "SELECT COUNT(*) FROM documents") == 2
+    assert scalar(db_path, "SELECT COUNT(*) FROM errors") == 0
+    assert scalar(db_path, "SELECT COUNT(*) FROM chunks") > 2
+    assert scalar(db_path, "SELECT COUNT(DISTINCT id) FROM chunks") == scalar(
+        db_path,
+        "SELECT COUNT(*) FROM chunks",
+    )

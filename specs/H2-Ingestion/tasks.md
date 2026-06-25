@@ -96,7 +96,7 @@
 
 ### H2-T07 — Implementar ignores y límites
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T06.  
 **Requisitos:** H2-REQ-004.

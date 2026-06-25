@@ -136,7 +136,7 @@
 
 ### H2-T10 — Implementar decisión incremental
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T04, H2-T08, H2-T09.  
 **Requisitos:** H2-REQ-006, H2-REQ-007.

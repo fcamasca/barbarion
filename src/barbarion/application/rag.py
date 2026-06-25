@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+import re
 
 from barbarion.config import Settings
-from barbarion.domain.ports import EmbeddingProviderPort, VectorStorePort
+from barbarion.domain.ports import EmbeddingProviderPort, LlmProviderPort, VectorStorePort
 from barbarion.domain.rag import (
+    AnswerResult,
     ChunkEmbeddingState,
+    CitationValidation,
+    ContextBuildResult,
+    ContextQualityMetrics,
+    ContextSource,
     EmbeddingManifest,
     EmbeddingRequest,
     EmbeddingRunMode,
@@ -18,6 +24,7 @@ from barbarion.domain.rag import (
     IndexScope,
     IndexableChunk,
     RagQueryStatus,
+    RetrievalFilter,
     RetrievalMode,
     SearchRequest,
     SearchResponse,
@@ -415,4 +422,326 @@ def _with_mode(candidate, mode: RetrievalMode):
         keyword_score=candidate.keyword_score,
         metadata=candidate.metadata,
         source={**dict(candidate.source), "retrieval_mode": mode.value},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ContextBuilder:
+    """Construye contexto final con deduplicacion antes del presupuesto."""
+
+    token_budget: int
+    max_chunk_tokens: int
+    dedupe_min_hash_prefix: int
+    threshold: float = 0.0
+
+    def build(
+        self,
+        candidates,
+        *,
+        debug: bool = False,
+    ) -> ContextBuildResult:
+        """Aplica threshold, dedupe, agrupacion, orden y presupuesto."""
+        thresholded, score_omitted = self._threshold(candidates)
+        deduped, duplicate_omitted = self._dedupe(thresholded)
+        ordered = self._stable_document_order(deduped)
+        sources: list[ContextSource] = []
+        budget_omitted: list[dict[str, object]] = []
+        used_tokens = 0
+        for candidate in ordered:
+            content = str(candidate.source.get("content") or candidate.source.get("snippet") or "")
+            if not content:
+                content = str(candidate.source.get("relative_path") or candidate.chunk_id)
+            token_estimate = min(_estimate_tokens(content), self.max_chunk_tokens)
+            if used_tokens + token_estimate > self.token_budget:
+                budget_omitted.append(
+                    {"chunk_id": candidate.chunk_id, "reason": "budget"}
+                )
+                continue
+            source_id = f"F{len(sources) + 1}"
+            sources.append(
+                ContextSource(
+                    source_id=source_id,
+                    candidate=candidate,
+                    content=_truncate_to_tokens(content, self.max_chunk_tokens),
+                    token_estimate=token_estimate,
+                )
+            )
+            used_tokens += token_estimate
+        omitted = tuple((*score_omitted, *duplicate_omitted, *budget_omitted))
+        duplicate_ratio = (
+            len(duplicate_omitted) / len(candidates) if candidates else 0.0
+        )
+        selected_candidates = len(sources)
+        token_waste = (
+            max(0, self.token_budget - used_tokens) / self.token_budget
+            if self.token_budget
+            else 0.0
+        )
+        metrics = ContextQualityMetrics(
+            context_precision=None,
+            context_recall=(
+                selected_candidates / len(candidates) if candidates else 0.0
+            ),
+            duplicate_ratio=duplicate_ratio,
+            token_waste=token_waste,
+        )
+        debug_payload = {}
+        if debug:
+            debug_payload = {
+                "input_candidates": len(candidates),
+                "after_threshold": len(thresholded),
+                "after_dedupe": len(deduped),
+                "omitted": len(omitted),
+                "token_budget": self.token_budget,
+                "token_estimate": used_tokens,
+            }
+        return ContextBuildResult(
+            sources=tuple(sources),
+            omitted=omitted,
+            rendered_context=_render_context(sources),
+            token_estimate=used_tokens,
+            metrics=metrics,
+            debug=debug_payload,
+        )
+
+    def _threshold(self, candidates):
+        selected = []
+        omitted = []
+        for candidate in candidates:
+            if candidate.combined_score < self.threshold:
+                omitted.append({"chunk_id": candidate.chunk_id, "reason": "threshold"})
+            else:
+                selected.append(candidate)
+        return tuple(selected), tuple(omitted)
+
+    def _dedupe(self, candidates):
+        selected = []
+        omitted = []
+        seen_chunks: set[str] = set()
+        seen_hashes: set[str] = set()
+        prefix = self.dedupe_min_hash_prefix
+        for candidate in candidates:
+            hash_prefix = candidate.content_sha256[:prefix]
+            if candidate.chunk_id in seen_chunks or hash_prefix in seen_hashes:
+                omitted.append({"chunk_id": candidate.chunk_id, "reason": "duplicate"})
+                continue
+            seen_chunks.add(candidate.chunk_id)
+            seen_hashes.add(hash_prefix)
+            selected.append(candidate)
+        return tuple(selected), tuple(omitted)
+
+    def _stable_document_order(self, candidates):
+        return tuple(
+            sorted(
+                candidates,
+                key=lambda candidate: (
+                    int(candidate.source.get("document_id") or 0),
+                    int(candidate.source.get("ordinal") or 0),
+                    -candidate.combined_score,
+                    candidate.chunk_id,
+                ),
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PromptBuilder:
+    """Construye prompts controlados en espanol."""
+
+    def build(self, *, question: str, context: ContextBuildResult) -> str:
+        return (
+            "Responde en espanol usando solo la evidencia provista.\n"
+            "Toda afirmacion factual debe citar una fuente como [F1].\n"
+            "Si la evidencia no alcanza, declara evidencia insuficiente.\n\n"
+            f"Pregunta:\n{question}\n\n"
+            f"Contexto:\n{context.rendered_context}\n\n"
+            "Formato requerido:\n"
+            "## Conclusion\n"
+            "...\n\n"
+            "## Evidencia\n"
+            "- [F1] ...\n\n"
+            "## Supuestos y limites\n"
+            "- ...\n"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CitationValidator:
+    """Valida que las citas mencionadas existan en el contexto."""
+
+    def validate(self, answer: str, context: ContextBuildResult) -> CitationValidation:
+        allowed = {source.source_id for source in context.sources}
+        cited = set(re.findall(r"\[(F\d+)\]", answer))
+        missing = tuple(sorted(cited - allowed))
+        return CitationValidation(valid=not missing, missing_source_ids=missing)
+
+
+@dataclass(frozen=True, slots=True)
+class AskService:
+    """Orquesta search, contexto, prompt, LLM y validacion de citas."""
+
+    search_service: SearchService
+    context_builder: ContextBuilder
+    prompt_builder: PromptBuilder
+    citation_validator: CitationValidator
+    llm_provider: LlmProviderPort
+    settings: Settings
+
+    def ask(
+        self,
+        question: str,
+        *,
+        mode: RetrievalMode,
+        filters=None,
+        top_k: int,
+        candidate_k: int,
+        threshold: float,
+        no_llm: bool = False,
+        debug: bool = False,
+    ) -> AnswerResult:
+        started = time.monotonic()
+        search = self.search_service.search(
+            SearchRequest(
+                query=question,
+                mode=mode,
+                filters=filters or RetrievalFilter(),
+                top_k=top_k,
+                candidate_k=candidate_k,
+                similarity_threshold=threshold,
+                vector_weight=self.settings.retrieval.vector_weight,
+                keyword_weight=self.settings.retrieval.keyword_weight,
+                debug=debug,
+            )
+        )
+        context_started = time.monotonic()
+        context = self.context_builder.build(search.candidates, debug=debug)
+        context_ms = _duration_ms(context_started)
+        if not context.sources:
+            answer = _insufficient_evidence_answer()
+            self.search_service.repository.update_rag_query_metrics(
+                query_id=search.query_id,
+                context_sources=0,
+                context_ms=context_ms,
+                llm_ms=None,
+                metrics=context.metrics,
+            )
+            return AnswerResult(
+                query_id=search.query_id,
+                question=question,
+                answer=answer,
+                context=context,
+                status=RagQueryStatus.INSUFFICIENT_EVIDENCE,
+                no_llm=True,
+                debug={"duration_ms": _duration_ms(started)} if debug else {},
+            )
+        if no_llm:
+            answer = _no_llm_answer(context)
+            self.search_service.repository.update_rag_query_metrics(
+                query_id=search.query_id,
+                context_sources=len(context.sources),
+                context_ms=context_ms,
+                llm_ms=None,
+                metrics=context.metrics,
+            )
+            return AnswerResult(
+                query_id=search.query_id,
+                question=question,
+                answer=answer,
+                context=context,
+                status=RagQueryStatus.COMPLETED,
+                no_llm=True,
+                debug={"duration_ms": _duration_ms(started)} if debug else {},
+            )
+        prompt = self.prompt_builder.build(question=question, context=context)
+        llm_started = time.monotonic()
+        answer = self.llm_provider.generate(
+            prompt=prompt,
+            timeout_seconds=self.settings.llm.timeout_seconds,
+        )
+        llm_ms = _duration_ms(llm_started)
+        validation = self.citation_validator.validate(answer, context)
+        if not validation.valid:
+            answer = _invalid_citations_answer(validation)
+        self.search_service.repository.update_rag_query_metrics(
+            query_id=search.query_id,
+            context_sources=len(context.sources),
+            context_ms=context_ms,
+            llm_ms=llm_ms,
+            metrics=context.metrics,
+        )
+        return AnswerResult(
+            query_id=search.query_id,
+            question=question,
+            answer=answer,
+            context=context,
+            status=RagQueryStatus.COMPLETED if validation.valid else RagQueryStatus.ERROR,
+            no_llm=False,
+            citations_valid=validation.valid,
+            missing_citations=validation.missing_source_ids,
+            debug={"duration_ms": _duration_ms(started)} if debug else {},
+        )
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, (len(text) + 3) // 4)
+
+
+def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+    limit = max_tokens * 4
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _render_context(sources: list[ContextSource]) -> str:
+    blocks = []
+    for source in sources:
+        candidate = source.candidate
+        path = candidate.source.get("relative_path") or "fuente desconocida"
+        line_start = candidate.source.get("start_line")
+        line_end = candidate.source.get("end_line")
+        lines = ""
+        if line_start is not None and line_end is not None:
+            lines = f", lineas {line_start}-{line_end}"
+        blocks.append(
+            f"[{source.source_id}] {path}, chunk {candidate.chunk_id}, "
+            f"score {candidate.combined_score:.3f}{lines}\n{source.content}"
+        )
+    return "\n\n".join(blocks)
+
+
+def _no_llm_answer(context: ContextBuildResult) -> str:
+    return (
+        "## Conclusion\n"
+        "Modo sin LLM: se muestra el contexto recuperado para inspeccion.\n\n"
+        "## Evidencia\n"
+        + "\n".join(
+            f"- [{source.source_id}] {source.candidate.source.get('relative_path')} "
+            f"chunk {source.candidate.chunk_id}, score {source.candidate.combined_score:.3f}"
+            for source in context.sources
+        )
+        + "\n\n## Supuestos y limites\n- No se genero respuesta natural."
+    )
+
+
+def _insufficient_evidence_answer() -> str:
+    return (
+        "## Conclusion\n"
+        "Evidencia insuficiente para responder con seguridad.\n\n"
+        "## Evidencia\n"
+        "- No se recuperaron fuentes sobre el umbral configurado.\n\n"
+        "## Supuestos y limites\n"
+        "- No se invoco el LLM para evitar una respuesta sin sustento."
+    )
+
+
+def _invalid_citations_answer(validation: CitationValidation) -> str:
+    missing = ", ".join(validation.missing_source_ids)
+    return (
+        "## Conclusion\n"
+        "La respuesta candidata fue rechazada porque contiene citas invalidas.\n\n"
+        "## Evidencia\n"
+        f"- Citas inexistentes: {missing}.\n\n"
+        "## Supuestos y limites\n"
+        "- Ejecuta con debug para inspeccionar el contexto recuperado."
     )

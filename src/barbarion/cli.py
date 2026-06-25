@@ -1,6 +1,7 @@
 """Punto de entrada de la línea de comandos de Barbarion."""
 
 import argparse
+import json
 import logging
 import sys
 from collections.abc import Sequence
@@ -9,7 +10,14 @@ from pathlib import Path
 
 from barbarion import __version__
 from barbarion.application.ingest import IngestionService
-from barbarion.application.rag import IndexService
+from barbarion.application.rag import (
+    AskService,
+    CitationValidator,
+    ContextBuilder,
+    IndexService,
+    PromptBuilder,
+    SearchService,
+)
 from barbarion.bootstrap import DirectoryResult, initialize_directories
 from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
 from barbarion.database import DatabaseError, initialize_database
@@ -17,7 +25,17 @@ from barbarion.doctor import DoctorReport, run_doctor_checks
 from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
 from barbarion.domain.models import IngestionRunStatus
-from barbarion.domain.rag import EmbeddingRunMode, EmbeddingRunStatus, IndexRunSummary, IndexScope
+from barbarion.domain.rag import (
+    AnswerResult,
+    EmbeddingRunMode,
+    EmbeddingRunStatus,
+    IndexRunSummary,
+    IndexScope,
+    RetrievalFilter,
+    RetrievalMode,
+    SearchRequest,
+    SearchResponse,
+)
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
 from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
@@ -33,6 +51,7 @@ from barbarion.infrastructure.parsers.registry import ParserRegistry
 from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
+from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.logging_config import configure_logging
 
 
@@ -216,6 +235,42 @@ def _run_reindex(args: argparse.Namespace) -> int:
     return _index_exit_code(summary)
 
 
+def _run_search(args: argparse.Namespace) -> int:
+    """Ejecuta busqueda RAG desde CLI."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print("No hay base SQLite de Barbarion. Ejecuta ingesta e indexacion.", file=sys.stderr)
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_search_service(settings)
+    request = _search_request(args, settings)
+    response = service.search(request)
+    _render_search_response(response, args.format)
+    return 0
+
+
+def _run_ask(args: argparse.Namespace) -> int:
+    """Ejecuta pregunta RAG desde CLI."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print("No hay base SQLite de Barbarion. Ejecuta ingesta e indexacion.", file=sys.stderr)
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_ask_service(settings)
+    result = service.ask(
+        args.question,
+        mode=RetrievalMode(args.mode),
+        filters=_retrieval_filter(args),
+        top_k=args.top_k,
+        candidate_k=args.candidate_k,
+        threshold=args.threshold,
+        no_llm=args.no_llm,
+        debug=args.debug,
+    )
+    _render_answer_result(result, args.format)
+    return 0 if result.citations_valid else 1
+
+
 def _show_ingestion_stats(args: argparse.Namespace) -> int:
     """Muestra estadisticas persistidas sin crear ni escanear recursos."""
     settings = load_settings(args.config)
@@ -267,6 +322,198 @@ def _build_index_service(settings: Settings) -> IndexService:
             table_prefix=settings.vector_store.table_prefix,
         ),
     )
+
+
+def _build_search_service(settings: Settings) -> SearchService:
+    vector_table = f"{settings.vector_store.table_prefix}_vectors"
+    return SearchService(
+        settings=settings,
+        repository=SQLiteRagRepository(
+            settings.database_path,
+            vector_provider=settings.vector_store.provider,
+            vector_table=vector_table,
+        ),
+        embedding_provider=OllamaEmbeddingProvider(
+            base_url=settings.ollama_url,
+            model=settings.embeddings.model,
+            timeout_seconds=settings.embeddings.timeout_seconds,
+        ),
+        vector_store=SQLiteVecStore(
+            settings.database_path,
+            table_prefix=settings.vector_store.table_prefix,
+        ),
+    )
+
+
+def _build_ask_service(settings: Settings) -> AskService:
+    return AskService(
+        search_service=_build_search_service(settings),
+        context_builder=ContextBuilder(
+            token_budget=settings.rag.context_token_budget,
+            max_chunk_tokens=settings.rag.max_chunk_tokens,
+            dedupe_min_hash_prefix=settings.rag.dedupe_min_hash_prefix,
+            threshold=settings.retrieval.similarity_threshold,
+        ),
+        prompt_builder=PromptBuilder(),
+        citation_validator=CitationValidator(),
+        llm_provider=OllamaLlmProvider(
+            base_url=settings.ollama_url,
+            model=settings.llm.model,
+            temperature=settings.llm.temperature,
+        ),
+        settings=settings,
+    )
+
+
+def _search_request(args: argparse.Namespace, settings: Settings) -> SearchRequest:
+    return SearchRequest(
+        query=args.query,
+        mode=RetrievalMode(args.mode),
+        filters=_retrieval_filter(args),
+        top_k=args.top_k,
+        candidate_k=args.candidate_k,
+        similarity_threshold=args.threshold,
+        vector_weight=settings.retrieval.vector_weight,
+        keyword_weight=settings.retrieval.keyword_weight,
+        debug=args.debug,
+    )
+
+
+def _retrieval_filter(args: argparse.Namespace) -> RetrievalFilter:
+    return RetrievalFilter(
+        domain=args.domain,
+        artifact_kind=args.artifact_kind,
+        language=args.language,
+        document_id=args.document,
+        folder=args.folder,
+        extension=args.extension,
+    )
+
+
+def _render_search_response(response: SearchResponse, output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(_search_response_json(response), ensure_ascii=False, indent=2))
+        return
+    if output_format == "markdown":
+        print("## Resultados")
+        for candidate in response.candidates:
+            print(_candidate_markdown(candidate))
+        return
+    print(f"Busqueda RAG: {response.mode.value}")
+    print(f"Query: {response.query_id if response.query_id is not None else 'sin registro'}")
+    for candidate in response.candidates:
+        print(_candidate_text(candidate))
+
+
+def _render_answer_result(result: AnswerResult, output_format: str) -> None:
+    if output_format == "json":
+        print(json.dumps(_answer_result_json(result), ensure_ascii=False, indent=2))
+        return
+    if output_format == "markdown":
+        print(result.answer)
+        print("\n## Fuentes")
+        for source in result.context.sources:
+            print(_source_markdown(source))
+        return
+    print(result.answer)
+    print("\nFuentes:")
+    for source in result.context.sources:
+        print(_source_text(source))
+
+
+def _search_response_json(response: SearchResponse) -> dict[str, object]:
+    return {
+        "query_id": response.query_id,
+        "mode": response.mode.value,
+        "results": [_candidate_json(candidate) for candidate in response.candidates],
+        "debug": dict(response.debug),
+    }
+
+
+def _answer_result_json(result: AnswerResult) -> dict[str, object]:
+    return {
+        "query_id": result.query_id,
+        "status": result.status.value,
+        "no_llm": result.no_llm,
+        "citations_valid": result.citations_valid,
+        "answer": result.answer,
+        "sources": [_source_json(source) for source in result.context.sources],
+        "omitted": list(result.context.omitted),
+        "metrics": {
+            "context_precision": result.context.metrics.context_precision,
+            "context_recall": result.context.metrics.context_recall,
+            "duplicate_ratio": result.context.metrics.duplicate_ratio,
+            "token_waste": result.context.metrics.token_waste,
+        },
+        "debug": dict(result.debug),
+    }
+
+
+def _candidate_json(candidate) -> dict[str, object]:
+    return {
+        "chunk_id": candidate.chunk_id,
+        "score": candidate.combined_score,
+        "vector_score": candidate.vector_score,
+        "keyword_score": candidate.keyword_score,
+        "source": dict(candidate.source),
+    }
+
+
+def _source_json(source) -> dict[str, object]:
+    return {
+        "source_id": source.source_id,
+        "chunk_id": source.candidate.chunk_id,
+        "score": source.candidate.combined_score,
+        "source": dict(source.candidate.source),
+        "token_estimate": source.token_estimate,
+    }
+
+
+def _candidate_text(candidate) -> str:
+    source = candidate.source
+    location = _location_text(source)
+    return (
+        f"- score={candidate.combined_score:.3f} chunk={candidate.chunk_id} "
+        f"{source.get('relative_path')}{location}"
+    )
+
+
+def _candidate_markdown(candidate) -> str:
+    source = candidate.source
+    return (
+        f"- `{source.get('relative_path')}` chunk `{candidate.chunk_id}` "
+        f"score `{candidate.combined_score:.3f}`{_location_text(source)}"
+    )
+
+
+def _source_text(source) -> str:
+    candidate = source.candidate
+    return (
+        f"- [{source.source_id}] {candidate.source.get('relative_path')} "
+        f"chunk={candidate.chunk_id} score={candidate.combined_score:.3f}"
+        f"{_location_text(candidate.source)}"
+    )
+
+
+def _source_markdown(source) -> str:
+    candidate = source.candidate
+    return (
+        f"- [{source.source_id}] `{candidate.source.get('relative_path')}`, "
+        f"chunk `{candidate.chunk_id}`, score `{candidate.combined_score:.3f}`"
+        f"{_location_text(candidate.source)}"
+    )
+
+
+def _location_text(source) -> str:
+    start_line = source.get("start_line")
+    end_line = source.get("end_line")
+    if start_line is not None and end_line is not None:
+        return f" lineas={start_line}-{end_line}"
+    page_start = source.get("page_start")
+    page_end = source.get("page_end")
+    if page_start is not None and page_end is not None:
+        return f" paginas={page_start}-{page_end}"
+    return ""
 
 
 def _render_index_summary(summary: IndexRunSummary) -> None:
@@ -558,7 +805,68 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reindex_parser.set_defaults(handler=_run_reindex)
 
+    search_parser = commands.add_parser(
+        "search",
+        help="busca evidencia RAG",
+        description="Busca evidencia RAG local en modo semantic, keyword o hybrid.",
+        add_help=False,
+    )
+    _add_help_option(search_parser)
+    _add_query_arguments(search_parser, positional_name="query")
+    search_parser.set_defaults(handler=_run_search)
+
+    ask_parser = commands.add_parser(
+        "ask",
+        help="responde una pregunta con evidencia",
+        description="Responde una pregunta usando contexto RAG local.",
+        add_help=False,
+    )
+    _add_help_option(ask_parser)
+    _add_query_arguments(ask_parser, positional_name="question")
+    ask_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="muestra contexto y fuentes sin invocar LLM",
+    )
+    ask_parser.set_defaults(handler=_run_ask)
+
     return parser
+
+
+def _add_query_arguments(parser: argparse.ArgumentParser, *, positional_name: str) -> None:
+    parser.add_argument(positional_name, metavar="TEXTO", help="consulta o pregunta")
+    parser.add_argument(
+        "--mode",
+        choices=[mode.value for mode in RetrievalMode],
+        default="hybrid",
+        help="modo de recuperacion",
+    )
+    parser.add_argument("--top-k", type=int, default=10, help="cantidad final")
+    parser.add_argument(
+        "--candidate-k",
+        type=int,
+        default=50,
+        help="cantidad inicial de candidatos",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.0,
+        help="score minimo aceptado",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json", "markdown"),
+        default="text",
+        help="formato de salida",
+    )
+    parser.add_argument("--domain", help="filtra por dominio")
+    parser.add_argument("--artifact-kind", help="filtra por tipo de artefacto")
+    parser.add_argument("--language", help="filtra por lenguaje")
+    parser.add_argument("--document", type=int, help="filtra por documento")
+    parser.add_argument("--folder", help="filtra por carpeta")
+    parser.add_argument("--extension", help="filtra por extension")
+    parser.add_argument("--debug", action="store_true", help="incluye debug RAG")
 
 
 def main(argv: Sequence[str] | None = None) -> int:

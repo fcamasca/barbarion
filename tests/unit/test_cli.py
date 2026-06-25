@@ -1,5 +1,6 @@
 """Pruebas del árbol y los códigos base de la CLI."""
 
+import json
 import logging
 import os
 import subprocess
@@ -20,7 +21,19 @@ from barbarion.domain.models import (
     IngestionRunStatus,
     PipelineError,
 )
-from barbarion.domain.rag import EmbeddingRunStatus, IndexRunSummary
+from barbarion.domain.rag import (
+    AnswerResult,
+    ContextBuildResult,
+    ContextQualityMetrics,
+    ContextSource,
+    EmbeddingRunStatus,
+    IndexRunSummary,
+    RagQueryStatus,
+    RetrievalCandidate,
+    RetrievalMode,
+    SearchResponse,
+    SearchTimings,
+)
 from barbarion.logging_config import LOGGER_NAME, LOG_FILENAME
 
 
@@ -67,6 +80,8 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
         (("ingest", "--help"), "Ejecuta ingesta local"),
         (("index", "--help"), "Ejecuta indexacion RAG incremental"),
         (("reindex", "--help"), "Ejecuta reindexacion RAG"),
+        (("search", "--help"), "Busca evidencia RAG local"),
+        (("ask", "--help"), "Responde una pregunta"),
     ],
 )
 def test_help_is_in_spanish_and_has_no_side_effects(
@@ -476,3 +491,131 @@ def test_reindex_full_invokes_service(
     assert service.calls[0]["scope"] is None
     assert service.calls[0]["delete_obsolete"] is True
     assert "Actualizados: 3" in captured.out
+
+
+class FakeSearchService:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def search(self, request):
+        self.requests.append(request)
+        return SearchResponse(
+            query_id=7,
+            mode=RetrievalMode.KEYWORD,
+            candidates=(
+                RetrievalCandidate(
+                    chunk_id="chunk-1",
+                    content_sha256="a" * 64,
+                    combined_score=0.8,
+                    keyword_score=0.8,
+                    source={
+                        "relative_path": "pkg/demo.sql",
+                        "start_line": 10,
+                        "end_line": 12,
+                    },
+                ),
+            ),
+            timings=SearchTimings(keyword_ms=1, ranking_ms=1),
+        )
+
+
+def test_search_json_invokes_service_with_filters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeSearchService()
+    monkeypatch.setattr(cli, "_build_search_service", lambda settings: service)
+
+    exit_code = cli.main(
+        [
+            "--config",
+            str(source),
+            "search",
+            "COSTO_AMORT_DIA",
+            "--mode",
+            "keyword",
+            "--extension",
+            ".sql",
+            "--format",
+            "json",
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert service.requests[0].query == "COSTO_AMORT_DIA"
+    assert service.requests[0].filters.extension == ".sql"
+    assert payload["query_id"] == 7
+    assert payload["results"][0]["chunk_id"] == "chunk-1"
+
+
+class FakeAskService:
+    def __init__(self, citations_valid: bool = True) -> None:
+        self.calls = []
+        self.citations_valid = citations_valid
+
+    def ask(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        candidate = RetrievalCandidate(
+            chunk_id="chunk-1",
+            content_sha256="a" * 64,
+            combined_score=0.8,
+            source={"relative_path": "pkg/demo.sql"},
+        )
+        source = ContextSource(
+            source_id="F1",
+            candidate=candidate,
+            content="contenido",
+            token_estimate=2,
+        )
+        context = ContextBuildResult(
+            sources=(source,),
+            omitted=(),
+            rendered_context="[F1] contenido",
+            token_estimate=2,
+            metrics=ContextQualityMetrics(duplicate_ratio=0, token_waste=0.5),
+        )
+        return AnswerResult(
+            query_id=8,
+            question=args[0],
+            answer="## Conclusion\nRespuesta [F1]",
+            context=context,
+            status=RagQueryStatus.COMPLETED,
+            no_llm=kwargs["no_llm"],
+            citations_valid=self.citations_valid,
+        )
+
+
+def test_ask_no_llm_markdown_invokes_service(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService()
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        [
+            "--config",
+            str(source),
+            "ask",
+            "Donde esta?",
+            "--no-llm",
+            "--format",
+            "markdown",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert service.calls[0][1]["no_llm"] is True
+    assert "## Conclusion" in captured.out
+    assert "## Fuentes" in captured.out

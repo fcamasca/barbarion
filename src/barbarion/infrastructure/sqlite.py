@@ -35,6 +35,7 @@ from barbarion.domain.models import (
 from barbarion.domain.rag import (
     ChunkEmbeddingState,
     ChunkEmbeddingStatus,
+    ContextQualityMetrics,
     EmbeddingManifest,
     EmbeddingManifestStatus,
     EmbeddingRunMode,
@@ -1536,6 +1537,44 @@ class SQLiteRagRepository:
             )
             connection.commit()
             return int(cursor.lastrowid)
+
+    def update_rag_query_metrics(
+        self,
+        *,
+        query_id: int | None,
+        context_sources: int,
+        context_ms: int | None,
+        llm_ms: int | None,
+        metrics: ContextQualityMetrics,
+    ) -> None:
+        """Completa metricas posteriores a search para ask/context."""
+        if query_id is None:
+            return
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE rag_queries
+                SET context_sources = ?,
+                    context_ms = ?,
+                    llm_ms = ?,
+                    context_precision = ?,
+                    context_recall = ?,
+                    duplicate_ratio = ?,
+                    token_waste = ?
+                WHERE id = ?
+                """,
+                (
+                    context_sources,
+                    context_ms,
+                    llm_ms,
+                    metrics.context_precision,
+                    metrics.context_recall,
+                    metrics.duplicate_ratio,
+                    metrics.token_waste,
+                    query_id,
+                ),
+            )
+            connection.commit()
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=5.0)

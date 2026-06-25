@@ -263,7 +263,7 @@
 
 ### H3-T19 - Implementar ContextBuilder
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T18.  
 **Requisitos:** H3-REQ-013, H3-REQ-022.
@@ -278,7 +278,7 @@
 
 ### H3-T20 - Implementar adaptador Ollama LLM
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T03.  
 **Requisitos:** H3-REQ-016, H3-NFR-001.
@@ -292,7 +292,7 @@
 
 ### H3-T21 - Implementar prompts y validador de citas
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T19, H3-T20.  
 **Requisitos:** H3-REQ-014, H3-REQ-016.
@@ -306,7 +306,7 @@
 
 ### H3-T22 - Implementar AskService
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T18, H3-T21.  
 **Requisitos:** H3-REQ-016, H3-REQ-017, H3-REQ-020.
@@ -320,7 +320,7 @@
 
 ### H3-T23 - Integrar CLI search/ask
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T18, H3-T22.  
 **Requisitos:** H3-REQ-019.

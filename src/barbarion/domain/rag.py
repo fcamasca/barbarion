@@ -80,6 +80,10 @@ class VectorStoreError(RuntimeError):
     """Error esperado del almacenamiento vectorial local."""
 
 
+class LlmProviderError(RuntimeError):
+    """Error esperado al generar respuestas con LLM local."""
+
+
 @dataclass(frozen=True, slots=True)
 class EmbeddingManifest:
     """Identidad canonica de una version de embeddings."""
@@ -378,6 +382,65 @@ class SearchResponse:
     debug: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "debug", _freeze_mapping(self.debug))
+
+
+@dataclass(frozen=True, slots=True)
+class ContextSource:
+    """Fuente seleccionada para el contexto final."""
+
+    source_id: str
+    candidate: RetrievalCandidate
+    content: str
+    token_estimate: int
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.source_id, "source_id")
+        _require_non_empty(self.content, "content")
+        _require_non_negative(self.token_estimate, "token_estimate")
+
+
+@dataclass(frozen=True, slots=True)
+class ContextBuildResult:
+    """Contexto final y metricas de calidad preparadas."""
+
+    sources: tuple[ContextSource, ...]
+    omitted: tuple[dict[str, Any], ...]
+    rendered_context: str
+    token_estimate: int
+    metrics: ContextQualityMetrics
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_non_negative(self.token_estimate, "token_estimate")
+        object.__setattr__(self, "debug", _freeze_mapping(self.debug))
+
+
+@dataclass(frozen=True, slots=True)
+class CitationValidation:
+    """Resultado de validar citas contra fuentes disponibles."""
+
+    valid: bool
+    missing_source_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerResult:
+    """Resultado estructurado de ask."""
+
+    query_id: int | None
+    question: str
+    answer: str
+    context: ContextBuildResult
+    status: RagQueryStatus
+    no_llm: bool = False
+    citations_valid: bool = True
+    missing_citations: tuple[str, ...] = ()
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.question, "question")
+        _require_non_empty(self.answer, "answer")
         object.__setattr__(self, "debug", _freeze_mapping(self.debug))
 
 

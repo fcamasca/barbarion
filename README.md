@@ -9,7 +9,7 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 ## Estado
 
 `H1-Foundation` está completado y aceptado en la versión `0.1.0`.
-`H2-Ingestion` está implementado operativamente y pendiente de aceptación final:
+`H2-Ingestion` está completado y aceptado:
 
 - paquete Python instalable;
 - CLI local en español;

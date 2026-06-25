@@ -403,27 +403,45 @@ class SQLiteIngestionRepository:
         discovered_file: DiscoveredFile,
         state: PersistedFileState,
     ) -> None:
+        self.mark_seen_many(run_id=run_id, seen_files=((discovered_file, state),))
+
+    def mark_seen_many(
+        self,
+        *,
+        run_id: int,
+        seen_files: Sequence[tuple[DiscoveredFile, PersistedFileState]],
+    ) -> None:
+        if not seen_files:
+            return
         now = _utc_now()
-        with self._connect() as connection:
-            _execute_with_retries(
-                connection,
-                """
-                UPDATE files
-                SET size_bytes = ?, modified_at_ns = ?, last_seen_run_id = ?,
-                    updated_at = ?, deleted_at = NULL
-                WHERE domain = ? AND source_root = ? AND relative_path = ?
-                """,
-                (
-                    discovered_file.size_bytes,
-                    discovered_file.mtime_ns,
-                    run_id,
-                    now,
-                    self.domain,
-                    _source_root(discovered_file),
-                    discovered_file.relative_path.as_posix(),
-                ),
+        parameters = [
+            (
+                discovered_file.size_bytes,
+                discovered_file.mtime_ns,
+                run_id,
+                now,
+                self.domain,
+                _source_root(discovered_file),
+                discovered_file.relative_path.as_posix(),
             )
-            connection.commit()
+            for discovered_file, _state in seen_files
+        ]
+        with self._connect() as connection:
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.executemany(
+                    """
+                    UPDATE files
+                    SET size_bytes = ?, modified_at_ns = ?, last_seen_run_id = ?,
+                        updated_at = ?, deleted_at = NULL
+                    WHERE domain = ? AND source_root = ? AND relative_path = ?
+                    """,
+                    parameters,
+                )
+                connection.commit()
+            except Exception as exc:
+                connection.rollback()
+                raise SQLiteIngestionError(f"{DATABASE_WRITE_FAILED}: {exc}") from exc
 
     def record_skipped(
         self,

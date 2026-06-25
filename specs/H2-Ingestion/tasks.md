@@ -470,7 +470,7 @@
 
 ### H2-T35 — Ejecutar aceptación H2
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T01–H2-T34.  
 **Requisitos:** todos.

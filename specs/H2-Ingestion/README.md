@@ -13,6 +13,7 @@ El alcance inicial está en [ROADMAP.md](../../docs/ROADMAP.md#4-h2--ingestion).
 - [Plan de tareas](tasks.md)
 - [Análisis de impacto](impact-analysis.md)
 - [Plan de pruebas](test-plan.md)
+- [Evidencia de aceptación](acceptance.md)
 
 ## Decisiones principales
 

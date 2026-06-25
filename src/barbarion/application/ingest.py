@@ -11,6 +11,7 @@ from typing import Protocol
 from barbarion.config import Settings
 from barbarion.domain.ingestion import (
     IncrementalAction,
+    PersistedFileState,
     ProcessingVersions,
     chunk_document,
     decide_incremental,
@@ -83,6 +84,7 @@ class IngestionService:
         completed_roots: set[Path] = {
             Path(root).expanduser().resolve(strict=False) for root in effective_roots
         }
+        seen_files: list[tuple[DiscoveredFile, PersistedFileState]] = []
         interrupted = False
 
         try:
@@ -124,6 +126,7 @@ class IngestionService:
                         mode=mode,
                         processing_signature_value=signature,
                         metrics=metrics,
+                        seen_files=seen_files,
                     )
                 except KeyboardInterrupt:
                     interrupted = True
@@ -161,6 +164,11 @@ class IngestionService:
                         )
                         metrics = _add_error(metrics)
             if not interrupted:
+                _mark_seen_many(
+                    self.repository,
+                    run_id=run_id,
+                    seen_files=tuple(seen_files),
+                )
                 deleted = self.repository.reconcile_deleted(
                     run_id=run_id,
                     domain=self.settings.domain,
@@ -215,6 +223,7 @@ class IngestionService:
         mode: IngestionMode,
         processing_signature_value: str,
         metrics: IngestionMetrics,
+        seen_files: list[tuple[DiscoveredFile, PersistedFileState]],
     ) -> IngestionMetrics:
         persisted = self.repository.get_file_state(
             domain=self.settings.domain,
@@ -227,11 +236,7 @@ class IngestionService:
             persisted=persisted,
         )
         if decision.action == IncrementalAction.UNCHANGED and persisted is not None:
-            self.repository.mark_seen(
-                run_id=run_id,
-                discovered_file=discovered_file,
-                state=persisted,
-            )
+            seen_files.append((discovered_file, persisted))
             return _replace(metrics, unchanged_files=metrics.unchanged_files + 1)
 
         current_fingerprint = self.fingerprint.fingerprint(discovered_file)
@@ -244,11 +249,7 @@ class IngestionService:
                 fingerprint=current_fingerprint,
             )
             if decision.action == IncrementalAction.TOUCH and persisted is not None:
-                self.repository.mark_seen(
-                    run_id=run_id,
-                    discovered_file=discovered_file,
-                    state=persisted,
-                )
+                seen_files.append((discovered_file, persisted))
                 return _replace(metrics, unchanged_files=metrics.unchanged_files + 1)
 
         parser = self.parser_registry.resolve(discovered_file.extension)
@@ -370,6 +371,26 @@ def _discovered_from_error(
                 mtime_ns=stat.st_mtime_ns,
             )
     return None
+
+
+def _mark_seen_many(
+    repository: IngestionRepositoryPort,
+    *,
+    run_id: int,
+    seen_files: tuple[tuple[DiscoveredFile, PersistedFileState], ...],
+) -> None:
+    if not seen_files:
+        return
+    mark_many = getattr(repository, "mark_seen_many", None)
+    if callable(mark_many):
+        mark_many(run_id=run_id, seen_files=seen_files)
+        return
+    for discovered_file, state in seen_files:
+        repository.mark_seen(
+            run_id=run_id,
+            discovered_file=discovered_file,
+            state=state,
+        )
 
 
 def _add_discovered(metrics: IngestionMetrics, file: DiscoveredFile) -> IngestionMetrics:

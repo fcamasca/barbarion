@@ -94,6 +94,14 @@ class IngestionRepositoryPort(Protocol):
     ) -> None:
         """Actualiza metadata de un archivo vigente sin reemplazar contenido."""
 
+    def mark_seen_many(
+        self,
+        *,
+        run_id: int,
+        seen_files: Sequence[tuple[DiscoveredFile, PersistedFileState]],
+    ) -> None:
+        """Actualiza metadata de archivos vigentes en lote."""
+
     def record_skipped(
         self,
         *,

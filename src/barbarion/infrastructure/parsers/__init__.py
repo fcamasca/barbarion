@@ -12,6 +12,12 @@ from barbarion.infrastructure.parsers.encoding import (
 )
 from barbarion.infrastructure.parsers.markdown import MarkdownParser
 from barbarion.infrastructure.parsers.oracle import ORACLE_EXTENSIONS, OracleParser
+from barbarion.infrastructure.parsers.powerbuilder import (
+    POWERBUILDER_EXTENSIONS,
+    POWERBUILDER_TEXT_EXTENSIONS,
+    UNSUPPORTED_BINARY_PBL,
+    PowerBuilderParser,
+)
 from barbarion.infrastructure.parsers.registry import (
     DuplicateParserExtensionError,
     ParserRegistry,
@@ -28,12 +34,16 @@ __all__ = [
     "LOW_CONFIDENCE_ENCODING",
     "MarkdownParser",
     "ORACLE_EXTENSIONS",
+    "POWERBUILDER_EXTENSIONS",
+    "POWERBUILDER_TEXT_EXTENSIONS",
     "OracleParser",
     "ParserRegistry",
     "ParserRegistryError",
+    "PowerBuilderParser",
     "TEXT_DECODE_FAILED",
     "TextExtractionError",
     "TextParser",
+    "UNSUPPORTED_BINARY_PBL",
     "UnknownParserExtensionError",
     "decode_text_bytes",
     "decode_text_source",

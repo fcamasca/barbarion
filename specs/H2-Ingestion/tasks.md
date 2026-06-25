@@ -228,7 +228,7 @@
 
 ### H2-T17 — Implementar PowerBuilderParser base
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T11, H2-T12.  
 **Requisitos:** H2-REQ-012.
@@ -241,7 +241,7 @@
 
 ### H2-T18 — Extraer unidades PowerBuilder
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T17.  
 **Requisitos:** H2-REQ-012.

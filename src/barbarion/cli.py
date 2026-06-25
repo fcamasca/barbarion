@@ -4,16 +4,29 @@ import argparse
 import logging
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
+from pathlib import Path
 
 from barbarion import __version__
+from barbarion.application.ingest import IngestionService
 from barbarion.bootstrap import DirectoryResult, initialize_directories
-from barbarion.config import (
-    ConfigError,
-    Settings,
-    load_settings,
-    settings_display_items,
-)
+from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
+from barbarion.database import DatabaseError, initialize_database
 from barbarion.doctor import DoctorReport, run_doctor_checks
+from barbarion.domain.models import IngestionMode
+from barbarion.domain.models import IngestionOutcome
+from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
+from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
+from barbarion.infrastructure.parsers import (
+    DocxParser,
+    MarkdownParser,
+    OracleParser,
+    PdfParser,
+    PowerBuilderParser,
+    TextParser,
+)
+from barbarion.infrastructure.parsers.registry import ParserRegistry
+from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
 from barbarion.logging_config import configure_logging
 
 
@@ -74,6 +87,150 @@ def _run_doctor(args: argparse.Namespace) -> int:
     if logger is not None:
         _log_doctor_report(logger, report)
     return report.exit_code
+
+
+def _run_ingest(args: argparse.Namespace) -> int:
+    """Ejecuta ingesta o estadisticas segun las opciones recibidas."""
+    if args.stats:
+        if args.path or args.full or args.incremental:
+            print(
+                "Error de argumentos: --stats no se combina con ejecucion.",
+                file=sys.stderr,
+            )
+            return 2
+        return _show_ingestion_stats(args)
+
+    settings = _settings_with_ingest_paths(load_settings(args.config), args.path)
+    missing = _missing_ingest_resources(settings)
+    if missing:
+        print(
+            "Recursos de Barbarion no inicializados. Ejecuta 'barbarion doctor' "
+            "antes de iniciar la ingesta.",
+            file=sys.stderr,
+        )
+        for path in missing:
+            print(f"Falta: {path}", file=sys.stderr)
+        return 1
+
+    initialize_database(settings.database_path)
+    logger = _configure_ingest_logging(settings)
+    if logger is not None:
+        logger.info("Inicio de ingesta mode=%s roots=%s", _mode(args).value, args.path or "config")
+    service = _build_ingestion_service(settings, logger=logger)
+    outcome = service.run(mode=_mode(args))
+    _render_ingestion_outcome(outcome)
+    if logger is not None:
+        logger.info(
+            "Fin de ingesta status=%s discovered=%s processed=%s unchanged=%s "
+            "skipped=%s deleted=%s errors=%s chunks=%s duration_ms=%s",
+            outcome.status.value,
+            outcome.metrics.discovered_files,
+            outcome.metrics.processed_files,
+            outcome.metrics.unchanged_files,
+            outcome.metrics.skipped_files,
+            outcome.metrics.deleted_files,
+            outcome.metrics.error_count,
+            outcome.metrics.chunk_count,
+            outcome.metrics.duration_ms,
+        )
+        if outcome.error is not None:
+            logger.error(
+                "Error de ingesta stage=%s code=%s recoverable=%s",
+                outcome.error.stage.value,
+                outcome.error.error_code,
+                outcome.error.recoverable,
+            )
+    if outcome.status.value == "interrupted":
+        return 130
+    if outcome.status.value == "failed":
+        return 1
+    return 0
+
+
+def _show_ingestion_stats(args: argparse.Namespace) -> int:
+    """Muestra estadisticas persistidas sin crear ni escanear recursos."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print("No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor'.")
+        return 0
+    repository = SQLiteIngestionRepository(settings.database_path, domain=settings.domain)
+    stats = repository.inventory_stats()
+    print("Estadisticas de ingesta")
+    print(f"ultimo_run = {stats.latest_run_id if stats.latest_run_id is not None else 'ninguno'}")
+    print(f"ultimo_estado = {stats.latest_run_status or 'ninguno'}")
+    print(f"archivos_vigentes = {stats.files_current}")
+    print(f"documentos_vigentes = {stats.documents_current}")
+    print(f"chunks_vigentes = {stats.chunks_current}")
+    if stats.artifact_kinds:
+        print("artefactos = " + ", ".join(f"{kind}:{count}" for kind, count in stats.artifact_kinds))
+    else:
+        print("artefactos = ninguno")
+    return 0
+
+
+def _settings_with_ingest_paths(settings: Settings, paths: Sequence[str] | None) -> Settings:
+    if not paths:
+        return settings
+    resolved = tuple(Path(path).expanduser().resolve(strict=False) for path in paths)
+    ingestion = replace(settings.ingestion, paths=resolved)
+    return replace(settings, ingestion=ingestion)
+
+
+def _missing_ingest_resources(settings: Settings) -> list[Path]:
+    required = [settings.data_dir, settings.output_dir, settings.logs_dir, settings.database_path]
+    return [path for path in required if not path.exists()]
+
+
+def _mode(args: argparse.Namespace) -> IngestionMode:
+    return IngestionMode.FULL if args.full else IngestionMode.INCREMENTAL
+
+
+def _configure_ingest_logging(settings: Settings) -> logging.Logger | None:
+    if not settings.logs_dir.exists():
+        return None
+    return configure_logging(settings)
+
+
+def _build_ingestion_service(
+    settings: Settings,
+    *,
+    logger: logging.Logger | None = None,
+) -> IngestionService:
+    registry = ParserRegistry(
+        [
+            OracleParser(),
+            PowerBuilderParser(),
+            MarkdownParser(),
+            TextParser(),
+            PdfParser(),
+            DocxParser(),
+        ]
+    )
+    return IngestionService(
+        settings=settings,
+        discovery=LocalFilesystemDiscovery(),
+        fingerprint=LocalFingerprintCalculator(),
+        repository=SQLiteIngestionRepository(
+            settings.database_path,
+            domain=settings.domain,
+        ),
+        parser_registry=registry,
+        logger=logger,
+    )
+
+
+def _render_ingestion_outcome(outcome: IngestionOutcome) -> None:
+    metrics = outcome.metrics
+    print(f"Ingesta finalizada: {outcome.status.value}")
+    print(f"Descubiertos: {metrics.discovered_files}")
+    print(f"Procesados: {metrics.processed_files}")
+    print(f"Sin cambios: {metrics.unchanged_files}")
+    print(f"Omitidos: {metrics.skipped_files}")
+    print(f"Eliminados: {metrics.deleted_files}")
+    print(f"Errores: {metrics.error_count}")
+    print(f"Chunks creados: {metrics.chunk_count}")
+    print(f"Datos procesados: {metrics.processed_bytes} bytes")
+    print(f"Duracion: {metrics.duration_ms or 0} ms")
 
 
 def _configure_doctor_logging(
@@ -191,6 +348,37 @@ def build_parser() -> argparse.ArgumentParser:
     _add_help_option(show_parser)
     show_parser.set_defaults(handler=_show_config)
 
+    ingest_parser = commands.add_parser(
+        "ingest",
+        help="ingesta corpus local autorizado",
+        description="Ejecuta ingesta local o consulta estadisticas persistidas.",
+        add_help=False,
+    )
+    _add_help_option(ingest_parser)
+    ingest_parser.add_argument(
+        "--path",
+        action="append",
+        metavar="RUTA",
+        help="root de ingesta; puede repetirse y reemplaza paths configurados",
+    )
+    mode_group = ingest_parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--incremental",
+        action="store_true",
+        help="ejecuta ingesta incremental",
+    )
+    mode_group.add_argument(
+        "--full",
+        action="store_true",
+        help="reprocesa todos los archivos descubiertos",
+    )
+    ingest_parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="muestra estadisticas persistidas sin ejecutar ingesta",
+    )
+    ingest_parser.set_defaults(handler=_run_ingest)
+
     return parser
 
 
@@ -205,6 +393,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     except OSError as error:
         print(f"Error operativo: {error}", file=sys.stderr)
+        return 1
+    except DatabaseError as error:
+        print(f"Error de base de datos: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("Operación interrumpida por el usuario.", file=sys.stderr)

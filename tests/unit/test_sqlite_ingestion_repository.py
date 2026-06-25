@@ -12,6 +12,9 @@ from barbarion.domain.models import (
     ErrorStage,
     FileFingerprint,
     IngestionMode,
+    IngestionMetrics,
+    IngestionOutcome,
+    IngestionRunStatus,
     LogicalUnit,
     Confidence,
     NormalizedDocument,
@@ -256,3 +259,47 @@ def test_reconcile_ignores_incomplete_roots(tmp_path: Path) -> None:
 
     with sqlite3.connect(db_path) as connection:
         assert connection.execute("SELECT status FROM files").fetchone() == ("processed",)
+
+
+def test_inventory_stats_reads_current_metadata_without_filesystem_scan(
+    tmp_path: Path,
+) -> None:
+    repo, db_path = repository(tmp_path)
+    root = tmp_path / "sources"
+    file = discovered(root)
+    run_id = begin_run(repo, root)
+    repo.replace_document(
+        run_id=run_id,
+        discovered_file=file,
+        fingerprint=fingerprint(file),
+        processing_signature="sig",
+        parser_id="oracle",
+        parser_version="1",
+        encoding="utf-8",
+        document=document(),
+        chunks=(chunk(),),
+    )
+    repo.finish_run(
+        run_id=run_id,
+        outcome=IngestionOutcome(
+            status=IngestionRunStatus.COMPLETED,
+            metrics=IngestionMetrics(
+                discovered_files=1,
+                processed_files=1,
+                source_bytes=file.size_bytes,
+                processed_bytes=file.size_bytes,
+                chunk_count=1,
+                duration_ms=3,
+            ),
+        ),
+    )
+    file.runtime_path.unlink()
+
+    stats = SQLiteIngestionRepository(db_path, domain="default").inventory_stats()
+
+    assert stats.latest_run_id == run_id
+    assert stats.latest_run_status == "completed"
+    assert stats.files_current == 1
+    assert stats.documents_current == 1
+    assert stats.chunks_current == 1
+    assert stats.artifact_kinds == (("oracle", 1),)

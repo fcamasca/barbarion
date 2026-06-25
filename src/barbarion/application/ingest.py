@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -55,6 +56,7 @@ class IngestionService:
     fingerprint: FingerprintPort
     repository: IngestionRepositoryPort
     parser_registry: ParserRegistry
+    logger: logging.Logger | None = None
 
     def run(
         self,
@@ -92,8 +94,24 @@ class IngestionService:
             )
             for item in items:
                 if isinstance(item, PipelineError):
+                    self._log_pipeline_error(item)
                     metrics = _add_error(metrics)
-                    self.repository.record_error(run_id=run_id, error=item)
+                    if item.error_code == "FILE_TOO_LARGE":
+                        skipped_file = _discovered_from_error(item, effective_roots)
+                        if skipped_file is not None:
+                            self.repository.record_skipped(
+                                run_id=run_id,
+                                discovered_file=skipped_file,
+                                error=item,
+                            )
+                            metrics = _replace(
+                                metrics,
+                                skipped_files=metrics.skipped_files + 1,
+                            )
+                        else:
+                            self.repository.record_error(run_id=run_id, error=item)
+                    else:
+                        self.repository.record_error(run_id=run_id, error=item)
                     if item.error_code.startswith("ROOT_"):
                         completed_roots = _remove_unsafe_roots(completed_roots, item)
                     continue
@@ -112,19 +130,35 @@ class IngestionService:
                 except Exception as exc:
                     if _is_fatal_error(exc):
                         raise
-                    error = _pipeline_error(
-                        ErrorStage.EXTRACTION,
-                        "PARSER_FAILED",
-                        "No se pudo procesar el archivo.",
-                        item,
-                        exc,
+                    error = (
+                        exc.to_pipeline_error()
+                        if hasattr(exc, "to_pipeline_error")
+                        else _pipeline_error(
+                            ErrorStage.EXTRACTION,
+                            "PARSER_FAILED",
+                            "No se pudo procesar el archivo.",
+                            item,
+                            exc,
+                        )
                     )
+                    self._log_pipeline_error(error)
                     metrics = _add_error(metrics)
-                    self.repository.record_error(
-                        run_id=run_id,
-                        error=error,
-                        discovered_file=item,
-                    )
+                    if error.error_code == "UNSUPPORTED_BINARY_PBL":
+                        self.repository.record_skipped(
+                            run_id=run_id,
+                            discovered_file=item,
+                            error=error,
+                        )
+                        metrics = _replace(
+                            metrics,
+                            skipped_files=metrics.skipped_files + 1,
+                        )
+                    else:
+                        self.repository.record_error(
+                            run_id=run_id,
+                            error=error,
+                            discovered_file=item,
+                        )
             if not interrupted:
                 deleted = self.repository.reconcile_deleted(
                     run_id=run_id,
@@ -259,6 +293,16 @@ class IngestionService:
             max_pdf_pages=self.settings.ingestion.max_pdf_pages,
         )
 
+    def _log_pipeline_error(self, error: PipelineError) -> None:
+        if self.logger is None:
+            return
+        self.logger.warning(
+            "Error recuperable de ingesta stage=%s path=%s code=%s",
+            error.stage.value,
+            error.relative_path.as_posix() if error.relative_path is not None else "n/a",
+            error.error_code,
+        )
+
 
 def _pipeline_error(
     stage: ErrorStage,
@@ -303,6 +347,28 @@ def _remove_unsafe_roots(
         if root.name != error.relative_path.name
         and str(root) != error.relative_path.as_posix()
     }
+
+
+def _discovered_from_error(
+    error: PipelineError,
+    roots: tuple[Path, ...],
+) -> DiscoveredFile | None:
+    if error.relative_path is None:
+        return None
+    for root in roots:
+        root_path = Path(root).expanduser().resolve(strict=False)
+        runtime_path = root_path / error.relative_path
+        if runtime_path.exists():
+            stat = runtime_path.stat()
+            return DiscoveredFile(
+                root=root_path,
+                relative_path=error.relative_path,
+                runtime_path=runtime_path,
+                extension=runtime_path.suffix,
+                size_bytes=stat.st_size,
+                mtime_ns=stat.st_mtime_ns,
+            )
+    return None
 
 
 def _add_discovered(metrics: IngestionMetrics, file: DiscoveredFile) -> IngestionMetrics:

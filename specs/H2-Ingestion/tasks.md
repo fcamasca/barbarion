@@ -377,7 +377,7 @@
 
 ### H2-T28 — Integrar CLI ingest
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T01, H2-T26, H2-T27.  
 **Requisitos:** H2-REQ-023, H2-REQ-025.
@@ -391,7 +391,7 @@
 
 ### H2-T29 — Implementar métricas y stats
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T25, H2-T28.  
 **Requisitos:** H2-REQ-024, H2-REQ-027.
@@ -405,7 +405,7 @@
 
 ### H2-T30 — Integrar logging contextual
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** H2-T26, H2-T28.  
 **Requisitos:** H2-NFR-004.

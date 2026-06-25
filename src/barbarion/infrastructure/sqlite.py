@@ -218,6 +218,18 @@ class SQLiteIngestionError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryStats:
+    """Resumen persistido consultable sin reescanear filesystem."""
+
+    latest_run_id: int | None
+    latest_run_status: str | None
+    files_current: int
+    documents_current: int
+    chunks_current: int
+    artifact_kinds: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SQLiteIngestionRepository:
     """Repositorio H2 respaldado por SQLite local."""
 
@@ -591,8 +603,70 @@ class SQLiteIngestionRepository:
             ).fetchone()[0]
         return IngestionMetrics(processed_files=int(files), chunk_count=int(chunks))
 
+    def inventory_stats(self) -> InventoryStats:
+        """Consulta inventario vigente usando solo metadata persistida."""
+
+        with self._connect_readonly() as connection:
+            latest_run = connection.execute(
+                """
+                SELECT id, status
+                FROM ingestion_runs
+                ORDER BY started_at DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            files_current = connection.execute(
+                "SELECT COUNT(*) FROM files WHERE status = 'processed'"
+            ).fetchone()[0]
+            documents_current = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM documents
+                JOIN files ON files.id = documents.file_id
+                WHERE files.status = 'processed'
+                  AND documents.source_sha256 = files.sha256
+                """
+            ).fetchone()[0]
+            chunks_current = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM chunks
+                JOIN documents ON documents.id = chunks.document_id
+                JOIN files ON files.id = documents.file_id
+                WHERE files.status = 'processed'
+                  AND documents.source_sha256 = files.sha256
+                """
+            ).fetchone()[0]
+            artifact_kinds = tuple(
+                (str(row["artifact_kind"]), int(row["count"]))
+                for row in connection.execute(
+                    """
+                    SELECT artifact_kind, COUNT(*) AS count
+                    FROM files
+                    WHERE status = 'processed'
+                    GROUP BY artifact_kind
+                    ORDER BY artifact_kind
+                    """
+                ).fetchall()
+            )
+        return InventoryStats(
+            latest_run_id=None if latest_run is None else int(latest_run["id"]),
+            latest_run_status=None if latest_run is None else str(latest_run["status"]),
+            files_current=int(files_current),
+            documents_current=int(documents_current),
+            chunks_current=int(chunks_current),
+            artifact_kinds=artifact_kinds,
+        )
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=5.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    def _connect_readonly(self) -> sqlite3.Connection:
+        uri = self.database_path.resolve(strict=False).as_uri() + "?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=5.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         return connection

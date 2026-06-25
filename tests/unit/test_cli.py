@@ -1,14 +1,45 @@
 """Pruebas del árbol y los códigos base de la CLI."""
 
+import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from barbarion import __version__
 from barbarion import cli
+from barbarion.database import initialize_database
+from barbarion.domain.models import (
+    ErrorStage,
+    IngestionMetrics,
+    IngestionMode,
+    IngestionOutcome,
+    IngestionRunStatus,
+    PipelineError,
+)
+from barbarion.logging_config import LOGGER_NAME, LOG_FILENAME
+
+
+@pytest.fixture(autouse=True)
+def isolate_barbarion_logger() -> None:
+    """Evita que handlers de logging sobrevivan entre pruebas."""
+    logger = logging.getLogger(LOGGER_NAME)
+    original_handlers = list(logger.handlers)
+    original_level = logger.level
+    original_propagate = logger.propagate
+    logger.handlers.clear()
+
+    yield
+
+    for handler in tuple(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+    logger.handlers[:] = original_handlers
+    logger.setLevel(original_level)
+    logger.propagate = original_propagate
 
 
 def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -32,6 +63,7 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
         (("config", "--help"), "subcomandos:"),
         (("config", "show", "--help"), "Muestra la configuración efectiva"),
         (("doctor", "--help"), "Diagnostica el entorno local"),
+        (("ingest", "--help"), "Ejecuta ingesta local"),
     ],
 )
 def test_help_is_in_spanish_and_has_no_side_effects(
@@ -148,3 +180,189 @@ def test_config_show_reports_invalid_file_without_traceback(tmp_path: Path) -> N
     assert "no existe" in result.stderr
     assert "Traceback" not in result.stderr
     assert list(tmp_path.iterdir()) == []
+
+
+def write_ingest_config(tmp_path: Path) -> Path:
+    """Crea una configuracion minima para pruebas de ingesta CLI."""
+    source = tmp_path / "barbarion.toml"
+    source.write_text(
+        "\n".join(
+            [
+                'data_dir = "data"',
+                'output_dir = "output"',
+                'logs_dir = "logs"',
+                'database_path = "data/barbarion.db"',
+                'log_level = "INFO"',
+                "[ingestion]",
+                'paths = ["sources"]',
+                'extensions = [".txt"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return source
+
+
+def test_ingest_help_documents_repeatable_path_without_side_effects(tmp_path: Path) -> None:
+    result = run_cli("ingest", "--help", cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "--path RUTA" in result.stdout
+    assert "puede repetirse" in result.stdout
+    assert "--incremental" in result.stdout
+    assert "--full" in result.stdout
+    assert "--stats" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_ingest_stats_rejects_execution_options(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+
+    exit_code = cli.main(["--config", str(source), "ingest", "--stats", "--full"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "--stats no se combina" in captured.err
+
+
+def test_ingest_requires_doctor_bootstrap_without_creating_resources(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+
+    exit_code = cli.main(["--config", str(source), "ingest"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Ejecuta 'barbarion doctor'" in captured.err
+    assert not (tmp_path / "data").exists()
+    assert not (tmp_path / "logs").exists()
+
+
+def test_ingest_stats_without_database_is_read_only(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+
+    exit_code = cli.main(["--config", str(source), "ingest", "--stats"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "No hay base SQLite de Barbarion" in captured.out
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["barbarion.toml"]
+
+
+def test_ingest_stats_reads_persisted_inventory(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    database_path = tmp_path / "data" / "barbarion.db"
+    initialize_database(database_path)
+
+    exit_code = cli.main(["--config", str(source), "ingest", "--stats"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Estadisticas de ingesta" in captured.out
+    assert "ultimo_run = ninguno" in captured.out
+    assert "archivos_vigentes = 0" in captured.out
+    assert "chunks_vigentes = 0" in captured.out
+
+
+@dataclass
+class FakeService:
+    modes: list[IngestionMode]
+
+    def run(self, *, mode: IngestionMode) -> IngestionOutcome:
+        self.modes.append(mode)
+        return IngestionOutcome(
+            status=IngestionRunStatus.COMPLETED,
+            metrics=IngestionMetrics(
+                discovered_files=2,
+                processed_files=1,
+                skipped_files=1,
+                source_bytes=32,
+                processed_bytes=16,
+                chunk_count=3,
+                duration_ms=7,
+            ),
+        )
+
+
+def test_ingest_runs_full_mode_and_logs_context_without_corpus(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    for name in ("data", "output", "logs", "sources", "override"):
+        (tmp_path / name).mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeService(modes=[])
+    monkeypatch.setattr(
+        cli,
+        "_build_ingestion_service",
+        lambda settings, logger=None: service,
+    )
+
+    exit_code = cli.main(
+        [
+            "--config",
+            str(source),
+            "ingest",
+            "--full",
+            "--path",
+            str(tmp_path / "override"),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert service.modes == [IngestionMode.FULL]
+    assert "Ingesta finalizada: completed" in captured.out
+    assert "Procesados: 1" in captured.out
+    log_content = (tmp_path / "logs" / LOG_FILENAME).read_text(encoding="utf-8")
+    assert "Inicio de ingesta mode=full" in log_content
+    assert "Fin de ingesta status=completed" in log_content
+    assert "contenido valido" not in log_content
+
+
+def test_ingest_interrupted_status_maps_to_130(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    for name in ("data", "output", "logs", "sources"):
+        (tmp_path / name).mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+
+    class InterruptedService:
+        def run(self, *, mode: IngestionMode) -> IngestionOutcome:
+            del mode
+            return IngestionOutcome(
+                status=IngestionRunStatus.INTERRUPTED,
+                metrics=IngestionMetrics(),
+                error=PipelineError(
+                    stage=ErrorStage.RECONCILIATION,
+                    error_code="INGEST_INTERRUPTED",
+                    message="Ingesta interrumpida.",
+                    recoverable=False,
+                ),
+            )
+
+    monkeypatch.setattr(
+        cli,
+        "_build_ingestion_service",
+        lambda settings, logger=None: InterruptedService(),
+    )
+
+    assert cli.main(["--config", str(source), "ingest"]) == 130
+    assert "Ingesta finalizada: interrupted" in capsys.readouterr().out

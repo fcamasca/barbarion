@@ -56,6 +56,22 @@ class IndexAction(StrEnum):
     DELETE = "delete"
 
 
+class RetrievalMode(StrEnum):
+    """Modo de recuperacion H3."""
+
+    SEMANTIC = "semantic"
+    KEYWORD = "keyword"
+    HYBRID = "hybrid"
+
+
+class RagQueryStatus(StrEnum):
+    """Estado persistible de una consulta RAG."""
+
+    COMPLETED = "completed"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    ERROR = "error"
+
+
 class EmbeddingProviderError(RuntimeError):
     """Error esperado al generar embeddings."""
 
@@ -310,6 +326,62 @@ class ContextQualityMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchTimings:
+    """Tiempos principales de una busqueda RAG."""
+
+    vector_ms: int | None = None
+    keyword_ms: int | None = None
+    ranking_ms: int | None = None
+
+    def __post_init__(self) -> None:
+        for field_name in ("vector_ms", "keyword_ms", "ranking_ms"):
+            value = getattr(self, field_name)
+            if value is not None:
+                _require_non_negative(value, field_name)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchRequest:
+    """Entrada estructurada para busqueda H3."""
+
+    query: str
+    mode: RetrievalMode
+    filters: RetrievalFilter = field(default_factory=RetrievalFilter)
+    top_k: int = 10
+    candidate_k: int = 50
+    similarity_threshold: float = 0.0
+    vector_weight: float = 0.7
+    keyword_weight: float = 0.3
+    debug: bool = False
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.query, "query")
+        _require_positive(self.top_k, "top_k")
+        _require_positive(self.candidate_k, "candidate_k")
+        if self.candidate_k < self.top_k:
+            raise ValueError("candidate_k debe ser mayor o igual que top_k.")
+        _require_unit_score(self.similarity_threshold, "similarity_threshold")
+        _require_non_negative_float(self.vector_weight, "vector_weight")
+        _require_non_negative_float(self.keyword_weight, "keyword_weight")
+        if self.vector_weight + self.keyword_weight <= 0:
+            raise ValueError("La suma de pesos debe ser mayor que 0.")
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResponse:
+    """Salida estructurada de busqueda H3."""
+
+    query_id: int | None
+    mode: RetrievalMode
+    candidates: tuple[RetrievalCandidate, ...]
+    timings: SearchTimings = field(default_factory=SearchTimings)
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "debug", _freeze_mapping(self.debug))
+
+
+@dataclass(frozen=True, slots=True)
 class IndexRunSummary:
     """Resumen de una corrida de indexacion H3."""
 
@@ -395,6 +467,65 @@ def decide_index_plan(
     return IndexPlan(decisions=tuple(decisions), dry_run=dry_run)
 
 
+def combine_hybrid_candidates(
+    vector_candidates: tuple[RetrievalCandidate, ...],
+    keyword_candidates: tuple[RetrievalCandidate, ...],
+    *,
+    vector_weight: float,
+    keyword_weight: float,
+    top_k: int,
+    threshold: float = 0.0,
+) -> tuple[RetrievalCandidate, ...]:
+    """Fusiona candidatos semanticos y keyword conservando scores individuales."""
+    _require_positive(top_k, "top_k")
+    _require_non_negative_float(vector_weight, "vector_weight")
+    _require_non_negative_float(keyword_weight, "keyword_weight")
+    if vector_weight + keyword_weight <= 0:
+        raise ValueError("La suma de pesos debe ser mayor que 0.")
+    _require_unit_score(threshold, "threshold")
+    vector_norm = _normalizer(
+        candidate.vector_score
+        for candidate in vector_candidates
+        if candidate.vector_score is not None
+    )
+    keyword_norm = _normalizer(
+        candidate.keyword_score
+        for candidate in keyword_candidates
+        if candidate.keyword_score is not None
+    )
+    by_chunk: dict[str, RetrievalCandidate] = {}
+    for candidate in (*vector_candidates, *keyword_candidates):
+        current = by_chunk.get(candidate.chunk_id)
+        by_chunk[candidate.chunk_id] = _merge_candidate(current, candidate)
+
+    total_weight = vector_weight + keyword_weight
+    ranked = []
+    for candidate in by_chunk.values():
+        vector_score = candidate.vector_score
+        keyword_score = candidate.keyword_score
+        combined = (
+            vector_weight * vector_norm(vector_score)
+            + keyword_weight * keyword_norm(keyword_score)
+        ) / total_weight
+        if combined >= threshold:
+            ranked.append(
+                RetrievalCandidate(
+                    chunk_id=candidate.chunk_id,
+                    content_sha256=candidate.content_sha256,
+                    combined_score=combined,
+                    vector_score=vector_score,
+                    keyword_score=keyword_score,
+                    metadata=candidate.metadata,
+                    source={
+                        **dict(candidate.source),
+                        "retrieval_mode": RetrievalMode.HYBRID.value,
+                    },
+                )
+            )
+    ranked.sort(key=lambda item: (-item.combined_score, item.chunk_id))
+    return tuple(ranked[:top_k])
+
+
 def _count(decisions: tuple[IndexDecision, ...], action: IndexAction) -> int:
     return sum(1 for decision in decisions if decision.action == action)
 
@@ -412,6 +543,11 @@ def _require_positive(value: int, key: str) -> None:
 def _require_non_negative(value: int, key: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{key} debe ser un entero mayor o igual que 0.")
+
+
+def _require_non_negative_float(value: float, key: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        raise ValueError(f"{key} debe ser numerico mayor o igual que 0.")
 
 
 def _require_sha256(value: str, key: str) -> None:
@@ -432,3 +568,50 @@ def _require_unit_score(value: float, key: str) -> None:
 
 def _freeze_mapping(values: dict[str, Any]) -> MappingProxyType[str, Any]:
     return MappingProxyType(dict(values))
+
+
+def _normalizer(values: Any) -> Any:
+    numbers = tuple(float(value) for value in values)
+    if not numbers:
+        return lambda value: 0.0 if value is None else float(value)
+    minimum = min(numbers)
+    maximum = max(numbers)
+    if maximum == minimum:
+        return lambda value: 0.0 if value is None else 1.0
+    return (
+        lambda value: 0.0
+        if value is None
+        else max(0.0, min(1.0, (float(value) - minimum) / (maximum - minimum)))
+    )
+
+
+def _merge_candidate(
+    current: RetrievalCandidate | None,
+    candidate: RetrievalCandidate,
+) -> RetrievalCandidate:
+    if current is None:
+        return candidate
+    vector_score = current.vector_score
+    if candidate.vector_score is not None:
+        vector_score = (
+            candidate.vector_score
+            if vector_score is None
+            else max(vector_score, candidate.vector_score)
+        )
+    keyword_score = current.keyword_score
+    if candidate.keyword_score is not None:
+        keyword_score = (
+            candidate.keyword_score
+            if keyword_score is None
+            else max(keyword_score, candidate.keyword_score)
+        )
+    source = {**dict(current.source), **dict(candidate.source)}
+    return RetrievalCandidate(
+        chunk_id=current.chunk_id,
+        content_sha256=current.content_sha256,
+        combined_score=max(current.combined_score, candidate.combined_score),
+        vector_score=vector_score,
+        keyword_score=keyword_score,
+        metadata=current.metadata,
+        source=source,
+    )

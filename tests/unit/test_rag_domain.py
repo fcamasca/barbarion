@@ -11,6 +11,9 @@ from barbarion.domain.rag import (
     EmbeddingVector,
     H4SymbolMetadata,
     RetrievalCandidate,
+    RetrievalMode,
+    SearchRequest,
+    combine_hybrid_candidates,
     embedding_version,
 )
 
@@ -107,6 +110,34 @@ def test_context_quality_metrics_accept_optional_scores() -> None:
     assert metrics.context_recall is None
 
 
+def test_combine_hybrid_candidates_deduplicates_and_keeps_scores() -> None:
+    vector = RetrievalCandidate(
+        chunk_id="chunk-1",
+        content_sha256=OTHER_SHA,
+        combined_score=0.8,
+        vector_score=0.8,
+    )
+    keyword = RetrievalCandidate(
+        chunk_id="chunk-1",
+        content_sha256=OTHER_SHA,
+        combined_score=0.6,
+        keyword_score=0.6,
+    )
+
+    combined = combine_hybrid_candidates(
+        (vector,),
+        (keyword,),
+        vector_weight=0.5,
+        keyword_weight=0.5,
+        top_k=5,
+    )
+
+    assert len(combined) == 1
+    assert combined[0].vector_score == 0.8
+    assert combined[0].keyword_score == 0.6
+    assert combined[0].source["retrieval_mode"] == "hybrid"
+
+
 @pytest.mark.parametrize(
     "factory",
     [
@@ -118,6 +149,14 @@ def test_context_quality_metrics_accept_optional_scores() -> None:
         lambda: RetrievalCandidate("chunk", "bad", 0.5),
         lambda: RetrievalCandidate("chunk", OTHER_SHA, 1.5),
         lambda: ContextQualityMetrics(context_precision=2),
+        lambda: SearchRequest("", RetrievalMode.SEMANTIC),
+        lambda: SearchRequest("ok", RetrievalMode.HYBRID, top_k=5, candidate_k=4),
+        lambda: SearchRequest(
+            "ok",
+            RetrievalMode.HYBRID,
+            vector_weight=0,
+            keyword_weight=0,
+        ),
     ],
 )
 def test_invalid_rag_models_are_rejected(factory: object) -> None:

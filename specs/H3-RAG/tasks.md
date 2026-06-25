@@ -207,7 +207,7 @@
 
 ### H3-T15 - Implementar busqueda semantica
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T09.  
 **Requisitos:** H3-REQ-010, H3-REQ-015.
@@ -221,7 +221,7 @@
 
 ### H3-T16 - Implementar busqueda keyword
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T04, H3-T10.  
 **Requisitos:** H3-REQ-011.
@@ -235,7 +235,7 @@
 
 ### H3-T17 - Implementar ranking hibrido
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T15, H3-T16.  
 **Requisitos:** H3-REQ-012.
@@ -249,7 +249,7 @@
 
 ### H3-T18 - Implementar SearchService
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T17.  
 **Requisitos:** H3-REQ-015, H3-REQ-020.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Mapping, Sequence
@@ -41,6 +42,11 @@ from barbarion.domain.rag import (
     H4SymbolMetadata,
     IndexScope,
     IndexableChunk,
+    RagQueryStatus,
+    RetrievalCandidate,
+    RetrievalFilter,
+    RetrievalMode,
+    SearchTimings,
     VectorMetadata,
 )
 
@@ -1390,6 +1396,147 @@ class SQLiteRagRepository:
             )
             connection.commit()
 
+    def keyword_search(
+        self,
+        *,
+        domain: str,
+        query: str,
+        filters: RetrievalFilter,
+        top_k: int,
+    ) -> tuple[RetrievalCandidate, ...]:
+        """Busca por keyword local con FTS5 si existe y fallback determinista."""
+        if top_k <= 0:
+            raise ValueError("top_k debe ser mayor que 0.")
+        tokens = _keyword_tokens(query)
+        if not tokens:
+            return ()
+        with self._connect() as connection:
+            rows = _keyword_rows(
+                connection,
+                domain=domain,
+                filters=filters,
+                tokens=tokens,
+            )
+        candidates = []
+        for row in rows:
+            score = _keyword_score(str(row["content"]), tokens)
+            if score <= 0:
+                continue
+            candidates.append(_candidate_from_chunk_row(row, keyword_score=score))
+        candidates.sort(
+            key=lambda item: (
+                -float(item.keyword_score or 0),
+                str(item.source.get("relative_path") or ""),
+                int(item.source.get("ordinal") or 0),
+                item.chunk_id,
+            )
+        )
+        return tuple(candidates[:top_k])
+
+    def enrich_candidates(
+        self,
+        candidates: tuple[RetrievalCandidate, ...],
+        *,
+        include_snippets: bool,
+    ) -> tuple[RetrievalCandidate, ...]:
+        """Completa metadata trazable desde SQLite para candidatos existentes."""
+        if not candidates:
+            return ()
+        placeholders = ", ".join("?" for _ in candidates)
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    chunks.id AS chunk_id,
+                    chunks.content AS content,
+                    chunks.content_sha256 AS content_sha256,
+                    chunks.ordinal AS ordinal,
+                    chunks.chunk_type AS chunk_type,
+                    chunks.start_line AS start_line,
+                    chunks.end_line AS end_line,
+                    chunks.page_start AS page_start,
+                    chunks.page_end AS page_end,
+                    chunks.object_type AS object_type,
+                    chunks.object_name AS object_name,
+                    chunks.metadata_json AS chunk_metadata_json,
+                    documents.id AS document_id,
+                    files.id AS file_id,
+                    files.domain AS domain,
+                    files.artifact_kind AS artifact_kind,
+                    files.relative_path AS relative_path,
+                    files.extension AS extension
+                FROM chunks
+                JOIN documents ON documents.id = chunks.document_id
+                JOIN files ON files.id = documents.file_id
+                WHERE chunks.id IN ({placeholders})
+                """,
+                tuple(candidate.chunk_id for candidate in candidates),
+            ).fetchall()
+        by_id = {str(row["chunk_id"]): row for row in rows}
+        enriched = []
+        for candidate in candidates:
+            row = by_id.get(candidate.chunk_id)
+            if row is None:
+                enriched.append(candidate)
+                continue
+            source = _source_from_chunk_row(row, include_content=include_snippets)
+            source.update(dict(candidate.source))
+            if include_snippets:
+                source["snippet"] = _snippet(str(row["content"]))
+            metadata = _symbols_from_chunk_metadata(str(row["chunk_metadata_json"]))
+            enriched.append(
+                RetrievalCandidate(
+                    chunk_id=candidate.chunk_id,
+                    content_sha256=str(row["content_sha256"]),
+                    combined_score=candidate.combined_score,
+                    vector_score=candidate.vector_score,
+                    keyword_score=candidate.keyword_score,
+                    metadata=metadata,
+                    source=source,
+                )
+            )
+        return tuple(enriched)
+
+    def record_rag_query(
+        self,
+        *,
+        manifest_id: int | None,
+        query_text: str,
+        mode: RetrievalMode,
+        top_k: int,
+        filters: RetrievalFilter,
+        candidate_count: int,
+        timings: SearchTimings,
+        status: RagQueryStatus,
+    ) -> int:
+        """Registra una busqueda RAG para observabilidad local."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO rag_queries(
+                    manifest_id, query_text_sha256, mode, top_k, filters_json,
+                    candidate_count, vector_ms, keyword_ms, ranking_ms, status,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    manifest_id,
+                    _sha256_text(query_text),
+                    mode.value,
+                    top_k,
+                    _canonical_json(_filters_json(filters)),
+                    candidate_count,
+                    timings.vector_ms,
+                    timings.keyword_ms,
+                    timings.ranking_ms,
+                    status.value,
+                    _utc_now(),
+                ),
+            )
+            connection.commit()
+            return int(cursor.lastrowid)
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=5.0)
         connection.row_factory = sqlite3.Row
@@ -1489,13 +1636,217 @@ def _scope_json(scope: IndexScope | None) -> dict[str, object | None]:
         "document_id": scope.document_id,
         "chunk_id": scope.chunk_id,
     }
-    return PersistedEmbeddingManifest(
-        id=int(row["id"]),
-        manifest=manifest,
-        vector_provider=str(row["vector_provider"]),
-        vector_table=str(row["vector_table"]),
-        status=EmbeddingManifestStatus(str(row["status"])),
+
+
+def _filters_json(filters: RetrievalFilter) -> dict[str, object | None]:
+    return {
+        "domain": filters.domain,
+        "artifact_kind": filters.artifact_kind,
+        "language": filters.language,
+        "document_id": filters.document_id,
+        "folder": filters.folder,
+        "extension": filters.extension,
+    }
+
+
+def _keyword_tokens(query: str) -> tuple[str, ...]:
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*|\d+", query.lower())
+    return tuple(dict.fromkeys(tokens))
+
+
+def _keyword_rows(
+    connection: sqlite3.Connection,
+    *,
+    domain: str,
+    filters: RetrievalFilter,
+    tokens: tuple[str, ...],
+) -> tuple[sqlite3.Row, ...]:
+    rows = _filtered_chunk_rows(connection, domain=domain, filters=filters)
+    if not rows or not _fts5_available(connection):
+        return rows
+    connection.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS temp.rag_keyword_fts USING fts5(chunk_id UNINDEXED, content)"
     )
+    connection.execute("DELETE FROM temp.rag_keyword_fts")
+    connection.executemany(
+        "INSERT INTO temp.rag_keyword_fts(chunk_id, content) VALUES (?, ?)",
+        ((str(row["chunk_id"]), str(row["content"])) for row in rows),
+    )
+    fts_query = " OR ".join(f'"{token}"' for token in tokens)
+    matched = connection.execute(
+        "SELECT chunk_id FROM temp.rag_keyword_fts WHERE content MATCH ?",
+        (fts_query,),
+    ).fetchall()
+    matched_ids = {str(row["chunk_id"]) for row in matched}
+    return tuple(row for row in rows if str(row["chunk_id"]) in matched_ids)
+
+
+def _fts5_available(connection: sqlite3.Connection) -> bool:
+    try:
+        connection.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS temp.rag_fts_probe USING fts5(value)"
+        )
+        connection.execute("DROP TABLE temp.rag_fts_probe")
+    except sqlite3.OperationalError:
+        return False
+    return True
+
+
+def _filtered_chunk_rows(
+    connection: sqlite3.Connection,
+    *,
+    domain: str,
+    filters: RetrievalFilter,
+) -> tuple[sqlite3.Row, ...]:
+    clauses = [
+        "files.status = 'processed'",
+        "files.domain = ?",
+        "documents.source_sha256 = files.sha256",
+    ]
+    parameters: list[object] = [domain]
+    if filters.domain is not None:
+        clauses.append("files.domain = ?")
+        parameters.append(filters.domain)
+    if filters.artifact_kind is not None:
+        clauses.append("files.artifact_kind = ?")
+        parameters.append(filters.artifact_kind)
+    if filters.document_id is not None:
+        clauses.append("documents.id = ?")
+        parameters.append(filters.document_id)
+    if filters.folder is not None:
+        clauses.append("files.relative_path LIKE ?")
+        parameters.append(f"{filters.folder.rstrip('/')}%")
+    if filters.extension is not None:
+        clauses.append("files.extension = ?")
+        parameters.append(filters.extension)
+    if filters.language is not None:
+        artifact_for_language = {
+            "plsql": "oracle",
+            "powerscript": "powerbuilder",
+            "markdown": "markdown",
+            "text": "text",
+            "config": "config",
+        }.get(filters.language)
+        if artifact_for_language is not None:
+            clauses.append("files.artifact_kind = ?")
+            parameters.append(artifact_for_language)
+    where = " AND ".join(clauses)
+    return tuple(
+        connection.execute(
+            f"""
+            SELECT
+                chunks.id AS chunk_id,
+                chunks.content AS content,
+                chunks.content_sha256 AS content_sha256,
+                chunks.ordinal AS ordinal,
+                chunks.chunk_type AS chunk_type,
+                chunks.start_line AS start_line,
+                chunks.end_line AS end_line,
+                chunks.page_start AS page_start,
+                chunks.page_end AS page_end,
+                chunks.object_type AS object_type,
+                chunks.object_name AS object_name,
+                chunks.metadata_json AS chunk_metadata_json,
+                documents.id AS document_id,
+                files.id AS file_id,
+                files.domain AS domain,
+                files.artifact_kind AS artifact_kind,
+                files.relative_path AS relative_path,
+                files.extension AS extension
+            FROM chunks
+            JOIN documents ON documents.id = chunks.document_id
+            JOIN files ON files.id = documents.file_id
+            WHERE {where}
+            ORDER BY files.relative_path, chunks.ordinal, chunks.id
+            """,
+            tuple(parameters),
+        ).fetchall()
+    )
+
+
+def _keyword_score(content: str, tokens: tuple[str, ...]) -> float:
+    lowered = content.lower()
+    matched = sum(1 for token in tokens if token in lowered)
+    if matched == 0:
+        return 0.0
+    density_bonus = min(0.25, lowered.count(tokens[0]) / 20)
+    return min(1.0, (matched / len(tokens)) + density_bonus)
+
+
+def _candidate_from_chunk_row(
+    row: sqlite3.Row,
+    *,
+    keyword_score: float,
+) -> RetrievalCandidate:
+    return RetrievalCandidate(
+        chunk_id=str(row["chunk_id"]),
+        content_sha256=str(row["content_sha256"]),
+        combined_score=keyword_score,
+        keyword_score=keyword_score,
+        metadata=_symbols_from_chunk_metadata(str(row["chunk_metadata_json"])),
+        source={
+            **_source_from_chunk_row(row, include_content=False),
+            "retrieval_mode": RetrievalMode.KEYWORD.value,
+        },
+    )
+
+
+def _source_from_chunk_row(
+    row: sqlite3.Row,
+    *,
+    include_content: bool,
+) -> dict[str, object | None]:
+    relative_path = str(row["relative_path"])
+    folder = str(Path(relative_path).parent).replace("\\", "/")
+    if folder == ".":
+        folder = ""
+    source: dict[str, object | None] = {
+        "domain": row["domain"],
+        "artifact_kind": row["artifact_kind"],
+        "language": _language_for_artifact(str(row["artifact_kind"])),
+        "document_id": row["document_id"],
+        "file_id": row["file_id"],
+        "relative_path": relative_path,
+        "folder": folder,
+        "extension": row["extension"],
+        "ordinal": row["ordinal"],
+        "chunk_type": row["chunk_type"],
+        "start_line": row["start_line"],
+        "end_line": row["end_line"],
+        "page_start": row["page_start"],
+        "page_end": row["page_end"],
+        "object_type": row["object_type"],
+        "object_name": row["object_name"],
+    }
+    if include_content:
+        source["content"] = row["content"]
+    return source
+
+
+def _symbols_from_chunk_metadata(raw_json: str) -> H4SymbolMetadata:
+    metadata_json = _loads_json_object(raw_json)
+    return H4SymbolMetadata(
+        symbol_name=_optional_text(metadata_json.get("symbol_name")),
+        symbol_kind=_optional_text(metadata_json.get("symbol_kind")),
+        parent_symbol=_optional_text(metadata_json.get("parent_symbol")),
+        package_name=_optional_text(metadata_json.get("package_name")),
+        procedure_name=_optional_text(metadata_json.get("procedure_name")),
+        class_name=_optional_text(metadata_json.get("class_name")),
+        event_name=_optional_text(metadata_json.get("event_name")),
+    )
+
+
+def _snippet(content: str, *, limit: int = 240) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + "..."
+
+
+def _sha256_text(value: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _execute_with_retries(

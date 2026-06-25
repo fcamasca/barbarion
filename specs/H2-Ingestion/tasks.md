@@ -255,7 +255,7 @@
 
 ### H2-T19 — Incorporar dependencias documentales
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** S.  
 **Dependencias:** packaging H1.  
 **Requisitos:** H2-REQ-014, H2-REQ-015.
@@ -268,7 +268,7 @@
 
 ### H2-T20 — Implementar PdfParser
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T11, H2-T19.  
 **Requisitos:** H2-REQ-014.
@@ -281,7 +281,7 @@
 
 ### H2-T21 — Implementar DocxParser
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Complejidad:** M.  
 **Dependencias:** H2-T11, H2-T19.  
 **Requisitos:** H2-REQ-015.

@@ -1,0 +1,13 @@
+from pathlib import Path
+
+
+def test_quick_start_documents_ollama_model_and_list() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "ollama pull llama3.1:8b" in readme
+    assert "ollama list" in readme
+    assert 'barbarion doctor' in readme
+    assert 'barbarion search "consulta"' in readme
+    assert 'barbarion search "donde se calcula order_total"' in readme
+    assert 'barbarion ask "pregunta"' in readme
+    assert 'barbarion ask "que fuentes explican order_total?"' in readme

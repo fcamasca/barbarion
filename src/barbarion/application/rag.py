@@ -7,6 +7,12 @@ from dataclasses import dataclass
 import re
 
 from barbarion.config import Settings
+from barbarion.domain.progress import (
+    CancellationTokenPort,
+    ProgressReporterPort,
+    ProgressSnapshot,
+    ProgressStage,
+)
 from barbarion.domain.ports import EmbeddingProviderPort, LlmProviderPort, VectorStorePort
 from barbarion.domain.rag import (
     AnswerResult,
@@ -51,13 +57,30 @@ class IndexService:
         scope: IndexScope | None = None,
         dry_run: bool = False,
         delete_obsolete: bool = True,
+        progress: ProgressReporterPort | None = None,
+        cancellation: CancellationTokenPort | None = None,
     ) -> IndexRunSummary:
         """Ejecuta una corrida de indexacion o calcula un dry-run."""
         started = time.monotonic()
+        tracker = _IndexProgressTracker(progress)
+        counters = _IndexCounters()
+        tracker.start(_initial_stages())
+        tracker.advance("discover", current=0, total=1)
         chunks = self.repository.indexable_chunks(
             domain=self.settings.domain,
             scope=scope,
         )
+        tracker.advance("discover", current=1, total=1, message=f"chunks={len(chunks)}")
+        if _is_cancelled(cancellation):
+            summary = IndexRunSummary(
+                status=EmbeddingRunStatus.INTERRUPTED,
+                duration_ms=_duration_ms(started),
+                pending_chunks=len(chunks),
+                dry_run=dry_run,
+            )
+            tracker.finish(summary.status.value)
+            return summary
+        tracker.advance("plan", current=0, total=1)
         active_manifest = self.repository.find_active_manifest(
             provider=self.embedding_provider.provider,
             model=self.embedding_provider.model,
@@ -83,21 +106,53 @@ class IndexService:
             delete_obsolete=delete_obsolete and scope is None,
             dry_run=dry_run,
         )
+        tracker.configure(_stages_for_plan(plan, manifest_probe=False, dry_run=dry_run))
+        tracker.advance("plan", current=1, total=1, counters=_plan_counters(plan))
+        if _is_cancelled(cancellation):
+            summary = _interrupted_summary(
+                counters=counters,
+                plan_total=len(plan.decisions),
+                started=started,
+                dry_run=dry_run,
+            )
+            tracker.finish(summary.status.value)
+            return summary
         if dry_run:
-            return _summary_from_plan(
+            tracker.advance("final", current=1, total=1)
+            summary = _summary_from_plan(
                 plan,
                 status=EmbeddingRunStatus.COMPLETED,
                 duration_ms=_duration_ms(started),
                 dry_run=True,
             )
+            tracker.finish(summary.status.value)
+            return summary
         if not chunks and not plan.deleted_chunks:
-            return IndexRunSummary(
+            tracker.advance("final", current=1, total=1)
+            summary = IndexRunSummary(
                 status=EmbeddingRunStatus.COMPLETED,
                 duration_ms=_duration_ms(started),
             )
+            tracker.finish(summary.status.value)
+            return summary
 
+        manifest_probe = manifest is None or manifest_id is None
+        if manifest_probe:
+            tracker.configure(_stages_for_plan(plan, manifest_probe=True, dry_run=dry_run))
+            if _is_cancelled(cancellation):
+                summary = _interrupted_summary(
+                    counters=counters,
+                    plan_total=len(plan.decisions),
+                    started=started,
+                    dry_run=dry_run,
+                )
+                tracker.finish(summary.status.value)
+                return summary
+            tracker.advance("embeddings", current=0, counters=counters.as_dict())
         if manifest is None or manifest_id is None:
             manifest = self._create_manifest_from_first_chunk(chunks)
+            counters.embeddings_generated += 1
+            tracker.advance("embeddings", current=1, counters=counters.as_dict())
             persisted = self.repository.get_or_create_manifest(manifest)
             manifest_id = persisted.id
             states = self.repository.chunk_embedding_states(
@@ -110,19 +165,30 @@ class IndexService:
                 full=full,
                 delete_obsolete=delete_obsolete and scope is None,
             )
+            tracker.configure(_stages_for_plan(plan, manifest_probe=True, dry_run=dry_run))
 
         run_id = self.repository.begin_embedding_run(
             manifest_id=manifest_id,
             mode=mode,
             scope=scope,
         )
-        failed = 0
-        indexed_new = 0
-        indexed_updated = 0
-        deleted = 0
+        plan_total = len(plan.decisions)
+        embedding_current = 1 if manifest_probe else 0
+        vector_current = 0
+        metadata_current = 0
         for decision in plan.decisions:
+            if _is_cancelled(cancellation):
+                break
             try:
                 if decision.action == IndexAction.UNCHANGED:
+                    counters.unchanged_chunks += 1
+                    counters.processed_chunks += 1
+                    metadata_current += 1
+                    tracker.advance(
+                        "metadata",
+                        current=metadata_current,
+                        counters=counters.as_dict(),
+                    )
                     continue
                 if decision.action == IndexAction.DELETE:
                     assert decision.chunk_id is not None
@@ -135,10 +201,30 @@ class IndexService:
                         manifest_id=manifest_id,
                         chunk_id=decision.chunk_id,
                     )
-                    deleted += 1
+                    counters.deleted_chunks += 1
+                    counters.processed_chunks += 1
+                    vector_current += 1
+                    metadata_current += 1
+                    tracker.advance(
+                        "vectors",
+                        current=vector_current,
+                        counters=counters.as_dict(),
+                    )
+                    tracker.advance(
+                        "metadata",
+                        current=metadata_current,
+                        counters=counters.as_dict(),
+                    )
                     continue
                 assert decision.chunk is not None
                 vector = self._embed_chunk(decision.chunk, manifest)
+                counters.embeddings_generated += 1
+                embedding_current += 1
+                tracker.advance(
+                    "embeddings",
+                    current=embedding_current,
+                    counters=counters.as_dict(),
+                )
                 self.vector_store.upsert(
                     manifest=manifest,
                     chunk_id=decision.chunk.chunk_id,
@@ -150,12 +236,28 @@ class IndexService:
                     manifest_id=manifest_id,
                     chunk=decision.chunk,
                 )
+                counters.vectors_persisted += 1
+                counters.processed_chunks += 1
+                vector_current += 1
+                metadata_current += 1
                 if decision.action == IndexAction.NEW:
-                    indexed_new += 1
+                    counters.new_chunks += 1
                 else:
-                    indexed_updated += 1
+                    counters.updated_chunks += 1
+                tracker.advance(
+                    "vectors",
+                    current=vector_current,
+                    counters=counters.as_dict(),
+                )
+                tracker.advance(
+                    "metadata",
+                    current=metadata_current,
+                    counters=counters.as_dict(),
+                )
             except Exception as exc:
-                failed += 1
+                counters.failed_chunks += 1
+                counters.processed_chunks += 1
+                metadata_current += 1
                 if decision.chunk is not None:
                     self.repository.record_chunk_error(
                         run_id=run_id,
@@ -164,19 +266,25 @@ class IndexService:
                         error_code=type(exc).__name__,
                         error_message=str(exc),
                     )
+                tracker.advance(
+                    "metadata",
+                    current=metadata_current,
+                    counters=counters.as_dict(),
+                )
 
-        status = (
-            EmbeddingRunStatus.COMPLETED_WITH_ERRORS
-            if failed
-            else EmbeddingRunStatus.COMPLETED
-        )
+        interrupted = _is_cancelled(cancellation)
+        status = _run_status(interrupted=interrupted, failed=counters.failed_chunks)
         summary = IndexRunSummary(
             status=status,
-            new_chunks=indexed_new,
-            updated_chunks=indexed_updated,
-            unchanged_chunks=plan.unchanged_chunks,
-            deleted_chunks=deleted,
-            failed_chunks=failed,
+            new_chunks=counters.new_chunks,
+            updated_chunks=counters.updated_chunks,
+            unchanged_chunks=counters.unchanged_chunks,
+            deleted_chunks=counters.deleted_chunks,
+            failed_chunks=counters.failed_chunks,
+            processed_chunks=counters.processed_chunks,
+            pending_chunks=max(0, plan_total - counters.processed_chunks),
+            embeddings_generated=counters.embeddings_generated,
+            vectors_persisted=counters.vectors_persisted,
             duration_ms=_duration_ms(started),
             run_id=run_id,
         )
@@ -190,6 +298,8 @@ class IndexService:
             failed_chunks=summary.failed_chunks,
             duration_ms=summary.duration_ms,
         )
+        tracker.advance("final", current=1, total=1, counters=counters.as_dict())
+        tracker.finish(summary.status.value)
         return summary
 
     def _create_manifest_from_first_chunk(
@@ -244,7 +354,163 @@ def _summary_from_plan(
         updated_chunks=plan.updated_chunks,
         unchanged_chunks=plan.unchanged_chunks,
         deleted_chunks=plan.deleted_chunks,
+        processed_chunks=len(plan.decisions),
+        pending_chunks=0,
         duration_ms=duration_ms,
+        dry_run=dry_run,
+    )
+
+
+@dataclass(slots=True)
+class _IndexCounters:
+    new_chunks: int = 0
+    updated_chunks: int = 0
+    unchanged_chunks: int = 0
+    deleted_chunks: int = 0
+    failed_chunks: int = 0
+    processed_chunks: int = 0
+    embeddings_generated: int = 0
+    vectors_persisted: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "new": self.new_chunks,
+            "update": self.updated_chunks,
+            "unchanged": self.unchanged_chunks,
+            "delete": self.deleted_chunks,
+            "errores": self.failed_chunks,
+            "procesados": self.processed_chunks,
+            "embeddings": self.embeddings_generated,
+            "vectores": self.vectors_persisted,
+        }
+
+
+class _IndexProgressTracker:
+    def __init__(self, reporter: ProgressReporterPort | None) -> None:
+        self._reporter = reporter
+        self._stages: dict[str, ProgressStage] = {}
+        self._stage_done: dict[str, int] = {}
+
+    def start(self, stages: tuple[ProgressStage, ...]) -> None:
+        self.configure(stages)
+        if self._reporter is not None:
+            self._reporter.start(stages)
+
+    def configure(self, stages: tuple[ProgressStage, ...]) -> None:
+        self._stages = {stage.key: stage for stage in stages}
+        self._stage_done = {
+            key: self._stage_done.get(key, 0)
+            for key in self._stages
+        }
+
+    def advance(
+        self,
+        key: str,
+        *,
+        current: int,
+        total: int | None = None,
+        counters: dict[str, int] | None = None,
+        message: str | None = None,
+    ) -> None:
+        if self._reporter is None:
+            return
+        stage = self._stages.get(key, ProgressStage(key=key, label=key, total=total))
+        stage_total = total if total is not None else stage.total
+        safe_current = max(0, current)
+        if stage_total is not None:
+            safe_current = min(safe_current, stage_total)
+        self._stage_done[key] = safe_current
+        global_total = self._global_total
+        global_current = sum(self._stage_done.values())
+        self._reporter.stage(
+            ProgressSnapshot(
+                stage_key=key,
+                stage_label=stage.label,
+                current=safe_current,
+                total=stage_total,
+                global_current=global_current,
+                global_total=global_total,
+                counters=dict(counters or {}),
+                message=message,
+            )
+        )
+
+    def finish(self, status: str) -> None:
+        if self._reporter is not None:
+            self._reporter.finish(status)
+
+    @property
+    def _global_total(self) -> int | None:
+        totals = [stage.total for stage in self._stages.values()]
+        if any(total is None for total in totals):
+            return None
+        return sum(int(total) for total in totals)
+
+
+def _initial_stages() -> tuple[ProgressStage, ...]:
+    return (
+        ProgressStage("discover", "Descubriendo chunks", 1),
+        ProgressStage("plan", "Planificando indexacion", 1),
+        ProgressStage("final", "Finalizando", 1),
+    )
+
+
+def _stages_for_plan(plan, *, manifest_probe: bool, dry_run: bool) -> tuple[ProgressStage, ...]:
+    if dry_run:
+        return _initial_stages()
+    embedding_work = plan.new_chunks + plan.updated_chunks + (1 if manifest_probe else 0)
+    vector_work = plan.new_chunks + plan.updated_chunks + plan.deleted_chunks
+    return (
+        ProgressStage("discover", "Descubriendo chunks", 1),
+        ProgressStage("plan", "Planificando indexacion", 1),
+        ProgressStage("embeddings", "Generando embeddings", embedding_work),
+        ProgressStage("vectors", "Persistiendo vectores", vector_work),
+        ProgressStage("metadata", "Actualizando metadata", len(plan.decisions)),
+        ProgressStage("final", "Finalizando", 1),
+    )
+
+
+def _plan_counters(plan) -> dict[str, int]:
+    return {
+        "new": plan.new_chunks,
+        "update": plan.updated_chunks,
+        "unchanged": plan.unchanged_chunks,
+        "delete": plan.deleted_chunks,
+        "errores": 0,
+    }
+
+
+def _is_cancelled(cancellation: CancellationTokenPort | None) -> bool:
+    return bool(cancellation is not None and cancellation.cancelled)
+
+
+def _run_status(*, interrupted: bool, failed: int) -> EmbeddingRunStatus:
+    if interrupted:
+        return EmbeddingRunStatus.INTERRUPTED
+    if failed:
+        return EmbeddingRunStatus.COMPLETED_WITH_ERRORS
+    return EmbeddingRunStatus.COMPLETED
+
+
+def _interrupted_summary(
+    *,
+    counters: _IndexCounters,
+    plan_total: int,
+    started: float,
+    dry_run: bool,
+) -> IndexRunSummary:
+    return IndexRunSummary(
+        status=EmbeddingRunStatus.INTERRUPTED,
+        new_chunks=counters.new_chunks,
+        updated_chunks=counters.updated_chunks,
+        unchanged_chunks=counters.unchanged_chunks,
+        deleted_chunks=counters.deleted_chunks,
+        failed_chunks=counters.failed_chunks,
+        processed_chunks=counters.processed_chunks,
+        pending_chunks=max(0, plan_total - counters.processed_chunks),
+        embeddings_generated=counters.embeddings_generated,
+        vectors_persisted=counters.vectors_persisted,
+        duration_ms=_duration_ms(started),
         dry_run=dry_run,
     )
 
@@ -451,21 +717,26 @@ class ContextBuilder:
             content = str(candidate.source.get("content") or candidate.source.get("snippet") or "")
             if not content:
                 content = str(candidate.source.get("relative_path") or candidate.chunk_id)
-            token_estimate = min(_estimate_tokens(content), self.max_chunk_tokens)
-            if used_tokens + token_estimate > self.token_budget:
+            original_token_estimate = _estimate_tokens(content)
+            source_id = f"F{len(sources) + 1}"
+            content = _truncate_to_tokens(content, self.max_chunk_tokens)
+            source = ContextSource(
+                source_id=source_id,
+                candidate=candidate,
+                content=content,
+                token_estimate=_estimate_tokens(content),
+                original_token_estimate=original_token_estimate,
+                content_truncated=original_token_estimate > self.max_chunk_tokens,
+            )
+            remaining_tokens = self.token_budget - used_tokens
+            source = _fit_source_to_budget(source, remaining_tokens)
+            if source is None:
                 budget_omitted.append(
                     {"chunk_id": candidate.chunk_id, "reason": "budget"}
                 )
                 continue
-            source_id = f"F{len(sources) + 1}"
-            sources.append(
-                ContextSource(
-                    source_id=source_id,
-                    candidate=candidate,
-                    content=_truncate_to_tokens(content, self.max_chunk_tokens),
-                    token_estimate=token_estimate,
-                )
-            )
+            token_estimate = _estimate_tokens(_render_source_context(source))
+            sources.append(source)
             used_tokens += token_estimate
         omitted = tuple((*score_omitted, *duplicate_omitted, *budget_omitted))
         duplicate_ratio = (
@@ -494,6 +765,10 @@ class ContextBuilder:
                 "omitted": len(omitted),
                 "token_budget": self.token_budget,
                 "token_estimate": used_tokens,
+                "context_chars": len(_render_context(sources)),
+                "truncated_sources": sum(
+                    1 for source in sources if source.content_truncated
+                ),
             }
         return ContextBuildResult(
             sources=tuple(sources),
@@ -573,7 +848,12 @@ class CitationValidator:
         allowed = {source.source_id for source in context.sources}
         cited = set(re.findall(r"\[(F\d+)\]", answer))
         missing = tuple(sorted(cited - allowed))
-        return CitationValidation(valid=not missing, missing_source_ids=missing)
+        valid_cited = tuple(sorted(cited & allowed))
+        return CitationValidation(
+            valid=bool(valid_cited) and not missing,
+            missing_source_ids=missing,
+            cited_source_ids=valid_cited,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -650,9 +930,24 @@ class AskService:
                 context=context,
                 status=RagQueryStatus.COMPLETED,
                 no_llm=True,
-                debug={"duration_ms": _duration_ms(started)} if debug else {},
+                debug=_ask_debug_payload(
+                    started=started,
+                    context=context,
+                    prompt="",
+                    timeout_seconds=self.settings.llm.timeout_seconds,
+                )
+                if debug
+                else {},
             )
         prompt = self.prompt_builder.build(question=question, context=context)
+        debug_payload = {}
+        if debug:
+            debug_payload = _ask_debug_payload(
+                started=started,
+                context=context,
+                prompt=prompt,
+                timeout_seconds=self.settings.llm.timeout_seconds,
+            )
         llm_started = time.monotonic()
         answer = self.llm_provider.generate(
             prompt=prompt,
@@ -678,7 +973,7 @@ class AskService:
             no_llm=False,
             citations_valid=validation.valid,
             missing_citations=validation.missing_source_ids,
-            debug={"duration_ms": _duration_ms(started)} if debug else {},
+            debug=debug_payload if debug else {},
         )
 
 
@@ -693,21 +988,78 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
+def _fit_source_to_budget(
+    source: ContextSource,
+    remaining_tokens: int,
+) -> ContextSource | None:
+    if remaining_tokens <= 0:
+        return None
+    if _estimate_tokens(_render_source_context(source)) <= remaining_tokens:
+        return source
+    header_tokens = _estimate_tokens(_render_source_context(source).replace(source.content, ""))
+    available_content_tokens = remaining_tokens - header_tokens
+    if available_content_tokens <= 0:
+        return None
+    content = _truncate_to_tokens(source.content, available_content_tokens)
+    fitted = ContextSource(
+        source_id=source.source_id,
+        candidate=source.candidate,
+        content=content,
+        token_estimate=_estimate_tokens(content),
+        original_token_estimate=source.original_token_estimate,
+        content_truncated=True,
+    )
+    if _estimate_tokens(_render_source_context(fitted)) > remaining_tokens:
+        return None
+    return fitted
+
+
 def _render_context(sources: list[ContextSource]) -> str:
-    blocks = []
-    for source in sources:
-        candidate = source.candidate
-        path = candidate.source.get("relative_path") or "fuente desconocida"
-        line_start = candidate.source.get("start_line")
-        line_end = candidate.source.get("end_line")
-        lines = ""
-        if line_start is not None and line_end is not None:
-            lines = f", lineas {line_start}-{line_end}"
-        blocks.append(
-            f"[{source.source_id}] {path}, chunk {candidate.chunk_id}, "
-            f"score {candidate.combined_score:.3f}{lines}\n{source.content}"
-        )
-    return "\n\n".join(blocks)
+    return "\n\n".join(_render_source_context(source) for source in sources)
+
+
+def _render_source_context(source: ContextSource) -> str:
+    candidate = source.candidate
+    path = candidate.source.get("relative_path") or "fuente desconocida"
+    line_start = candidate.source.get("start_line")
+    line_end = candidate.source.get("end_line")
+    lines = ""
+    if line_start is not None and line_end is not None:
+        lines = f"\nlineas={line_start}-{line_end}"
+    page_start = candidate.source.get("page_start")
+    page_end = candidate.source.get("page_end")
+    pages = ""
+    if page_start is not None and page_end is not None:
+        pages = f"\npaginas={page_start}-{page_end}"
+    return (
+        f"[{source.source_id}] {path}\n"
+        f"chunk={candidate.chunk_id}\n"
+        f"score={candidate.combined_score:.3f}"
+        f"{lines}{pages}\n"
+        f"contenido_truncado={str(source.content_truncated).lower()}\n"
+        f"{source.content}"
+    )
+
+
+def _ask_debug_payload(
+    *,
+    started: float,
+    context: ContextBuildResult,
+    prompt: str,
+    timeout_seconds: float,
+) -> dict[str, object]:
+    return {
+        "duration_ms": _duration_ms(started),
+        "sources": len(context.sources),
+        "context_chars": len(context.rendered_context),
+        "context_tokens_est": context.token_estimate,
+        "prompt_chars": len(prompt),
+        "llm_timeout_seconds": timeout_seconds,
+        "truncated_sources": sum(
+            1 for source in context.sources if source.content_truncated
+        ),
+        "context_builder": dict(context.debug),
+    }
 
 
 def _no_llm_answer(context: ContextBuildResult) -> str:
@@ -736,12 +1088,17 @@ def _insufficient_evidence_answer() -> str:
 
 
 def _invalid_citations_answer(validation: CitationValidation) -> str:
-    missing = ", ".join(validation.missing_source_ids)
+    if validation.missing_source_ids:
+        detail = f"Citas inexistentes: {', '.join(validation.missing_source_ids)}."
+        conclusion = "La respuesta candidata fue rechazada porque contiene citas invalidas."
+    else:
+        detail = "La respuesta generada no incluyo citas validas."
+        conclusion = "La respuesta generada no incluyo citas validas."
     return (
         "## Conclusion\n"
-        "La respuesta candidata fue rechazada porque contiene citas invalidas.\n\n"
+        f"{conclusion}\n\n"
         "## Evidencia\n"
-        f"- Citas inexistentes: {missing}.\n\n"
+        f"- {detail}\n\n"
         "## Supuestos y limites\n"
-        "- Ejecuta con debug para inspeccionar el contexto recuperado."
+        '- Prueba: barbarion ask "..." --no-llm'
     )

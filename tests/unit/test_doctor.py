@@ -52,11 +52,12 @@ def test_all_checks_pass_in_stable_order(tmp_path: Path) -> None:
         "Directorio de datos",
         "Directorio de salida",
         "Directorio de logs",
+        "Directorio de fuentes",
         "SQLite",
         "Ollama",
     ]
-    assert [check.status for check in report.checks] == ["PASS"] * 7
-    assert report.summary.pass_count == 7
+    assert [check.status for check in report.checks] == ["PASS"] * 8
+    assert report.summary.pass_count == 8
     assert report.summary.warn_count == 0
     assert report.summary.fail_count == 0
     assert report.summary.success is True

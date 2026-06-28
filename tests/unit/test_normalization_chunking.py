@@ -180,6 +180,68 @@ def test_chunking_splits_large_units_by_lines_and_overlap() -> None:
     assert all(len(chunk.content) <= 9 for chunk in chunks)
     assert chunks[0].content == "aaaa\nbbbb"
     assert chunks[1].content.startswith("bb")
+    assert chunks[0].start_line == 1
+    assert chunks[0].end_line == 2
+    assert chunks[1].start_line == 2
+    assert chunks[1].end_line >= chunks[1].start_line
+
+
+def test_chunking_large_document_assigns_distinct_line_ranges() -> None:
+    lines = [f"linea {index:04d} valor calculo diario" for index in range(1, 301)]
+    text = "\n".join(lines)
+    unit = LogicalUnit(
+        unit_type="file",
+        name="large.sql",
+        confidence=Confidence.LOW,
+        start_line=1,
+        end_line=len(lines),
+    )
+    document = normalize_extraction(extraction(text, (unit,)), source_sha256=SOURCE_SHA)
+
+    chunks = chunk_document(
+        document,
+        file_identity="oracle/large.sql",
+        processing_signature=PROCESSING_SIGNATURE,
+        chunk_size=900,
+        chunk_overlap=120,
+    )
+    ranges = [(chunk.start_line, chunk.end_line) for chunk in chunks]
+
+    assert len(chunks) > 3
+    assert len(set(ranges)) == len(ranges)
+    assert ranges[0][0] == 1
+    assert all(start is not None and end is not None for start, end in ranges)
+    assert all(start <= end for start, end in ranges if start is not None and end is not None)
+    assert all(end < len(lines) for start, end in ranges[:-1] if end is not None)
+    assert ranges[-1][1] == len(lines)
+
+
+def test_chunk_line_ranges_match_chunk_content() -> None:
+    lines = [f"select {index} as value_{index} from dual;" for index in range(1, 81)]
+    text = "\n".join(lines)
+    unit = LogicalUnit(
+        unit_type="file",
+        name="body.sql",
+        confidence=Confidence.LOW,
+        start_line=1,
+        end_line=len(lines),
+    )
+    document = normalize_extraction(extraction(text, (unit,)), source_sha256=SOURCE_SHA)
+
+    chunks = chunk_document(
+        document,
+        file_identity="oracle/body.sql",
+        processing_signature=PROCESSING_SIGNATURE,
+        chunk_size=320,
+        chunk_overlap=40,
+    )
+
+    assert len(chunks) > 1
+    for chunk in chunks:
+        assert chunk.start_line is not None
+        assert chunk.end_line is not None
+        ranged_text = "\n".join(lines[chunk.start_line - 1 : chunk.end_line])
+        assert chunk.content in ranged_text
 
 
 def test_chunking_overlap_does_not_repeat_break_inside_previous_overlap() -> None:

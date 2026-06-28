@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from barbarion.bootstrap import DirectoryResult, initialize_directories
+from barbarion.bootstrap import (
+    SOURCE_SUBDIRECTORIES,
+    DirectoryResult,
+    initialize_directories,
+)
 from barbarion.config import Settings, load_settings
 
 
@@ -29,16 +33,23 @@ def test_initialize_directories_creates_unique_configured_paths(
 
     results = initialize_directories(settings)
 
-    assert len(results) == 3
+    assert len(results) == 8
     assert all(result.success for result in results)
     assert settings.data_dir.is_dir()
     assert settings.output_dir.is_dir()
     assert settings.logs_dir.is_dir()
+    source_root = settings.ingestion.paths[0]
+    assert source_root.is_dir()
+    for name in SOURCE_SUBDIRECTORIES:
+        assert (source_root / name).is_dir()
     indexed = results_by_path(results)
     assert indexed[settings.data_dir].roles == ("data", "database")
     assert indexed[settings.output_dir].roles == ("output",)
     assert indexed[settings.logs_dir].roles == ("logs",)
-    assert all(list(result.path.iterdir()) == [] for result in results)
+    assert indexed[source_root].roles == ("sources",)
+    assert list(settings.data_dir.iterdir()) == []
+    assert list(settings.output_dir.iterdir()) == []
+    assert list(settings.logs_dir.iterdir()) == []
 
 
 def test_initialization_is_idempotent_and_preserves_content(tmp_path: Path) -> None:
@@ -46,12 +57,15 @@ def test_initialization_is_idempotent_and_preserves_content(tmp_path: Path) -> N
     first_results = initialize_directories(settings)
     sentinel = settings.data_dir / "sentinel.txt"
     sentinel.write_text("preservar", encoding="utf-8")
+    source_file = settings.ingestion.paths[0] / "docs" / "note.md"
+    source_file.write_text("contenido", encoding="utf-8")
 
     second_results = initialize_directories(settings)
 
     assert all(result.success for result in first_results)
     assert all(result.success for result in second_results)
     assert sentinel.read_text(encoding="utf-8") == "preservar"
+    assert source_file.read_text(encoding="utf-8") == "contenido"
 
 
 def test_file_in_place_of_directory_returns_failure(tmp_path: Path) -> None:
@@ -66,6 +80,7 @@ def test_file_in_place_of_directory_returns_failure(tmp_path: Path) -> None:
     assert str(settings.data_dir) in blocked.detail
     assert "no es un directorio" in blocked.detail
     assert results_by_path(results)[settings.output_dir].success is True
+    assert results_by_path(results)[settings.ingestion.paths[0]].success is True
 
 
 def test_duplicate_paths_are_checked_once(tmp_path: Path) -> None:
@@ -80,14 +95,15 @@ def test_duplicate_paths_are_checked_once(tmp_path: Path) -> None:
 
     results = initialize_directories(settings)
 
-    assert results == (
-        DirectoryResult(
-            roles=("data", "output", "logs", "database"),
-            path=shared,
-            success=True,
-            detail=f"Directorio disponible: '{shared}'.",
-        ),
+    indexed = results_by_path(results)
+    assert indexed[shared] == DirectoryResult(
+        roles=("data", "output", "logs", "database"),
+        path=shared,
+        success=True,
+        detail=f"Directorio disponible: '{shared}'.",
     )
+    for name in SOURCE_SUBDIRECTORIES:
+        assert (tmp_path / "sources" / name).is_dir()
 
 
 def test_permission_error_is_returned_without_raising(
@@ -126,4 +142,27 @@ def test_write_probe_error_is_returned_and_leaves_no_temporary_file(
 
     assert all(result.success is False for result in results)
     assert all("escritura denegada" in result.detail for result in results)
-    assert all(list(result.path.iterdir()) == [] for result in results)
+    assert not any(path.is_file() for path in settings.ingestion.paths[0].rglob("*"))
+
+
+def test_initialize_directories_completes_custom_source_subdirectories(
+    tmp_path: Path,
+) -> None:
+    custom_sources = tmp_path / "custom-inputs"
+    custom_sources.mkdir()
+    existing = custom_sources / "keep.txt"
+    existing.write_text("no tocar", encoding="utf-8")
+    settings = replace(
+        default_settings(tmp_path),
+        ingestion=replace(
+            default_settings(tmp_path).ingestion,
+            paths=(custom_sources,),
+        ),
+    )
+
+    results = initialize_directories(settings)
+
+    assert all(result.success for result in results)
+    assert existing.read_text(encoding="utf-8") == "no tocar"
+    for name in SOURCE_SUBDIRECTORIES:
+        assert (custom_sources / name).is_dir()

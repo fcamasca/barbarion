@@ -64,6 +64,7 @@ _DIRECTORY_CHECKS = (
     ("data", "Directorio de datos"),
     ("output", "Directorio de salida"),
     ("logs", "Directorio de logs"),
+    ("sources", "Directorio de fuentes"),
 )
 
 

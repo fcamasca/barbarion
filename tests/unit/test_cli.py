@@ -22,6 +22,7 @@ from barbarion.domain.models import (
     IngestionRunStatus,
     PipelineError,
 )
+from barbarion.domain.progress import ProgressSnapshot
 from barbarion.domain.rag import (
     AnswerResult,
     ContextBuildResult,
@@ -29,6 +30,7 @@ from barbarion.domain.rag import (
     ContextSource,
     EmbeddingRunStatus,
     IndexRunSummary,
+    LlmProviderError,
     RagQueryStatus,
     RetrievalCandidate,
     RetrievalMode,
@@ -85,6 +87,7 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
         (("ask", "--help"), "Responde una pregunta"),
         (("embeddings", "--help"), "Muestra manifests"),
         (("stats", "--help"), "Muestra estadisticas"),
+        (("generate-report", "--help"), "Genera reportes"),
     ],
 )
 def test_help_is_in_spanish_and_has_no_side_effects(
@@ -426,6 +429,101 @@ class FakeIndexService:
         return self.summary
 
 
+class TtyBuffer:
+    def __init__(self) -> None:
+        self.parts: list[str] = []
+
+    def write(self, value: str) -> int:
+        self.parts.append(value)
+        return len(value)
+
+    def flush(self) -> None:
+        return None
+
+    def isatty(self) -> bool:
+        return True
+
+    @property
+    def text(self) -> str:
+        return "".join(self.parts)
+
+
+def test_console_progress_reporter_refreshes_interactive_block() -> None:
+    stream = TtyBuffer()
+    reporter = cli.ConsoleProgressReporter(
+        stream,
+        min_interval_seconds=0.0,
+    )
+    reporter.start(())
+
+    reporter.stage(
+        ProgressSnapshot(
+            stage_key="embeddings",
+            stage_label="Generando embeddings",
+            current=1,
+            total=10,
+            global_current=3,
+            global_total=20,
+            counters={"new": 1, "update": 0, "unchanged": 2, "delete": 0, "errores": 0},
+        )
+    )
+    reporter.stage(
+        ProgressSnapshot(
+            stage_key="embeddings",
+            stage_label="Generando embeddings",
+            current=2,
+            total=10,
+            global_current=4,
+            global_total=20,
+            counters={"new": 2, "update": 0, "unchanged": 2, "delete": 0, "errores": 0},
+        )
+    )
+    reporter.finish("completed")
+
+    assert "Barbarion Index" in stream.text
+    assert "Ctrl+C cancela de forma segura; puedes reanudar luego." in stream.text
+    assert "Global  [" in stream.text
+    assert "Etapa   [" in stream.text
+    assert "Generando embeddings" in stream.text
+    assert "Procesados : 2 / 10" in stream.text
+    assert "Nuevos       : 2" in stream.text
+    assert "Actualizados : 0" in stream.text
+    assert "Sin cambios  : 2" in stream.text
+    assert "Eliminados   : 0" in stream.text
+    assert "Errores      : 0" in stream.text
+    assert "Ver log:" not in stream.text
+    assert "Velocidad    :" not in stream.text
+    assert "ETA          :" not in stream.text
+    assert "\x1b[15F" in stream.text
+    assert "Progreso finalizado: completed" in stream.text
+
+
+def test_console_progress_reporter_points_to_embeddings_errors_command() -> None:
+    stream = TtyBuffer()
+    reporter = cli.ConsoleProgressReporter(
+        stream,
+        min_interval_seconds=0.0,
+    )
+    reporter.start(())
+
+    reporter.stage(
+        ProgressSnapshot(
+            stage_key="metadata",
+            stage_label="Actualizando metadata",
+            current=5,
+            total=10,
+            global_current=5,
+            global_total=20,
+            counters={"errores": 2},
+        )
+    )
+
+    assert (
+        "Errores      : 2  Detalle disponible en: barbarion embeddings --errors"
+        in stream.text
+    )
+
+
 def test_index_dry_run_uses_index_service(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -447,13 +545,11 @@ def test_index_dry_run_uses_index_service(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert service.calls == [
-        {
-            "mode": cli.EmbeddingRunMode.INCREMENTAL,
-            "dry_run": True,
-            "delete_obsolete": True,
-        }
-    ]
+    assert service.calls[0]["mode"] == cli.EmbeddingRunMode.INCREMENTAL
+    assert service.calls[0]["dry_run"] is True
+    assert service.calls[0]["delete_obsolete"] is True
+    assert isinstance(service.calls[0]["progress"], cli.ConsoleProgressReporter)
+    assert isinstance(service.calls[0]["cancellation"], cli.CliCancellationToken)
     assert "Dry-run de indexacion RAG: completed" in captured.out
     assert "Nuevos: 2" in captured.out
 
@@ -493,7 +589,90 @@ def test_reindex_full_invokes_service(
     assert service.calls[0]["mode"] == cli.EmbeddingRunMode.FULL
     assert service.calls[0]["scope"] is None
     assert service.calls[0]["delete_obsolete"] is True
+    assert isinstance(service.calls[0]["progress"], cli.ConsoleProgressReporter)
+    assert isinstance(service.calls[0]["cancellation"], cli.CliCancellationToken)
     assert "Actualizados: 3" in captured.out
+
+
+def test_index_interrupted_returns_130_and_renders_operational_summary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeIndexService(
+        IndexRunSummary(
+            status=EmbeddingRunStatus.INTERRUPTED,
+            processed_chunks=1,
+            pending_chunks=2,
+            embeddings_generated=1,
+            vectors_persisted=1,
+            run_id=9,
+        )
+    )
+    monkeypatch.setattr(cli, "_build_index_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "index"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 130
+    assert "Indexacion RAG: interrupted" in captured.out
+    assert "Run: 9" in captured.out
+    assert "Procesados: 1" in captured.out
+    assert "Pendientes: 2" in captured.out
+    assert "Embeddings generados: 1" in captured.out
+    assert "Vectores persistidos: 1" in captured.out
+
+
+def test_index_logs_error_summary_when_failures_exist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from barbarion.domain.rag import EmbeddingManifest
+    from barbarion.infrastructure.sqlite import SQLiteRagRepository
+    from tests.unit.test_rag_index_service import seed_chunks
+
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "logs").mkdir()
+    db_path = tmp_path / "data" / "barbarion.db"
+    initialize_database(db_path)
+    seed_chunks(db_path)
+    repository = SQLiteRagRepository(db_path)
+    manifest = repository.get_or_create_manifest(
+        EmbeddingManifest("fake", "sha256", 4)
+    )
+    run_id = repository.begin_embedding_run(
+        manifest_id=manifest.id,
+        mode=cli.EmbeddingRunMode.INCREMENTAL,
+        scope=None,
+    )
+    chunk = repository.indexable_chunks(domain="default")[0]
+    repository.record_chunk_error(
+        run_id=run_id,
+        manifest_id=manifest.id,
+        chunk=chunk,
+        error_code="OLLAMA_EMBEDDINGS_UNAVAILABLE",
+        error_message="no se pudo contactar Ollama local",
+    )
+    service = FakeIndexService(
+        IndexRunSummary(
+            status=EmbeddingRunStatus.INTERRUPTED,
+            failed_chunks=1,
+            run_id=run_id,
+        )
+    )
+    monkeypatch.setattr(cli, "_build_index_service", lambda settings: service)
+
+    assert cli.main(["--config", str(source), "index"]) == 130
+
+    log_content = (tmp_path / "logs" / LOG_FILENAME).read_text(encoding="utf-8")
+    assert (
+        f"WARNING barbarion index run_id={run_id} status=interrupted "
+        "failed_chunks=1 error_code=OLLAMA_EMBEDDINGS_UNAVAILABLE"
+    ) in log_content
 
 
 class FakeSearchService:
@@ -538,7 +717,7 @@ def test_search_json_invokes_service_with_filters(
             "--config",
             str(source),
             "search",
-            "COSTO_AMORT_DIA",
+            "order_total",
             "--mode",
             "keyword",
             "--extension",
@@ -551,10 +730,12 @@ def test_search_json_invokes_service_with_filters(
     payload = json.loads(captured.out)
 
     assert exit_code == 0
-    assert service.requests[0].query == "COSTO_AMORT_DIA"
+    assert service.requests[0].query == "order_total"
     assert service.requests[0].filters.extension == ".sql"
     assert payload["query_id"] == 7
     assert payload["results"][0]["chunk_id"] == "chunk-1"
+    assert payload["results"][0]["source"]["start_line"] == 10
+    assert payload["results"][0]["source"]["end_line"] == 12
 
 
 class FakeAskService:
@@ -568,7 +749,11 @@ class FakeAskService:
             chunk_id="chunk-1",
             content_sha256="a" * 64,
             combined_score=0.8,
-            source={"relative_path": "pkg/demo.sql"},
+            source={
+                "relative_path": "pkg/demo.sql",
+                "start_line": 10,
+                "end_line": 12,
+            },
         )
         source = ContextSource(
             source_id="F1",
@@ -592,6 +777,15 @@ class FakeAskService:
             no_llm=kwargs["no_llm"],
             citations_valid=self.citations_valid,
         )
+
+
+class RaisingAskService:
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    def ask(self, *args, **kwargs):  # noqa: ANN002, ANN003
+        del args, kwargs
+        raise self.error
 
 
 def test_ask_no_llm_markdown_invokes_service(
@@ -622,6 +816,54 @@ def test_ask_no_llm_markdown_invokes_service(
     assert service.calls[0][1]["no_llm"] is True
     assert "## Conclusion" in captured.out
     assert "## Fuentes" in captured.out
+    assert "lineas=10-12" in captured.out
+
+
+def test_ask_llm_timeout_does_not_print_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    monkeypatch.setattr(
+        cli,
+        "_build_ask_service",
+        lambda settings: RaisingAskService(
+            LlmProviderError("OLLAMA_LLM_TIMEOUT: timeout")
+        ),
+    )
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Ollama no respondio dentro del timeout configurado" in captured.err
+    assert "Sugerencias:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_ask_keyboard_interrupt_returns_130(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    monkeypatch.setattr(
+        cli,
+        "_build_ask_service",
+        lambda settings: RaisingAskService(KeyboardInterrupt()),
+    )
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 130
+    assert "interrumpida por el usuario" in captured.err
+    assert "Traceback" not in captured.err
 
 
 def test_embeddings_and_stats_are_read_only(
@@ -683,3 +925,74 @@ def test_embeddings_and_stats_are_read_only(
     assert "Estadisticas RAG" in stats_out
     assert "chunks_indexed = 1" in stats_out
     assert before_counts == after_counts
+
+
+def test_embeddings_errors_renders_persisted_index_errors(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from barbarion.domain.rag import EmbeddingManifest
+    from barbarion.infrastructure.sqlite import SQLiteRagRepository
+    from tests.unit.test_rag_index_service import seed_chunks
+
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    db_path = tmp_path / "data" / "barbarion.db"
+    initialize_database(db_path)
+    seed_chunks(db_path)
+    repository = SQLiteRagRepository(db_path)
+    manifest = repository.get_or_create_manifest(
+        EmbeddingManifest("fake", "sha256", 4)
+    )
+    run_id = repository.begin_embedding_run(
+        manifest_id=manifest.id,
+        mode=cli.EmbeddingRunMode.INCREMENTAL,
+        scope=None,
+    )
+    chunk = repository.indexable_chunks(domain="default")[0]
+    repository.record_chunk_error(
+        run_id=run_id,
+        manifest_id=manifest.id,
+        chunk=chunk,
+        error_code="OLLAMA_EMBEDDINGS_UNAVAILABLE",
+        error_message="no se pudo contactar Ollama local",
+    )
+
+    exit_code = cli.main(["--config", str(source), "embeddings", "--errors"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert f"Run: {run_id}" in output
+    assert "Errores: 1" in output
+    assert f"1. chunk_id={chunk.chunk_id}" in output
+    assert "error=OLLAMA_EMBEDDINGS_UNAVAILABLE" in output
+    assert "mensaje=no se pudo contactar Ollama local" in output
+
+
+def test_generate_report_command_writes_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output = tmp_path / "reports" / "h3"
+
+    exit_code = cli.main(
+        [
+            "generate-report",
+            "--dataset",
+            "tests/fixtures/h3_rag_evaluation.json",
+            "--output",
+            str(output),
+            "--test-summary",
+            "tests ok",
+            "--smoke-summary",
+            "smoke ok",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Reporte H3 generado" in captured.out
+    assert (output / "metrics.json").exists()
+    assert (output / "topk-report.md").exists()
+    assert (output / "smoke-report.md").exists()
+    assert "## Baseline" in (output / "benchmark.md").read_text(encoding="utf-8")

@@ -393,11 +393,14 @@ class ContextSource:
     candidate: RetrievalCandidate
     content: str
     token_estimate: int
+    original_token_estimate: int = 0
+    content_truncated: bool = False
 
     def __post_init__(self) -> None:
         _require_non_empty(self.source_id, "source_id")
         _require_non_empty(self.content, "content")
         _require_non_negative(self.token_estimate, "token_estimate")
+        _require_non_negative(self.original_token_estimate, "original_token_estimate")
 
 
 @dataclass(frozen=True, slots=True)
@@ -422,6 +425,7 @@ class CitationValidation:
 
     valid: bool
     missing_source_ids: tuple[str, ...] = ()
+    cited_source_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +458,10 @@ class IndexRunSummary:
     unchanged_chunks: int = 0
     deleted_chunks: int = 0
     failed_chunks: int = 0
+    processed_chunks: int = 0
+    pending_chunks: int = 0
+    embeddings_generated: int = 0
+    vectors_persisted: int = 0
     duration_ms: int = 0
     run_id: int | None = None
     dry_run: bool = False
@@ -465,6 +473,10 @@ class IndexRunSummary:
             "unchanged_chunks",
             "deleted_chunks",
             "failed_chunks",
+            "processed_chunks",
+            "pending_chunks",
+            "embeddings_generated",
+            "vectors_persisted",
             "duration_ms",
         ):
             _require_non_negative(getattr(self, field_name), field_name)

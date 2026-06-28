@@ -5,7 +5,7 @@ H2 transforma un corpus local autorizado en metadata, documentos normalizados y 
 ## Flujo recomendado
 
 1. Crear o revisar `barbarion.toml`.
-2. Ejecutar `barbarion doctor` para inicializar `data/`, `output/`, `logs/` y `data/barbarion.db`.
+2. Ejecutar `barbarion doctor` para inicializar `data/`, `output/`, `logs/`, `sources/` y `data/barbarion.db`.
 3. Ejecutar `barbarion ingest`.
 4. Revisar el resumen en consola y `logs/barbarion.log`.
 5. Consultar `barbarion ingest --stats` cuando se necesite inventario sin reescanear el filesystem.
@@ -18,7 +18,7 @@ La seccion `[ingestion]` controla roots, formatos y limites:
 
 ```toml
 [ingestion]
-paths = ["sources/oracle", "sources/powerbuilder", "sources/docs"]
+paths = ["./sources"]
 extensions = [".sql", ".pks", ".pkb", ".prc", ".fnc", ".trg", ".pck", ".vw", ".vws", ".pkg", ".tps", ".srw", ".sru", ".srf", ".srm", ".srj", ".srd", ".pbl", ".md", ".txt", ".docx", ".pdf", ".yaml", ".yml", ".json", ".ini"]
 chunk_size = 4000
 chunk_overlap = 400
@@ -29,7 +29,7 @@ max_pdf_pages = 1000
 encodings = ["utf-8", "cp1252", "latin-1"]
 ```
 
-Las rutas relativas se resuelven desde el TOML. `--path RUTA` puede repetirse y reemplaza `ingestion.paths` solo para esa ejecucion.
+Las rutas relativas se resuelven desde el TOML. `barbarion doctor` crea cada root configurado si falta y completa los subdirectorios `oracle/`, `powerbuilder/`, `docs/` y `misc/` sin crear archivos de ejemplo. `--path RUTA` puede repetirse y reemplaza `ingestion.paths` solo para esa ejecucion.
 
 ## Comandos
 

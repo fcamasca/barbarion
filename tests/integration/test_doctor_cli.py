@@ -75,14 +75,19 @@ def test_doctor_success_initializes_resources_and_renders_report(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert [line.split()[0] for line in captured.out.splitlines()[:7]] == [
+    assert [line.split()[0] for line in captured.out.splitlines()[:8]] == [
         "PASS"
-    ] * 7
-    assert "Resumen: 7 PASS, 0 WARN, 0 FAIL" in captured.out
+    ] * 8
+    assert "Resumen: 8 PASS, 0 WARN, 0 FAIL" in captured.out
     assert "Inicio del diagnóstico." in captured.err
     assert (tmp_path / "data").is_dir()
     assert (tmp_path / "output").is_dir()
     assert (tmp_path / "logs").is_dir()
+    assert (tmp_path / "sources").is_dir()
+    assert (tmp_path / "sources" / "oracle").is_dir()
+    assert (tmp_path / "sources" / "powerbuilder").is_dir()
+    assert (tmp_path / "sources" / "docs").is_dir()
+    assert (tmp_path / "sources" / "misc").is_dir()
     database_path = tmp_path / "data" / "barbarion.db"
     assert database_path.is_file()
     with sqlite3.connect(database_path) as connection:
@@ -109,7 +114,7 @@ def test_doctor_ollama_warning_keeps_exit_zero(
 
     assert exit_code == 0
     assert "WARN  Ollama" in captured.out
-    assert "Resumen: 6 PASS, 1 WARN, 0 FAIL" in captured.out
+    assert "Resumen: 7 PASS, 1 WARN, 0 FAIL" in captured.out
     assert "WARNING barbarion WARN Ollama" in captured.err
 
 
@@ -128,7 +133,7 @@ def test_doctor_required_failure_returns_one_without_traceback(
     assert exit_code == 1
     assert "FAIL  Directorio de datos" in captured.out
     assert "FAIL  SQLite" in captured.out
-    assert "Resumen: 5 PASS, 0 WARN, 2 FAIL" in captured.out
+    assert "Resumen: 6 PASS, 0 WARN, 2 FAIL" in captured.out
     assert "Traceback" not in captured.err
     assert "Resultado del diagnóstico: fallo requerido." in captured.err
 

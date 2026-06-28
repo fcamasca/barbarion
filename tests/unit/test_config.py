@@ -36,12 +36,8 @@ def test_defaults_are_resolved_from_working_directory(tmp_path: Path) -> None:
         log_level="INFO",
         ollama_url="http://127.0.0.1:11434",
         ollama_timeout_seconds=2.0,
-        ingestion=IngestionSettings(
-            paths=(
-                tmp_path / "sources" / "oracle",
-                tmp_path / "sources" / "powerbuilder",
-                tmp_path / "sources" / "docs",
-            ),
+            ingestion=IngestionSettings(
+                paths=(tmp_path / "sources",),
             extensions=(
                 ".sql",
                 ".pks",
@@ -489,11 +485,7 @@ def test_example_configuration_is_valid(tmp_path: Path) -> None:
     assert settings.domain == "default"
     assert settings.data_dir == tmp_path / "data"
     assert settings.database_path == tmp_path / "data" / "barbarion.db"
-    assert settings.ingestion.paths == (
-        tmp_path / "sources" / "oracle",
-        tmp_path / "sources" / "powerbuilder",
-        tmp_path / "sources" / "docs",
-    )
+    assert settings.ingestion.paths == (tmp_path / "sources",)
     assert settings.ingestion.extensions[:11] == (
         ".sql",
         ".pks",

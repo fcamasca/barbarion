@@ -335,7 +335,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 
 - al menos 10 preguntas versionadas con fuentes esperadas sobre corpus sintetico/autorizado;
 - cada pregunta pertenece a una categoria explicita: navegacion, dependencias, ubicacion de objetos, explicaciones, impacto o documentacion;
-- incluye ejemplos representativos como `Donde se calcula COSTO_AMORT_DIA?`, `Que objetos llaman p_insertarCompraVenta?`, `Donde se usa NOM_OPERACION_DIA?` y `Que documentos hablan de CDVAL?`;
+- incluye ejemplos representativos como `Donde se calcula order_total?`, `Que objetos llaman calculate_discount?`, `Donde se usa process_customer?` y `Que documentos hablan de generate_invoice?`;
 - mide si una fuente esperada aparece en top 5;
 - reporte incluye precision top-k basica y latencia;
 - aceptacion exige 8/10 top-5 salvo excepcion documentada.
@@ -354,7 +354,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 - H3 no implementa extraccion avanzada ni convierte estas ocurrencias en grafo;
 - context builder puede recibir semillas futuras de dependencias H4;
 - evidencia puede serializarse para documentos Markdown H5;
-- no acopla RAG a un dominio MCI ni a nombres privados.
+- no acopla RAG a un dominio DOMINIO_PRIVADO ni a nombres privados.
 
 ### H3-REQ-023 - Retrieval Benchmark Dataset
 

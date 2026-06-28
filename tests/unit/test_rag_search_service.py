@@ -77,7 +77,7 @@ def test_keyword_search_finds_identifier_with_stable_ranking(tmp_path: Path) -> 
 
     response = service.search(
         SearchRequest(
-            query="COSTO_AMORT_DIA",
+            query="order_total",
             mode=RetrievalMode.KEYWORD,
             filters=RetrievalFilter(extension=".sql"),
             top_k=5,
@@ -88,6 +88,8 @@ def test_keyword_search_finds_identifier_with_stable_ranking(tmp_path: Path) -> 
     assert [candidate.chunk_id for candidate in response.candidates] == ["chunk-2"]
     assert response.candidates[0].keyword_score == 1.0
     assert response.candidates[0].source["relative_path"] == "pkg/demo.sql"
+    assert response.candidates[0].source["start_line"] == 5
+    assert response.candidates[0].source["end_line"] == 8
 
 
 def test_hybrid_search_deduplicates_and_preserves_scores(tmp_path: Path) -> None:
@@ -95,7 +97,7 @@ def test_hybrid_search_deduplicates_and_preserves_scores(tmp_path: Path) -> None
 
     response = service.search(
         SearchRequest(
-            query="COSTO_AMORT_DIA",
+            query="order_total",
             mode=RetrievalMode.HYBRID,
             top_k=5,
             candidate_k=5,
@@ -129,7 +131,7 @@ def test_search_without_manifest_allows_keyword_only(tmp_path: Path) -> None:
 
     response = service.search(
         SearchRequest(
-            query="COSTO_AMORT_DIA",
+            query="order_total",
             mode=RetrievalMode.KEYWORD,
             top_k=3,
             candidate_k=3,

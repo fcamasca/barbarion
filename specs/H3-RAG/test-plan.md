@@ -50,10 +50,10 @@ Al menos 10 preguntas versionadas con:
 
 Ejemplos obligatorios dentro del dataset o sus equivalentes sinteticos:
 
-- `Donde se calcula COSTO_AMORT_DIA?`
-- `Que objetos llaman p_insertarCompraVenta?`
-- `Donde se usa NOM_OPERACION_DIA?`
-- `Que documentos hablan de CDVAL?`
+- `Donde se calcula order_total?`
+- `Que objetos llaman calculate_discount?`
+- `Donde se usa process_customer?`
+- `Que documentos hablan de generate_invoice?`
 
 ## 5. Pruebas unitarias
 

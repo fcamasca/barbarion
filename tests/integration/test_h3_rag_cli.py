@@ -38,15 +38,15 @@ def prepare(tmp_path: Path) -> tuple[Path, Path]:
     corpus = tmp_path / "corpus"
     (corpus / "oracle").mkdir(parents=True)
     (corpus / "docs").mkdir()
-    (corpus / "oracle" / "costos.sql").write_text(
+    (corpus / "oracle" / "orders.sql").write_text(
         "create or replace procedure demo as\n"
         "begin\n"
-        "  COSTO_AMORT_DIA := 10;\n"
+        "  order_total := 10;\n"
         "end;\n",
         encoding="utf-8",
     )
     (corpus / "docs" / "manual.md").write_text(
-        "# Manual\n\nCDVAL se usa para validar operaciones.",
+        "# Manual\n\ngenerate_invoice se usa para validar customers.",
         encoding="utf-8",
     )
     for name in ("data", "output", "logs"):
@@ -90,19 +90,19 @@ def test_h3_cli_index_search_ask_stats_with_fakes(
             "--config",
             str(config),
             "search",
-            "COSTO_AMORT_DIA",
+            "order_total",
             "--mode",
             "keyword",
         ]
     ) == 0
-    assert "costos.sql" in capsys.readouterr().out
+    assert "orders.sql" in capsys.readouterr().out
 
     assert cli.main(
         [
             "--config",
             str(config),
             "ask",
-            "Que documentos hablan de CDVAL?",
+            "Que documentos hablan de generate_invoice?",
             "--mode",
             "keyword",
             "--no-llm",

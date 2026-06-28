@@ -1,0 +1,26 @@
+{
+  "benchmark": {
+    "latency_ms_avg": 0.0,
+    "mrr": 1.0,
+    "question_count": 10,
+    "recall@10": 1.0,
+    "recall@5": 1.0
+  },
+  "context_quality_metrics": {
+    "context_precision": null,
+    "context_recall": null,
+    "duplicate_ratio": null,
+    "note": "Preparadas para runs reales con ContextBuilder.",
+    "token_waste": null
+  },
+  "created_at": "2026-06-25T23:41:14.858092+00:00",
+  "metadata": {
+    "command": "barbarion generate-report",
+    "created_at": "2026-06-25T23:41:14.858092+00:00",
+    "dataset": "tests\\fixtures\\h3_rag_evaluation.json",
+    "mode": "deterministic-fixture",
+    "version": "0.3.0"
+  },
+  "smoke_summary": "10 skipped: entry point instalado no disponible en el runtime Codex; tests smoke definidos para venv editable",
+  "test_summary": "346 passed, 12 skipped"
+}

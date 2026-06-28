@@ -28,7 +28,7 @@ VERSION = embedding_version(
 def test_fake_embedding_provider_is_deterministic() -> None:
     provider = DeterministicFakeEmbeddingProvider(dimension=8)
     request = EmbeddingRequest(
-        texts=("select COSTO_AMORT_DIA from dual",),
+        texts=("select order_total from dual",),
         input_kind="chunk",
         embedding_version=VERSION,
     )

@@ -19,7 +19,7 @@
 **Requisitos:** H3-REQ-001, H3-NFR-005.
 
 - agregar secciones `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[llm]`;
-- definir defaults y validaciones cruzadas;
+- definir defaults y invoices cruzadas;
 - resolver paths relativos al TOML;
 - rechazar claves desconocidas.
 
@@ -355,7 +355,7 @@
 
 - preparar al menos 10 preguntas;
 - clasificar cada pregunta en navegacion, dependencias, ubicacion de objetos, explicaciones, impacto o documentacion;
-- incluir ejemplos como `Donde se calcula COSTO_AMORT_DIA?`, `Que objetos llaman p_insertarCompraVenta?`, `Donde se usa NOM_OPERACION_DIA?` y `Que documentos hablan de CDVAL?`;
+- incluir ejemplos como `Donde se calcula order_total?`, `Que objetos llaman calculate_discount?`, `Donde se usa process_customer?` y `Que documentos hablan de generate_invoice?`;
 - mapear fuentes esperadas por chunk/documento;
 - cubrir Oracle, PowerBuilder y documentacion;
 - evitar informacion privada.
@@ -420,7 +420,7 @@
 
 ### H3-T30 - Ejecutar cierre tecnico de H3 y generate-report
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Complejidad:** M.  
 **Dependencias:** H3-T01-H3-T29.  
 **Requisitos:** todos, H3-REQ-023.

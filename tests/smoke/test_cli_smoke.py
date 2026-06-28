@@ -182,7 +182,7 @@ def test_doctor_initializes_all_resources(
     assert result.returncode == 0
     assert "PASS  SQLite" in result.stdout
     assert "PASS  Ollama" in result.stdout
-    assert "Resumen: 7 PASS, 0 WARN, 0 FAIL" in result.stdout
+    assert "Resumen: 8 PASS, 0 WARN, 0 FAIL" in result.stdout
     assert (tmp_path / "data").is_dir()
     assert (tmp_path / "output").is_dir()
     assert (tmp_path / "logs" / "barbarion.log").is_file()

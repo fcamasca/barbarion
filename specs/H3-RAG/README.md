@@ -13,6 +13,7 @@ El alcance inicial esta en [ROADMAP.md](../../docs/ROADMAP.md#5-h3--rag). H3 con
 - [Plan de tareas](tasks.md)
 - [Plan de pruebas](test-plan.md)
 - [Decisiones H3](decisions.md)
+- [Evidencia de aceptacion](acceptance.md)
 - Diagramas:
   - [Arquitectura RAG](diagrams/architecture.mmd)
   - [Flujo de indexacion](diagrams/indexing-flow.mmd)

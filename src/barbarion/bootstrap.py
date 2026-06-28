@@ -7,6 +7,9 @@ from pathlib import Path
 from barbarion.config import Settings
 
 
+SOURCE_SUBDIRECTORIES = ("oracle", "powerbuilder", "docs", "misc")
+
+
 @dataclass(frozen=True, slots=True)
 class DirectoryResult:
     """Resultado de crear y comprobar un directorio único."""
@@ -39,6 +42,11 @@ def _unique_targets(settings: Settings) -> dict[Path, list[str]]:
     for role, configured_path in configured_paths:
         path = configured_path.resolve(strict=False)
         targets.setdefault(path, []).append(role)
+    for source_path in settings.ingestion.paths:
+        root = source_path.resolve(strict=False)
+        targets.setdefault(root, []).append("sources")
+        for name in SOURCE_SUBDIRECTORIES:
+            targets.setdefault(root / name, []).append(f"sources:{name}")
     return targets
 
 

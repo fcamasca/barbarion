@@ -28,17 +28,28 @@ barbarion index --dry-run
 barbarion index
 ```
 
+Durante `index` y `reindex`, Barbarion muestra progreso por etapas en `stderr`:
+
+- Descubriendo chunks
+- Planificando indexacion
+- Generando embeddings
+- Persistiendo vectores
+- Actualizando metadata
+- Finalizando
+
+Cada etapa reporta avance, porcentaje y contadores `new`, `update`, `unchanged`, `delete` y `errores`. Si hay errores, el detalle se consulta con `barbarion embeddings --errors`; SQLite es la fuente principal del detalle y el log conserva solo un resumen.
+
 5. Consultar evidencia:
 
 ```bash
-barbarion search "Donde se usa NOM_OPERACION_DIA?" --mode hybrid
+barbarion search "Donde se usa process_customer?" --mode hybrid
 ```
 
 6. Responder con contexto o inspeccionarlo sin LLM:
 
 ```bash
-barbarion ask "Que documentos hablan de CDVAL?" --no-llm --mode keyword
-barbarion ask "Que documentos hablan de CDVAL?" --mode hybrid
+barbarion ask "Que documentos hablan de generate_invoice?" --no-llm --mode keyword
+barbarion ask "Que documentos hablan de generate_invoice?" --mode hybrid
 ```
 
 ## Comandos H3
@@ -54,9 +65,16 @@ barbarion ask "Que documentos hablan de CDVAL?" --mode hybrid
 | `ask TEXTO` | recupera contexto, llama LLM local y valida citas |
 | `ask TEXTO --no-llm` | muestra contexto y fuentes sin llamar LLM |
 | `embeddings` | lista manifests, modelos, versiones y conteos |
+| `embeddings --errors` | muestra errores de indexacion persistidos en SQLite |
 | `stats` | muestra estadisticas H2 + H3 |
 
 `search` y `ask` aceptan `--mode semantic|keyword|hybrid`, `--top-k`, `--candidate-k`, `--threshold`, `--format text|json|markdown`, `--domain`, `--artifact-kind`, `--language`, `--document`, `--folder`, `--extension` y `--debug`.
+
+## Cancelacion segura
+
+`index` y `reindex` manejan Ctrl+C de forma cooperativa. Al interrumpir, Barbarion termina la unidad minima en curso para no separar vector y metadata, cierra la corrida como `interrupted` y muestra un resumen con procesados, pendientes, embeddings generados y vectores persistidos.
+
+Una nueva ejecucion puede continuar desde el ultimo estado consistente mediante la logica incremental existente. No se requiere rollback completo: los chunks ya persistidos quedan como `indexed` y los pendientes se planifican de nuevo.
 
 ## Modelos
 
@@ -72,6 +90,7 @@ Barbarion no envia corpus a servicios cloud. Los prompts completos no se almacen
 
 - Base ausente: ejecutar `barbarion doctor` e ingesta antes de RAG.
 - Ollama embeddings no disponible: `index` falla con error operativo; `index --dry-run`, `search --mode keyword` y `ask --no-llm --mode keyword` siguen siendo utiles.
+- Errores de indexacion: consultar `barbarion embeddings --errors` para ver `run_id`, `chunk_id`, codigo y mensaje persistidos.
 - Evidencia insuficiente: `ask` declara que no hay fuentes suficientes y no inventa respuesta.
 - Citas invalidas: la respuesta candidata se rechaza antes de mostrarse como valida.
 

@@ -54,7 +54,7 @@ def candidate(
 
 def test_context_builder_threshold_dedupe_order_and_budget() -> None:
     builder = ContextBuilder(
-        token_budget=8,
+        token_budget=80,
         max_chunk_tokens=4,
         dedupe_min_hash_prefix=8,
         threshold=0.5,
@@ -74,6 +74,46 @@ def test_context_builder_threshold_dedupe_order_and_budget() -> None:
     assert {item["reason"] for item in result.omitted} == {"threshold", "duplicate"}
     assert result.metrics.duplicate_ratio == 0.25
     assert result.debug["after_dedupe"] == 2
+    assert result.debug["truncated_sources"] == 1
+
+
+def test_context_builder_respects_max_chunk_tokens() -> None:
+    builder = ContextBuilder(
+        token_budget=200,
+        max_chunk_tokens=5,
+        dedupe_min_hash_prefix=8,
+    )
+
+    result = builder.build(
+        (candidate("large", SHA_A, 0.9, content="x" * 200),),
+        debug=True,
+    )
+
+    assert result.sources[0].content_truncated is True
+    assert result.sources[0].token_estimate <= 5
+    assert "contenido_truncado=true" in result.rendered_context
+    assert "x" * 80 not in result.rendered_context
+
+
+def test_context_builder_respects_global_context_budget() -> None:
+    builder = ContextBuilder(
+        token_budget=20,
+        max_chunk_tokens=100,
+        dedupe_min_hash_prefix=8,
+    )
+
+    result = builder.build(
+        (
+            candidate("one", SHA_A, 0.9, content="a" * 200),
+            candidate("two", SHA_B, 0.8, content="b" * 200),
+        ),
+        debug=True,
+    )
+
+    assert result.token_estimate <= 20
+    assert len(result.sources) == 1
+    assert result.sources[0].content_truncated is True
+    assert result.omitted[0]["reason"] == "budget"
 
 
 def test_citation_validator_rejects_unknown_source() -> None:
@@ -87,6 +127,20 @@ def test_citation_validator_rejects_unknown_source() -> None:
 
     assert validation.valid is False
     assert validation.missing_source_ids == ("F9",)
+
+
+def test_citation_validator_rejects_answer_without_inline_citation() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9),))
+
+    validation = CitationValidator().validate("Respuesta sin marcador.", context)
+
+    assert validation.valid is False
+    assert validation.missing_source_ids == ()
+    assert validation.cited_source_ids == ()
 
 
 def ask_service(tmp_path, answer: str) -> tuple[AskService, FakeLlm]:
@@ -112,7 +166,7 @@ def test_ask_no_llm_returns_context_and_updates_metrics(tmp_path) -> None:
     service, fake_llm = ask_service(tmp_path, "no usado")
 
     result = service.ask(
-        "COSTO_AMORT_DIA",
+        "order_total",
         mode=RetrievalMode.KEYWORD,
         top_k=3,
         candidate_k=3,
@@ -124,6 +178,9 @@ def test_ask_no_llm_returns_context_and_updates_metrics(tmp_path) -> None:
     assert result.no_llm is True
     assert result.status == RagQueryStatus.COMPLETED
     assert "[F1]" in result.answer
+    assert result.context.sources[0].candidate.source["start_line"] == 5
+    assert result.context.sources[0].candidate.source["end_line"] == 8
+    assert "lineas=5-8" in result.context.rendered_context
     assert fake_llm.prompts == []
     with sqlite3.connect(tmp_path / "barbarion.db") as connection:
         row = connection.execute(
@@ -138,7 +195,7 @@ def test_ask_rejects_llm_answer_with_invalid_citation(tmp_path) -> None:
     service, fake_llm = ask_service(tmp_path, "Conclusion con cita inexistente [F9].")
 
     result = service.ask(
-        "COSTO_AMORT_DIA",
+        "order_total",
         mode=RetrievalMode.KEYWORD,
         top_k=3,
         candidate_k=3,
@@ -148,7 +205,61 @@ def test_ask_rejects_llm_answer_with_invalid_citation(tmp_path) -> None:
     assert fake_llm.prompts
     assert result.citations_valid is False
     assert result.missing_citations == ("F9",)
-    assert "citas invalidas" in result.answer
+    assert "citas inexistentes" in result.answer.lower()
+
+
+def test_ask_rejects_llm_answer_without_inline_citation(tmp_path) -> None:
+    service, fake_llm = ask_service(tmp_path, "Conclusion sin cita.")
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+    )
+
+    assert fake_llm.prompts
+    assert result.citations_valid is False
+    assert result.missing_citations == ()
+    assert "no incluyo citas validas" in result.answer
+
+
+def test_ask_accepts_llm_answer_with_valid_inline_citation(tmp_path) -> None:
+    service, _fake_llm = ask_service(tmp_path, "Conclusion con soporte [F1].")
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+    )
+
+    assert result.citations_valid is True
+    assert result.status == RagQueryStatus.COMPLETED
+    assert result.answer == "Conclusion con soporte [F1]."
+
+
+def test_ask_debug_reports_size_metrics_without_context_dump(tmp_path) -> None:
+    service, _fake_llm = ask_service(tmp_path, "Conclusion con soporte [F1].")
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.debug["sources"] == 1
+    assert result.debug["context_chars"] > 0
+    assert result.debug["context_tokens_est"] > 0
+    assert result.debug["prompt_chars"] > result.debug["context_chars"]
+    assert result.debug["llm_timeout_seconds"] > 0
+    assert result.debug["truncated_sources"] == 0
+    assert "order_total :=" not in str(dict(result.debug))
 
 
 def test_ask_insufficient_evidence_does_not_call_llm(tmp_path) -> None:

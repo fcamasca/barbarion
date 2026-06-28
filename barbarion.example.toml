@@ -8,7 +8,7 @@ ollama_url = "http://127.0.0.1:11434"
 ollama_timeout_seconds = 2.0
 
 [ingestion]
-paths = ["sources/oracle", "sources/powerbuilder", "sources/docs"]
+paths = ["./sources"]
 extensions = [
   ".sql", ".pks", ".pkb", ".prc", ".fnc", ".trg",
   ".pck", ".vw", ".vws", ".pkg", ".tps",

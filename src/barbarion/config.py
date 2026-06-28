@@ -22,7 +22,7 @@ _DEFAULTS: dict[str, object] = {
     "ollama_timeout_seconds": 2.0,
 }
 _DEFAULT_INGESTION: dict[str, object] = {
-    "paths": ("sources/oracle", "sources/powerbuilder", "sources/docs"),
+    "paths": ("sources",),
     "extensions": (
         ".sql",
         ".pks",

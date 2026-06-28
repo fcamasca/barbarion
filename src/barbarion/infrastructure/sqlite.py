@@ -1045,6 +1045,16 @@ class EmbeddingManifestSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class EmbeddingErrorDetail:
+    """Detalle read-only de un error de embedding persistido por chunk."""
+
+    run_id: int
+    chunk_id: str
+    error_code: str
+    error_message: str
+
+
+@dataclass(frozen=True, slots=True)
 class RagInventoryStats:
     """Metricas persistidas de RAG para CLI stats."""
 
@@ -1202,6 +1212,76 @@ class SQLiteRagRepository:
                 """
             ).fetchall()
         return tuple(_embedding_summary_from_row(row) for row in rows)
+
+    def latest_embedding_error_run_id(self) -> int | None:
+        """Devuelve el ultimo run con errores de indexacion."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT id
+                FROM embedding_runs
+                WHERE failed_chunks > 0
+                   OR EXISTS (
+                       SELECT 1
+                       FROM chunk_embeddings
+                       WHERE chunk_embeddings.last_run_id = embedding_runs.id
+                         AND chunk_embeddings.status = 'error'
+                   )
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return None if row is None else int(row["id"])
+
+    def embedding_error_details(
+        self,
+        *,
+        run_id: int | None = None,
+    ) -> tuple[EmbeddingErrorDetail, ...]:
+        """Lista errores de indexacion persistidos en SQLite."""
+        selected_run_id = run_id
+        if selected_run_id is None:
+            selected_run_id = self.latest_embedding_error_run_id()
+        if selected_run_id is None:
+            return ()
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT last_run_id, chunk_id, error_code, error_message
+                FROM chunk_embeddings
+                WHERE status = 'error'
+                  AND last_run_id = ?
+                ORDER BY chunk_id
+                """,
+                (selected_run_id,),
+            ).fetchall()
+        return tuple(
+            EmbeddingErrorDetail(
+                run_id=int(row["last_run_id"]),
+                chunk_id=str(row["chunk_id"]),
+                error_code=str(row["error_code"] or ""),
+                error_message=str(row["error_message"] or ""),
+            )
+            for row in rows
+        )
+
+    def dominant_embedding_error_code(self, *, run_id: int) -> str | None:
+        """Devuelve el codigo de error mas frecuente de un run."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT error_code, COUNT(*) AS count
+                FROM chunk_embeddings
+                WHERE status = 'error'
+                  AND last_run_id = ?
+                  AND error_code IS NOT NULL
+                GROUP BY error_code
+                ORDER BY count DESC, error_code
+                LIMIT 1
+                """,
+                (run_id,),
+            ).fetchone()
+        return None if row is None else str(row["error_code"])
 
     def rag_inventory_stats(self) -> RagInventoryStats:
         """Devuelve metricas RAG persistidas para stats."""

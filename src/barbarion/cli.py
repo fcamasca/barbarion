@@ -3,8 +3,12 @@
 import argparse
 import json
 import logging
+import signal
+import shutil
 import sys
+import time
 from collections.abc import Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -18,6 +22,7 @@ from barbarion.application.rag import (
     PromptBuilder,
     SearchService,
 )
+from barbarion.application.reporting import generate_h3_report
 from barbarion.bootstrap import DirectoryResult, initialize_directories
 from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
 from barbarion.database import DatabaseError, initialize_database
@@ -25,12 +30,14 @@ from barbarion.doctor import DoctorReport, run_doctor_checks
 from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
 from barbarion.domain.models import IngestionRunStatus
+from barbarion.domain.progress import ProgressSnapshot, ProgressStage
 from barbarion.domain.rag import (
     AnswerResult,
     EmbeddingRunMode,
     EmbeddingRunStatus,
     IndexRunSummary,
     IndexScope,
+    LlmProviderError,
     RetrievalFilter,
     RetrievalMode,
     SearchRequest,
@@ -195,13 +202,141 @@ def _run_index(args: argparse.Namespace) -> int:
         return 1
     initialize_database(settings.database_path)
     service = _build_index_service(settings)
-    summary = service.run(
-        mode=EmbeddingRunMode.INCREMENTAL,
-        dry_run=args.dry_run,
-        delete_obsolete=True,
-    )
+    cancellation = CliCancellationToken()
+    with _index_cancellation_context(cancellation):
+        summary = service.run(
+            mode=EmbeddingRunMode.INCREMENTAL,
+            dry_run=args.dry_run,
+            delete_obsolete=True,
+            progress=ConsoleProgressReporter(),
+            cancellation=cancellation,
+        )
+    _log_index_error_summary(settings, summary)
     _render_index_summary(summary)
     return _index_exit_code(summary)
+
+
+class CliCancellationToken:
+    """Token cooperativo activado por Ctrl+C."""
+
+    def __init__(self) -> None:
+        self._cancelled = False
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+
+class ConsoleProgressReporter:
+    """Reporter de progreso simple para CLI, sin dependencias externas."""
+
+    def __init__(
+        self,
+        stream=None,
+        *,
+        min_interval_seconds: float = 0.25,
+    ) -> None:
+        self._stream = stream or sys.stderr
+        self._started_at = time.monotonic()
+        self._last_emit_at = 0.0
+        self._min_interval_seconds = min_interval_seconds
+        self._last_stage = ""
+        self._block_active = False
+
+    def start(self, stages: tuple[ProgressStage, ...]) -> None:
+        del stages
+        self._started_at = time.monotonic()
+        self._last_emit_at = 0.0
+        self._last_stage = ""
+        self._block_active = False
+
+    def stage(self, snapshot: ProgressSnapshot) -> None:
+        now = time.monotonic()
+        if not self._should_emit(snapshot, now):
+            return
+        stage_percent = _progress_percent(snapshot.current, snapshot.total)
+        global_percent = _progress_percent(snapshot.global_current, snapshot.global_total)
+        counters = _progress_counter_values(snapshot.counters)
+        block = (
+            "Barbarion Index",
+            "Ctrl+C cancela de forma segura; puedes reanudar luego.",
+            "",
+            (
+                f"Global  {_progress_bar(snapshot.global_current, snapshot.global_total)} "
+                f"{global_percent}"
+            ),
+            "",
+            (
+                f"Etapa   {_progress_bar(snapshot.current, snapshot.total)} "
+                f"{stage_percent}"
+            ),
+            _progress_stage_label(snapshot.stage_label),
+            "",
+            (
+                f"Procesados : {snapshot.current} / "
+                f"{_progress_total(snapshot.total)}"
+            ),
+            "",
+            f"Nuevos       : {counters['new']}",
+            f"Actualizados : {counters['update']}",
+            f"Sin cambios  : {counters['unchanged']}",
+            f"Eliminados   : {counters['delete']}",
+            _progress_errors_line(counters["errores"]),
+        )
+        self._write_block(tuple(_fit_progress_line(line) for line in block))
+        self._last_stage = snapshot.stage_key
+        self._last_emit_at = now
+
+    def finish(self, status: str) -> None:
+        self._block_active = False
+        print(f"Progreso finalizado: {status}", file=self._stream)
+
+    def _should_emit(self, snapshot: ProgressSnapshot, now: float) -> bool:
+        if snapshot.stage_key != self._last_stage:
+            return True
+        if snapshot.total is not None and snapshot.current >= snapshot.total:
+            return True
+        return now - self._last_emit_at >= self._min_interval_seconds
+
+    def _write_block(self, lines: tuple[str, ...]) -> None:
+        if _is_interactive_stream(self._stream):
+            if self._block_active:
+                self._stream.write(f"\x1b[{len(lines)}F")
+            for line in lines:
+                self._stream.write(f"\r\x1b[2K{line}\n")
+            self._stream.flush()
+            self._block_active = True
+            return
+        for line in lines:
+            print(line, file=self._stream)
+
+
+@contextmanager
+def _index_cancellation_context(token: CliCancellationToken):
+    previous = signal.getsignal(signal.SIGINT)
+
+    def _handle_sigint(signum, frame):  # noqa: ANN001
+        del signum, frame
+        if not token.cancelled:
+            token.cancel()
+            print(
+                "\nCancelacion solicitada. Cerrando la unidad actual de forma segura...",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "\nCancelacion ya solicitada. Esperando cierre seguro...",
+                file=sys.stderr,
+            )
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 def _run_reindex(args: argparse.Namespace) -> int:
@@ -225,12 +360,17 @@ def _run_reindex(args: argparse.Namespace) -> int:
     scope = _index_scope(args)
     mode = EmbeddingRunMode.FULL if args.full else EmbeddingRunMode.PARTIAL
     service = _build_index_service(settings)
-    summary = service.run(
-        mode=mode,
-        scope=scope,
-        dry_run=args.dry_run,
-        delete_obsolete=args.delete_obsolete,
-    )
+    cancellation = CliCancellationToken()
+    with _index_cancellation_context(cancellation):
+        summary = service.run(
+            mode=mode,
+            scope=scope,
+            dry_run=args.dry_run,
+            delete_obsolete=args.delete_obsolete,
+            progress=ConsoleProgressReporter(),
+            cancellation=cancellation,
+        )
+    _log_index_error_summary(settings, summary)
     _render_index_summary(summary)
     return _index_exit_code(summary)
 
@@ -257,16 +397,26 @@ def _run_ask(args: argparse.Namespace) -> int:
         return 1
     initialize_database(settings.database_path)
     service = _build_ask_service(settings)
-    result = service.ask(
-        args.question,
-        mode=RetrievalMode(args.mode),
-        filters=_retrieval_filter(args),
-        top_k=args.top_k,
-        candidate_k=args.candidate_k,
-        threshold=args.threshold,
-        no_llm=args.no_llm,
-        debug=args.debug,
-    )
+    try:
+        result = service.ask(
+            args.question,
+            mode=RetrievalMode(args.mode),
+            filters=_retrieval_filter(args),
+            top_k=args.top_k,
+            candidate_k=args.candidate_k,
+            threshold=args.threshold,
+            no_llm=args.no_llm,
+            debug=args.debug,
+        )
+    except KeyboardInterrupt:
+        print("Operacion interrumpida por el usuario.", file=sys.stderr)
+        return 130
+    except TimeoutError:
+        _print_llm_error("Ollama no respondio dentro del timeout configurado.")
+        return 1
+    except LlmProviderError as error:
+        _print_llm_error(_llm_error_message(error))
+        return 1
     _render_answer_result(result, args.format)
     return 0 if result.citations_valid else 1
 
@@ -278,6 +428,8 @@ def _run_embeddings(args: argparse.Namespace) -> int:
         print("No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor'.")
         return 0
     repository = SQLiteRagRepository(settings.database_path)
+    if args.errors:
+        return _render_embedding_errors(repository, args.run)
     summaries = repository.embedding_summaries()
     if args.format == "json":
         print(
@@ -342,6 +494,70 @@ def _run_stats(args: argparse.Namespace) -> int:
     print("Estadisticas RAG")
     _render_rag_stats(rag)
     return 0
+
+
+def _run_generate_report(args: argparse.Namespace) -> int:
+    """Genera evidencia tecnica local del cierre H3."""
+    summary = generate_h3_report(
+        dataset_path=Path(args.dataset),
+        output_dir=Path(args.output),
+        test_summary=args.test_summary,
+        smoke_summary=args.smoke_summary,
+        metadata={
+            "command": "barbarion generate-report",
+            "version": __version__,
+        },
+    )
+    print("Reporte H3 generado")
+    print(f"Directorio: {summary.output_dir}")
+    print(f"metrics.json: {summary.metrics_path}")
+    print(f"topk-report.md: {summary.topk_report_path}")
+    print(f"smoke-report.md: {summary.smoke_report_path}")
+    print(f"benchmark.md: {summary.benchmark_path}")
+    print(f"historico: {summary.history_path}")
+    print(f"recall@5 = {summary.recall_at_5:.3f}")
+    print(f"recall@10 = {summary.recall_at_10:.3f}")
+    print(f"mrr = {summary.mrr:.3f}")
+    return 0
+
+
+def _render_embedding_errors(
+    repository: SQLiteRagRepository,
+    run_id: int | None,
+) -> int:
+    details = repository.embedding_error_details(run_id=run_id)
+    selected_run_id = run_id or repository.latest_embedding_error_run_id()
+    print("Errores de embeddings RAG")
+    if selected_run_id is None:
+        print("Run: ninguno")
+        print("Errores: 0")
+        return 0
+    print(f"Run: {selected_run_id}")
+    print(f"Errores: {len(details)}")
+    if not details:
+        return 0
+    print()
+    for index, item in enumerate(details, start=1):
+        print(f"{index}. chunk_id={item.chunk_id}")
+        print(f"   error={item.error_code}")
+        print(f"   mensaje={item.error_message}")
+        print()
+    return 0
+
+
+def _log_index_error_summary(settings: Settings, summary: IndexRunSummary) -> None:
+    if summary.failed_chunks <= 0 or summary.run_id is None:
+        return
+    logger = configure_logging(settings)
+    repository = SQLiteRagRepository(settings.database_path)
+    error_code = repository.dominant_embedding_error_code(run_id=summary.run_id)
+    logger.warning(
+        "index run_id=%s status=%s failed_chunks=%s error_code=%s",
+        summary.run_id,
+        summary.status.value,
+        summary.failed_chunks,
+        error_code or "desconocido",
+    )
 
 
 def _show_ingestion_stats(args: argparse.Namespace) -> int:
@@ -535,15 +751,40 @@ def _render_answer_result(result: AnswerResult, output_format: str) -> None:
         print(json.dumps(_answer_result_json(result), ensure_ascii=False, indent=2))
         return
     if output_format == "markdown":
+        _render_answer_debug(result, markdown=True)
         print(result.answer)
         print("\n## Fuentes")
         for source in result.context.sources:
             print(_source_markdown(source))
         return
+    _render_answer_debug(result, markdown=False)
     print(result.answer)
     print("\nFuentes:")
     for source in result.context.sources:
         print(_source_text(source))
+
+
+def _render_answer_debug(result: AnswerResult, *, markdown: bool) -> None:
+    if not result.debug:
+        return
+    keys = (
+        "sources",
+        "context_chars",
+        "context_tokens_est",
+        "prompt_chars",
+        "llm_timeout_seconds",
+        "truncated_sources",
+    )
+    if markdown:
+        print("## Debug")
+        for key in keys:
+            print(f"- {key}={result.debug.get(key)}")
+        print()
+        return
+    print("Debug:")
+    for key in keys:
+        print(f"{key}={result.debug.get(key)}")
+    print()
 
 
 def _search_response_json(response: SearchResponse) -> dict[str, object]:
@@ -591,6 +832,8 @@ def _source_json(source) -> dict[str, object]:
         "score": source.candidate.combined_score,
         "source": dict(source.candidate.source),
         "token_estimate": source.token_estimate,
+        "original_token_estimate": source.original_token_estimate,
+        "content_truncated": source.content_truncated,
     }
 
 
@@ -616,7 +859,8 @@ def _source_text(source) -> str:
     return (
         f"- [{source.source_id}] {candidate.source.get('relative_path')} "
         f"chunk={candidate.chunk_id} score={candidate.combined_score:.3f}"
-        f"{_location_text(candidate.source)}"
+        f"{_location_text(candidate.source)} "
+        f"contenido_truncado={str(source.content_truncated).lower()}"
     )
 
 
@@ -625,7 +869,8 @@ def _source_markdown(source) -> str:
     return (
         f"- [{source.source_id}] `{candidate.source.get('relative_path')}`, "
         f"chunk `{candidate.chunk_id}`, score `{candidate.combined_score:.3f}`"
-        f"{_location_text(candidate.source)}"
+        f"{_location_text(candidate.source)}, "
+        f"contenido_truncado `{str(source.content_truncated).lower()}`"
     )
 
 
@@ -641,6 +886,32 @@ def _location_text(source) -> str:
     return ""
 
 
+def _print_llm_error(message: str) -> None:
+    print(f"Error: {message}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Sugerencias:", file=sys.stderr)
+    print("- ejecuta nuevamente la pregunta;", file=sys.stderr)
+    print("- usa --no-llm para inspeccionar el contexto;", file=sys.stderr)
+    print("- aumenta [llm].timeout_seconds en barbarion.toml;", file=sys.stderr)
+    print("- verifica el modelo configurado en [llm].model;", file=sys.stderr)
+    print("- prueba: ollama run llama3.1:8b", file=sys.stderr)
+
+
+def _llm_error_message(error: LlmProviderError) -> str:
+    message = str(error)
+    if "TIMEOUT" in message:
+        return "Ollama no respondio dentro del timeout configurado."
+    if "MODEL_NOT_FOUND" in message:
+        return "El modelo LLM configurado no esta disponible en Ollama."
+    if "RESPONSE_INVALID" in message:
+        return "Ollama devolvio una respuesta invalida."
+    if "UNAVAILABLE" in message:
+        return "No se pudo contactar Ollama local."
+    if "HTTP_ERROR" in message:
+        return "Ollama devolvio un error HTTP."
+    return "No se pudo generar la respuesta con el LLM local."
+
+
 def _render_index_summary(summary: IndexRunSummary) -> None:
     prefix = "Dry-run de indexacion RAG" if summary.dry_run else "Indexacion RAG"
     print(f"{prefix}: {summary.status.value}")
@@ -651,7 +922,69 @@ def _render_index_summary(summary: IndexRunSummary) -> None:
     print(f"Sin cambios: {summary.unchanged_chunks}")
     print(f"Eliminados: {summary.deleted_chunks}")
     print(f"Fallidos: {summary.failed_chunks}")
+    print(f"Procesados: {summary.processed_chunks}")
+    print(f"Pendientes: {summary.pending_chunks}")
+    print(f"Embeddings generados: {summary.embeddings_generated}")
+    print(f"Vectores persistidos: {summary.vectors_persisted}")
     print(f"Duracion: {summary.duration_ms} ms")
+
+
+def _progress_percent(current: int, total: int | None) -> str:
+    if total is None or total <= 0:
+        return "n/a"
+    return f"{min(100, int((current / total) * 100)):3d}%"
+
+
+def _progress_bar(current: int, total: int | None, *, width: int = 24) -> str:
+    if total is None or total <= 0:
+        return "[" + ("?" * width) + "]"
+    filled = min(width, int((max(0, current) / total) * width))
+    return "[" + ("#" * filled) + ("-" * (width - filled)) + "]"
+
+
+def _progress_total(total: int | None) -> str:
+    return "?" if total is None else str(total)
+
+
+def _progress_stage_label(label: str) -> str:
+    aliases = {
+        "Descubriendo chunks": "Descubriendo",
+        "Planificando indexacion": "Planificando",
+        "Generando embeddings": "Generando embeddings",
+        "Persistiendo vectores": "Persistiendo vectores",
+        "Actualizando metadata": "Actualizando metadata",
+        "Finalizando": "Finalizando",
+    }
+    return aliases.get(label, label)
+
+
+def _progress_counter_values(counters: dict[str, int]) -> dict[str, int]:
+    return {
+        "new": counters.get("new", 0),
+        "update": counters.get("update", 0),
+        "unchanged": counters.get("unchanged", 0),
+        "delete": counters.get("delete", 0),
+        "errores": counters.get("errores", 0),
+    }
+
+
+def _progress_errors_line(errors: int) -> str:
+    line = f"Errores      : {errors}"
+    if errors > 0:
+        return f"{line}  Detalle disponible en: barbarion embeddings --errors"
+    return line
+
+
+def _fit_progress_line(line: str) -> str:
+    width = shutil.get_terminal_size(fallback=(120, 20)).columns
+    if width <= 20 or len(line) < width:
+        return line
+    return line[: max(0, width - 4)].rstrip() + "..."
+
+
+def _is_interactive_stream(stream) -> bool:
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty is not None and isatty())
 
 
 def _index_exit_code(summary: IndexRunSummary) -> int:
@@ -968,6 +1301,17 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="formato de salida",
     )
+    embeddings_parser.add_argument(
+        "--errors",
+        action="store_true",
+        help="muestra errores de indexacion persistidos en SQLite",
+    )
+    embeddings_parser.add_argument(
+        "--run",
+        type=int,
+        metavar="ID",
+        help="muestra errores de un run de indexacion especifico",
+    )
     embeddings_parser.set_defaults(handler=_run_embeddings)
 
     stats_parser = commands.add_parser(
@@ -984,6 +1328,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="formato de salida",
     )
     stats_parser.set_defaults(handler=_run_stats)
+
+    report_parser = commands.add_parser(
+        "generate-report",
+        help="genera evidencia tecnica H3",
+        description="Genera reportes locales de cierre tecnico H3.",
+        add_help=False,
+    )
+    _add_help_option(report_parser)
+    report_parser.add_argument(
+        "--dataset",
+        default="tests/fixtures/h3_rag_evaluation.json",
+        help="dataset de evaluacion RAG",
+    )
+    report_parser.add_argument(
+        "--output",
+        default="reports/h3",
+        help="directorio de salida de reportes",
+    )
+    report_parser.add_argument(
+        "--test-summary",
+        default="pytest no ejecutado por generate-report",
+        help="resumen de suite a registrar",
+    )
+    report_parser.add_argument(
+        "--smoke-summary",
+        default="smoke no ejecutado por generate-report",
+        help="resumen smoke a registrar",
+    )
+    report_parser.set_defaults(handler=_run_generate_report)
 
     return parser
 

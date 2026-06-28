@@ -44,10 +44,10 @@ def test_evaluation_dataset_has_required_categories_and_examples() -> None:
     assert len(dataset) >= 10
     assert {question.category for question in dataset}.issubset(ALLOWED_CATEGORIES)
     questions = {question.question for question in dataset}
-    assert "Donde se calcula COSTO_AMORT_DIA?" in questions
-    assert "Que objetos llaman p_insertarCompraVenta?" in questions
-    assert "Donde se usa NOM_OPERACION_DIA?" in questions
-    assert "Que documentos hablan de CDVAL?" in questions
+    assert "Donde se calcula order_total?" in questions
+    assert "Que objetos llaman calculate_discount?" in questions
+    assert "Donde se usa process_customer?" in questions
+    assert "Que documentos hablan de generate_invoice?" in questions
 
 
 def test_retrieval_benchmark_computes_metrics_and_history(tmp_path: Path) -> None:

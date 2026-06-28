@@ -80,7 +80,7 @@ def test_embedding_request_and_vector_validate_values() -> None:
 
 def test_retrieval_candidate_keeps_h4_metadata_and_freezes_source() -> None:
     metadata = H4SymbolMetadata(
-        symbol_name="COSTO_AMORT_DIA",
+        symbol_name="order_total",
         symbol_kind="variable",
         package_name="PKG_COSTOS",
     )
@@ -91,10 +91,10 @@ def test_retrieval_candidate_keeps_h4_metadata_and_freezes_source() -> None:
         vector_score=0.8,
         keyword_score=0.7,
         metadata=metadata,
-        source={"path": "pkg/costos.sql"},
+        source={"path": "pkg/orders.sql"},
     )
 
-    assert candidate.metadata.symbol_name == "COSTO_AMORT_DIA"
+    assert candidate.metadata.symbol_name == "order_total"
     assert isinstance(candidate.source, MappingProxyType)
 
 

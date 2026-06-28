@@ -467,20 +467,39 @@ def _split_span(span: _Span, *, chunk_size: int, overlap: int) -> tuple[_Span, .
         if local_start < 0:
             local_start = cursor
         local_end = local_start + len(piece)
+        start_line, end_line = _line_range_for_piece(
+            span,
+            local_start=local_start,
+            piece=piece,
+        )
         result.append(
             _Span(
                 unit=span.unit,
                 content=piece,
                 start_char=span.start_char + local_start,
                 end_char=span.start_char + local_end - 1,
-                start_line=span.start_line,
-                end_line=span.end_line,
+                start_line=start_line,
+                end_line=end_line,
                 page_start=span.page_start,
                 page_end=span.page_end,
             )
         )
         cursor = local_end
     return tuple(result)
+
+
+def _line_range_for_piece(
+    span: _Span,
+    *,
+    local_start: int,
+    piece: str,
+) -> tuple[int | None, int | None]:
+    if span.start_line is None or span.end_line is None:
+        return span.start_line, span.end_line
+    line_offset = span.content[:local_start].count("\n")
+    start_line = min(span.end_line, span.start_line + line_offset)
+    end_line = min(span.end_line, start_line + piece.count("\n"))
+    return start_line, max(start_line, end_line)
 
 
 def _split_text(text: str, *, chunk_size: int, overlap: int) -> tuple[str, ...]:

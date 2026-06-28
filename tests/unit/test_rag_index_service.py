@@ -6,6 +6,7 @@ from pathlib import Path
 from barbarion.application.rag import IndexService
 from barbarion.config import load_settings
 from barbarion.database import initialize_database
+from barbarion.domain.progress import ProgressSnapshot
 from barbarion.domain.rag import EmbeddingRunMode, EmbeddingRunStatus, IndexScope
 from barbarion.infrastructure.embeddings import DeterministicFakeEmbeddingProvider
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
@@ -31,6 +32,46 @@ class CountingProvider(DeterministicFakeEmbeddingProvider):
     def embed(self, request):  # type: ignore[override]
         object.__setattr__(self, "calls", self.calls + len(request.texts))
         return super().embed(request)
+
+
+class RecordingProgress:
+    def __init__(self) -> None:
+        self.started = []
+        self.snapshots: list[ProgressSnapshot] = []
+        self.finished: list[str] = []
+
+    def start(self, stages):
+        self.started.append(stages)
+
+    def stage(self, snapshot: ProgressSnapshot) -> None:
+        self.snapshots.append(snapshot)
+
+    def finish(self, status: str) -> None:
+        self.finished.append(status)
+
+
+class CancellationToken:
+    def __init__(self) -> None:
+        self._cancelled = False
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+
+class CancelAfterMetadata(RecordingProgress):
+    def __init__(self, token: CancellationToken, current: int) -> None:
+        super().__init__()
+        self._token = token
+        self._current = current
+
+    def stage(self, snapshot: ProgressSnapshot) -> None:
+        super().stage(snapshot)
+        if snapshot.stage_key == "metadata" and snapshot.current >= self._current:
+            self._token.cancel()
 
 
 def seed_chunks(path: Path) -> None:
@@ -78,11 +119,12 @@ def seed_chunks(path: Path) -> None:
             """
             INSERT INTO chunks(
                 id, document_id, ordinal, chunk_type, content, content_sha256,
-                object_type, object_name, metadata_json, chunker_version, created_at
+                start_line, end_line, object_type, object_name, metadata_json,
+                chunker_version, created_at
             )
             VALUES
-                ('chunk-1', 1, 0, 'procedure', 'procedure demo is begin null; end;', ?, 'procedure', 'demo', ?, '1', ?),
-                ('chunk-2', 1, 1, 'procedure', 'select COSTO_AMORT_DIA from dual;', ?, 'procedure', 'costos', '{}', '1', ?)
+                ('chunk-1', 1, 0, 'procedure', 'procedure demo is begin null; end;', ?, 1, 4, 'procedure', 'demo', ?, '1', ?),
+                ('chunk-2', 1, 1, 'procedure', 'select order_total from dual;', ?, 5, 8, 'procedure', 'orders', '{}', '1', ?)
             """,
             (
                 SHA_CHUNK_1,
@@ -171,3 +213,61 @@ def test_index_service_scope_limits_chunks(tmp_path: Path) -> None:
     )
 
     assert summary.new_chunks == 1
+
+
+def test_index_service_reports_progress_for_pipeline_stages(tmp_path: Path) -> None:
+    service, _provider = service_for(tmp_path)
+    progress = RecordingProgress()
+
+    summary = service.run(progress=progress)
+
+    assert summary.status == EmbeddingRunStatus.COMPLETED
+    stage_keys = [snapshot.stage_key for snapshot in progress.snapshots]
+    assert "discover" in stage_keys
+    assert "plan" in stage_keys
+    assert "embeddings" in stage_keys
+    assert "vectors" in stage_keys
+    assert "metadata" in stage_keys
+    assert "final" in stage_keys
+    assert progress.finished == ["completed"]
+    assert any(snapshot.global_total for snapshot in progress.snapshots)
+    assert any(snapshot.counters.get("new") == 2 for snapshot in progress.snapshots)
+
+
+def test_index_service_marks_interrupted_and_resumes_incrementally(tmp_path: Path) -> None:
+    service, provider = service_for(tmp_path)
+    token = CancellationToken()
+    progress = CancelAfterMetadata(token, current=1)
+
+    interrupted = service.run(progress=progress, cancellation=token)
+
+    assert interrupted.status == EmbeddingRunStatus.INTERRUPTED
+    assert interrupted.processed_chunks == 1
+    assert interrupted.pending_chunks == 1
+    assert interrupted.embeddings_generated == 2  # probe inicial + primer chunk
+    assert interrupted.vectors_persisted == 1
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        assert connection.execute(
+            "SELECT status FROM embedding_runs WHERE id = ?",
+            (interrupted.run_id,),
+        ).fetchone() == ("interrupted",)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM chunk_embeddings WHERE status = 'indexed'"
+        ).fetchone() == (1,)
+        assert connection.execute("SELECT COUNT(*) FROM rag_vectors").fetchone() == (1,)
+
+    object.__setattr__(provider, "calls", 0)
+    resumed = service.run()
+
+    assert resumed.status == EmbeddingRunStatus.COMPLETED
+    assert resumed.new_chunks == 1
+    assert resumed.unchanged_chunks == 1
+    assert resumed.pending_chunks == 0
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM embedding_runs WHERE status = 'interrupted'"
+        ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM chunk_embeddings WHERE status = 'indexed'"
+        ).fetchone() == (2,)
+        assert connection.execute("SELECT COUNT(*) FROM rag_vectors").fetchone() == (2,)

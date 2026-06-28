@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -46,7 +47,7 @@ class OllamaLlmProvider:
                 response = self._opener.open(request, timeout=timeout_seconds)  # type: ignore[attr-defined]
                 with response:
                     raw_body = response.read()
-        except TimeoutError as error:
+        except (TimeoutError, socket.timeout) as error:
             raise LlmProviderError(
                 "OLLAMA_LLM_TIMEOUT: Ollama no respondio dentro del timeout."
             ) from error
@@ -59,6 +60,10 @@ class OllamaLlmProvider:
                 "OLLAMA_LLM_HTTP_ERROR: Ollama devolvio un error HTTP."
             ) from error
         except urllib.error.URLError as error:
+            if isinstance(error.reason, TimeoutError | socket.timeout):
+                raise LlmProviderError(
+                    "OLLAMA_LLM_TIMEOUT: Ollama no respondio dentro del timeout."
+                ) from error
             raise LlmProviderError(
                 "OLLAMA_LLM_UNAVAILABLE: no se pudo contactar Ollama local."
             ) from error

@@ -60,7 +60,7 @@ class BenchmarkResult:
 
 def load_evaluation_dataset(path: Path) -> tuple[EvaluationQuestion, ...]:
     """Carga y valida el dataset RAG versionado."""
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw = json.loads(path.read_text(encoding="utf-8-sig"))
     questions = raw.get("questions")
     if not isinstance(questions, list) or len(questions) < 10:
         raise ValueError("El dataset debe contener al menos 10 preguntas.")

@@ -83,6 +83,31 @@ def chunk(chunk_id: str = CHUNK_ID, content: str = "select 1;") -> ChunkCandidat
     )
 
 
+def ranged_chunk(
+    chunk_id: str,
+    *,
+    ordinal: int,
+    start_line: int,
+    end_line: int,
+    content: str,
+) -> ChunkCandidate:
+    return ChunkCandidate(
+        ordinal=ordinal,
+        chunk_id=chunk_id,
+        chunk_type="file",
+        content=content,
+        content_sha256=CHUNK_SHA,
+        start_line=start_line,
+        end_line=end_line,
+        metadata={
+            "chunker_version": "1",
+            "logical_unit_confidence": "high",
+            "start_line": start_line,
+            "end_line": end_line,
+        },
+    )
+
+
 def repository(tmp_path: Path) -> tuple[SQLiteIngestionRepository, Path]:
     db_path = tmp_path / "barbarion.db"
     initialize_database(db_path)
@@ -136,6 +161,47 @@ def test_replace_document_persists_file_document_and_chunks(tmp_path: Path) -> N
             CHUNK_ID,
             0,
         )
+
+
+def test_replace_document_persists_chunk_line_ranges(tmp_path: Path) -> None:
+    repo, db_path = repository(tmp_path)
+    root = tmp_path / "sources"
+    file = discovered(root)
+    run_id = begin_run(repo, root)
+
+    repo.replace_document(
+        run_id=run_id,
+        discovered_file=file,
+        fingerprint=fingerprint(file),
+        processing_signature="sig",
+        parser_id="oracle",
+        parser_version="1",
+        encoding="utf-8",
+        document=document("linea 1\nlinea 2\nlinea 3\nlinea 4\nlinea 5"),
+        chunks=(
+            ranged_chunk(
+                CHUNK_ID,
+                ordinal=0,
+                start_line=1,
+                end_line=3,
+                content="linea 1\nlinea 2\nlinea 3",
+            ),
+            ranged_chunk(
+                OTHER_CHUNK_ID,
+                ordinal=1,
+                start_line=3,
+                end_line=5,
+                content="linea 3\nlinea 4\nlinea 5",
+            ),
+        ),
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        rows = connection.execute(
+            "SELECT id, start_line, end_line FROM chunks ORDER BY ordinal"
+        ).fetchall()
+
+    assert rows == [(CHUNK_ID, 1, 3), (OTHER_CHUNK_ID, 3, 5)]
 
 
 def test_replace_document_is_atomic_on_chunk_failure(tmp_path: Path) -> None:

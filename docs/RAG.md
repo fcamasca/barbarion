@@ -70,6 +70,34 @@ barbarion ask "Que documentos hablan de generate_invoice?" --mode hybrid
 
 `search` y `ask` aceptan `--mode semantic|keyword|hybrid`, `--top-k`, `--candidate-k`, `--threshold`, `--format text|json|markdown`, `--domain`, `--artifact-kind`, `--language`, `--document`, `--folder`, `--extension` y `--debug`.
 
+## Modos de recuperacion
+
+`--mode keyword` usa coincidencia textual. Es la mejor opcion cuando conoces el identificador exacto: variables, tablas, procedimientos, funciones, clases, eventos, codigos de negocio o literales del corpus.
+
+```bash
+barbarion search "order_total" --mode keyword
+barbarion ask "que fuentes explican order_total?" --mode keyword --no-llm
+```
+
+`--mode semantic` usa similitud por significado sobre embeddings. Es util para explorar una idea cuando no conoces los nombres exactos usados por el sistema legacy.
+
+```bash
+barbarion search "logica de descuentos comerciales" --mode semantic
+```
+
+`--mode hybrid` combina ambos enfoques. Mantiene la capacidad de encontrar terminos literales y tambien recupera evidencia relacionada por significado. Es el modo recomendado para preguntas naturales y exploracion general.
+
+```bash
+barbarion search "donde se calcula order_total" --mode hybrid
+barbarion ask "que hace el calculo diario?" --mode hybrid
+```
+
+Regla rapida:
+
+- usa `keyword` para nombres exactos;
+- usa `semantic` para conceptos amplios;
+- usa `hybrid` cuando la pregunta esta en lenguaje natural o no sabes si las palabras coinciden con el codigo.
+
 ## Cancelacion segura
 
 `index` y `reindex` manejan Ctrl+C de forma cooperativa. Al interrumpir, Barbarion termina la unidad minima en curso para no separar vector y metadata, cierra la corrida como `interrupted` y muestra un resumen con procesados, pendientes, embeddings generados y vectores persistidos.

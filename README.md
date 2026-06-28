@@ -170,6 +170,12 @@ Si todavía no tienes embeddings o modelo disponible, puedes probar keyword:
 barbarion search "calculate_discount" --mode keyword
 ```
 
+Como regla practica:
+
+- `--mode keyword`: coincidencia textual; usalo para nombres exactos de variables, tablas, procedimientos o codigos de negocio.
+- `--mode semantic`: similitud por significado; usalo para explorar conceptos aunque no conozcas los nombres exactos.
+- `--mode hybrid`: combina keyword y semantic; es el modo recomendado para preguntas naturales.
+
 Salida esperada resumida:
 ```text
 Busqueda RAG: hybrid

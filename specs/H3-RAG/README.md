@@ -35,7 +35,9 @@ El alcance inicial esta en [ROADMAP.md](../../docs/ROADMAP.md#5-h3--rag). H3 con
 - recuperacion hibrida inicial mediante vector search con `sqlite-vec` + keyword search local en SQLite FTS5 si esta disponible; fallback LIKE documentado cuando FTS5 no exista;
 - ranking combinado simple y explicito, preparado para BM25, cross encoder y rerankers locales futuros;
 - context builder determinista con deduplicacion, presupuesto de tokens, agrupacion por documento y fuentes;
-- respuestas con citas obligatorias o declaracion de evidencia insuficiente;
+- contexto acotado por fuente y presupuesto global antes de invocar LLM;
+- respuestas con citas inline obligatorias o declaracion de evidencia insuficiente;
+- fuentes con rangos reales de chunk para citas y navegacion;
 - comandos CLI `index`, `reindex`, `search`, `ask`, `embeddings` y `stats`;
 - observabilidad local sin telemetria remota ni volcado de corpus en logs.
 

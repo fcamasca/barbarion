@@ -135,9 +135,23 @@ El benchmark cumple el criterio de al menos 8 de 10 preguntas con evidencia espe
 - `symbol_occurrences` queda reservado para H4 y H3 no implementa extraccion avanzada de simbolos.
 - H3 no implementa grafo de dependencias, ingenieria inversa profunda, UI, servidor HTTP, workers ni frameworks RAG grandes.
 
+## 8.1 Hardening operativo posterior
+
+Despues de la aceptacion inicial se incorporo hardening operativo sin cambiar la arquitectura H3:
+
+- `ask` captura errores esperados del proveedor LLM sin traceback y conserva salidas accionables;
+- interrupcion por usuario devuelve codigo `130`;
+- respuestas LLM sin citas inline validas se rechazan antes de mostrarse como confiables;
+- `ContextBuilder` respeta `max_chunk_tokens` por fuente y `context_token_budget` global;
+- `ask --debug` muestra metricas de tamano sin volcar el corpus completo;
+- fuentes recuperadas exponen rangos reales del chunk, incluyendo overlap cuando corresponda, en vez de heredar el rango completo del documento;
+- la documentacion operativa explica cuando usar `--mode keyword`, `--mode semantic` y `--mode hybrid`.
+
+Este hardening conserva SQLite + sqlite-vec, el algoritmo RAG, los embeddings y la frontera H2/H3. El ajuste de rangos nace en metadata de chunking H2, pero se acepta dentro del contrato H3 porque afecta directamente citas, navegacion y evidencia recuperada.
+
 ## 9. Trazabilidad
 
-- H3-T01 a H3-T30: completados.
+- H3-T01 a H3-T31: completados.
 - H3-REQ-001 a H3-REQ-023: cubiertos por implementacion, tests, dataset o reportes.
 - NFR locales: operacion on-premise, sin servicios cloud, sin telemetria remota y compatible con Windows/Linux a nivel de rutas y CLI.
 - Documentacion operativa: [`docs/RAG.md`](../../docs/RAG.md).

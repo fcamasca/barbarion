@@ -73,9 +73,9 @@ No se crea un paquete paralelo `rag/` al nivel de las capas. Si el archivo `appl
 | `IndexRunSummary` | run_id, status, counts, duration, errors |
 | `RetrievalFilter` | domain, artifact_kind, language, document_id, folder, extension |
 | `RetrievalCandidate` | chunk_id, scores, source metadata, snippet optional |
-| `ContextSource` | source_id, candidate, content, token_estimate |
-| `BuiltContext` | sources, rendered_context, token_count, omitted |
-| `AnswerResult` | answer, sources, assumptions, insufficient_evidence, timings |
+| `ContextSource` | source_id, candidate, content, token_estimate, original_token_estimate, content_truncated |
+| `BuiltContext` | sources, rendered_context, token_count, omitted, debug |
+| `AnswerResult` | answer, sources, status, citations_valid, missing_citations, debug |
 
 ## 6. Configuracion
 
@@ -237,6 +237,8 @@ Cada punto vectorial guarda:
 
 Estos campos se almacenan en SQLite junto al estado de embedding o se derivan por join desde metadata H2. Pueden quedar NULL inicialmente. Su presencia prepara H4 sin convertir H3 en analisis profundo.
 
+Los rangos `start_line`/`end_line` usados por search, ask, ContextBuilder, Evidencia y Fuentes deben representar el rango real del chunk recuperado. Si H2 divide un documento grande en multiples chunks, cada chunk persiste su propio rango; con overlap, los rangos pueden solaparse, pero no deben heredar todos el rango completo del documento salvo que exista un unico chunk.
+
 ## 9. Pipeline de indexacion
 
 ```mermaid
@@ -297,14 +299,14 @@ Pasos:
 
 1. filtrar candidatos bajo umbral;
 2. deduplicar por `chunk_id` y `content_sha256`;
-3. limitar por `max_chunk_tokens`;
+3. limitar cada fuente por `max_chunk_tokens`;
 4. agrupar candidatos del mismo documento si son contiguos o cercanos;
 5. asignar `source_id` estable `F1`, `F2`, ...;
-6. renderizar contexto con encabezados de fuente;
-7. detener al alcanzar `context_token_budget`;
+6. renderizar contexto con encabezados de fuente, score, chunk, rangos y `contenido_truncado`;
+7. detener o recortar al alcanzar `context_token_budget`;
 8. registrar omitidos por score, duplicado o presupuesto.
 
-El estimador de tokens puede ser aproximado por caracteres para H3, pero debe estar encapsulado para cambiarlo despues.
+El estimador de tokens puede ser aproximado por caracteres para H3, pero debe estar encapsulado para cambiarlo despues. El presupuesto global se calcula sobre el bloque que realmente se envia al prompt, incluyendo encabezados de fuentes, no solo sobre el texto bruto del chunk.
 
 ## 12. Preguntas y respuestas
 
@@ -331,7 +333,9 @@ Formato base:
 - ...
 ```
 
-Si una cita no existe en el contexto, la respuesta se marca invalida y se reemplaza por un error accionable o por evidencia insuficiente, segun configuracion.
+Si una cita no existe en el contexto, o si el LLM no incluye ninguna cita inline valida como `[F1]`, la respuesta se marca invalida y se reemplaza por un error accionable o por evidencia insuficiente, segun configuracion. La respuesta candidata no debe mostrarse como respuesta final confiable.
+
+Errores esperados del proveedor LLM se traducen a mensajes accionables en espanol sin traceback: timeout, modelo no disponible, respuesta invalida, proveedor no disponible y errores HTTP esperados. La interrupcion por usuario devuelve codigo `130`; los errores esperados del LLM devuelven codigo `1`.
 
 ## 13. CLI
 
@@ -362,6 +366,12 @@ Opciones comunes de consulta:
 - `--format text|json|markdown`;
 - `--debug`.
 
+Uso recomendado de `--mode`:
+
+- `keyword`: identificadores exactos, literales, nombres de tablas, variables, procedimientos o codigos de negocio;
+- `semantic`: exploracion conceptual cuando no se conocen los nombres exactos;
+- `hybrid`: modo equilibrado para preguntas naturales y exploracion general.
+
 ## 14. Observabilidad
 
 Logs:
@@ -377,6 +387,8 @@ Metricas:
 - recuperacion: vector_ms, keyword_ms, ranking_ms, context_ms;
 - ask: llm_ms, fuentes usadas, tokens estimados, citas rechazadas.
 - calidad de contexto: `context_precision`, `context_recall`, `duplicate_ratio` y `token_waste`.
+
+`ask --debug` muestra metricas de tamano antes de llamar al LLM: cantidad de fuentes, caracteres del contexto, tokens estimados, caracteres del prompt, timeout configurado y fuentes truncadas. No imprime el corpus completo salvo que exista una opcion explicita para inspeccion de contenido.
 
 ## 15. Reportes H3
 

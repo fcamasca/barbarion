@@ -23,6 +23,8 @@ Registrar las decisiones especificas de H3 sin reemplazar `docs/DECISIONS.md`. L
 | H3-D-013 | Aceptada | Respuestas en espanol con citas obligatorias | Consistente con `D-013` y el principio de evidencia antes que elocuencia | `ask` debe declarar evidencia insuficiente si no recupera fuentes |
 | H3-D-014 | Aceptada | Tests con proveedores fake por defecto | Mantiene suite rapida, offline y reproducible | Las pruebas reales de Ollama y `sqlite-vec` se marcan como integracion condicionada cuando dependan de binarios locales |
 | H3-D-015 | Aceptada | Crear `symbol_occurrences` como tabla reservada para H4 | Permite compatibilidad futura sin convertir H3 en ingenieria inversa | H3 solo la puebla si H2 ya expone metadata simple; no implementa extraccion avanzada |
+| H3-D-016 | Aceptada | Exigir citas inline validas en respuestas LLM | Listar fuentes al final no basta para auditar afirmaciones factuales | Respuestas sin `[F1]` valido se rechazan y no se muestran como finales confiables |
+| H3-D-017 | Aceptada | Usar rangos reales del chunk como contrato de evidencia | La navegacion y las citas pierden valor si todos los chunks heredan el rango completo del documento | H2 debe persistir rangos por chunk y H3 debe propagarlos en search, ask, contexto y fuentes |
 
 ## 3. Evaluacion de modelos de embeddings
 

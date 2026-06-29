@@ -131,19 +131,47 @@ Ejemplos obligatorios dentro del dataset o sus equivalentes sinteticos:
 - deduplicacion por chunk y hash;
 - presupuesto de tokens;
 - truncado por max chunk;
+- truncado real por `max_chunk_tokens` por fuente;
+- respeto de `context_token_budget` global sobre el contexto renderizado;
 - agrupacion por documento;
 - source ids estables;
 - omitidos registrados;
 - metricas `context_precision`, `context_recall`, `duplicate_ratio` y `token_waste`;
-- render debug sin LLM.
+- render debug sin LLM;
+- debug de `ask` reporta fuentes, caracteres/tokens estimados, prompt, timeout y fuentes truncadas sin imprimir corpus completo.
 
 ### Citaciones
 
 - cita valida;
 - cita inexistente rechazada;
+- respuesta LLM sin citas inline validas rechazada;
 - fuente sin lineas usa chunk/documento;
 - evidencia insuficiente no llama LLM por defecto;
 - supuestos separados de evidencia.
+
+### Metadata de ubicacion
+
+- documento de miles de lineas dividido en multiples chunks produce rangos distintos;
+- rangos `start_line`/`end_line` almacenados coinciden con el contenido real del chunk;
+- chunks con overlap reflejan rangos solapados cuando corresponde;
+- search muestra el rango correcto de la fuente recuperada;
+- ask, ContextBuilder, Evidencia y Fuentes mantienen el mismo rango;
+- las citas apuntan al chunk correcto y no al rango completo del documento.
+
+### Errores LLM
+
+- timeout del proveedor LLM no muestra traceback y sale con codigo `1`;
+- modelo no disponible produce mensaje accionable;
+- respuesta invalida del proveedor produce mensaje accionable;
+- interrupcion por usuario sale con codigo `130`;
+- `--no-llm` permite inspeccionar contexto cuando el LLM no esta disponible.
+
+### Modos de recuperacion
+
+- `keyword` recupera identificadores exactos;
+- `semantic` recupera por similitud conceptual con embeddings;
+- `hybrid` fusiona ambos enfoques y conserva scores individuales;
+- documentacion operativa explica cuando usar cada modo.
 
 ### Imports
 
@@ -248,6 +276,12 @@ Importar modulos H3 en proceso nuevo y comprobar que no:
 
 **Resultado:** validador rechaza y reporta error o evidencia insuficiente.
 
+### INT-15b - Respuesta sin cita inline
+
+**Accion:** fake devuelve respuesta util pero sin `[F1]`.
+
+**Resultado:** validador rechaza la respuesta candidata y no la muestra como final confiable.
+
 ### INT-16 - Stats read-only
 
 **Accion:** ejecutar stats y embeddings.
@@ -265,6 +299,12 @@ Importar modulos H3 en proceso nuevo y comprobar que no:
 **Accion:** bloquear conexiones no loopback.
 
 **Resultado:** suite con fakes pasa; ningun comando intenta internet.
+
+### INT-19 - Rangos reales por chunk
+
+**Accion:** ingerir documento grande dividido en multiples chunks.
+
+**Resultado:** SQLite, search, ask y fuentes muestran rangos distintos por chunk, coherentes con el contenido y con overlap cuando exista.
 
 ## 7. Smoke tests
 
@@ -381,11 +421,11 @@ Objetivos:
 | H3-REQ-010 | INT-10/11, SMK-05/06 |
 | H3-REQ-011-012 | unit keyword/ranking, INT-12 |
 | H3-REQ-013-014 | unit context/citations, INT-13-15 |
-| H3-REQ-015-017 | INT-10-15 |
+| H3-REQ-015-017 | INT-10-15, INT-15b |
 | H3-REQ-018-019 | SMK-01-10 |
 | H3-REQ-020 | INT-02/10/14/16, rendimiento |
 | H3-REQ-021 | evaluacion RAG categorizada |
-| H3-REQ-022 | unit metadata/context, revision de diseno |
+| H3-REQ-022 | unit metadata/context, INT-19, revision de diseno |
 | H3-REQ-023 | benchmark dataset, reportes y metricas de contexto |
 | H3-NFR-001 | INT-18 |
 | H3-NFR-002-004 | rendimiento |
@@ -405,6 +445,8 @@ Objetivos:
 - [ ] filtros reducen resultados correctamente;
 - [ ] context builder respeta presupuesto y conserva fuentes;
 - [ ] ask cita fuentes validas o declara evidencia insuficiente;
+- [ ] ask rechaza respuestas sin citas inline validas;
+- [ ] search y ask muestran rangos reales de chunk, no rangos completos heredados;
 - [ ] evaluacion cumple 8/10 top-5;
 - [ ] benchmark reporta recall@5, recall@10, mrr, latencia y metricas de contexto;
 - [ ] benchmark conserva baseline e historico de ejecuciones;

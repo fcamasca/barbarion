@@ -439,6 +439,23 @@
 
 **Verificacion:** todos los Must pasan, top-5 cumple al menos 8/10, los cuatro reportes existen con contenido reproducible y el historico permite comparar contra una ejecucion previa.
 
+### H3-T31 - Hardening operativo de ask, contexto y evidencia
+
+**Estado:** completado.  
+**Complejidad:** M.  
+**Dependencias:** H3-T19, H3-T21, H3-T22, H3-T23, H2 chunking vigente.  
+**Requisitos:** H3-REQ-013, H3-REQ-014, H3-REQ-016, H3-REQ-017, H3-REQ-019, H3-REQ-022.
+
+- capturar errores esperados del LLM en `ask` sin traceback;
+- devolver codigo `1` ante errores esperados de LLM y `130` ante interrupcion por usuario;
+- rechazar respuestas LLM sin citas inline validas;
+- aplicar realmente `max_chunk_tokens` por fuente y `context_token_budget` global;
+- mostrar debug de tamano sin imprimir corpus completo;
+- documentar y probar `--mode keyword|semantic|hybrid`;
+- asegurar que los rangos `start_line`/`end_line` correspondan al chunk real y se propaguen a SQLite, Search, Ask, Evidencia y Fuentes.
+
+**Verificacion:** tests unitarios/integracion de ask, ContextBuilder, LLM, CLI, chunking, SQLite y recuperacion; suite completa pasa con fakes locales.
+
 ## 3. Orden de implementacion
 
 ```mermaid
@@ -464,3 +481,4 @@ flowchart LR
 | RAG-05 Contexto y Q&A | T19-T23 | Ask con contexto y citas |
 | RAG-06 Operacion | T24-T29 | Stats, evaluacion, smoke y docs |
 | RAG-07 Cierre | T30 | Evidencia tecnica para aceptacion posterior |
+| RAG-08 Hardening operativo | T31 | Ask robusto, contexto acotado y evidencia navegable |

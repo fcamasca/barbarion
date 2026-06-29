@@ -227,8 +227,9 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 - selecciona chunks desde resultados recuperados;
 - elimina duplicados y chunks casi identicos por hash;
 - agrupa por documento cuando mejore legibilidad;
-- respeta presupuesto de tokens configurable con estimador local;
-- conserva fuente, score, lineas, paginas, objeto y ordinal;
+- respeta `max_chunk_tokens` por fuente y `context_token_budget` global con estimador local;
+- no envia chunks completos al LLM cuando superan el limite configurado;
+- conserva fuente, score, lineas, paginas, objeto, ordinal y bandera de truncamiento;
 - calcula o deja preparado el calculo de `context_precision`, `context_recall`, `duplicate_ratio` y `token_waste`;
 - puede emitirse en modo debug sin invocar LLM.
 
@@ -243,6 +244,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 - cada cita referencia un `source_id` existente en el contexto;
 - incluye archivo, chunk, score y lineas/paginas cuando existan;
 - el validador rechaza citas inexistentes antes de mostrar respuesta;
+- el validador rechaza respuestas LLM sin ninguna cita inline valida;
 - si no hay resultados sobre umbral, `ask` no inventa respuesta;
 - los supuestos se separan de la evidencia.
 
@@ -271,7 +273,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 - usa Ollama como proveedor inicial de generacion;
 - permite modo `--no-llm` para inspeccionar contexto;
 - valida citas;
-- maneja timeout y modelo ausente con errores claros.
+- maneja timeout, modelo ausente, respuesta invalida, errores esperados del proveedor e interrupcion por usuario con errores claros y sin traceback.
 
 ### H3-REQ-017 - Debugging RAG
 
@@ -282,6 +284,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 **Criterios de aceptacion:**
 
 - salida debug incluye query normalizada, filtros, candidatos, scores, deduplicacion y presupuesto;
+- `ask --debug` muestra metricas de tamano antes del LLM: fuentes, caracteres/tokens estimados de contexto, caracteres de prompt, timeout LLM y fuentes truncadas;
 - no imprime contenido completo salvo opcion explicita;
 - registra `query_id` para correlacion de logs.
 
@@ -307,6 +310,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 **Criterios de aceptacion:**
 
 - `search "consulta"` admite modo semantic, keyword o hybrid;
+- los modos se documentan como contrato operativo: `keyword` para identificadores literales, `semantic` para similitud conceptual e `hybrid` para preguntas naturales o exploracion general;
 - `ask "pregunta"` muestra conclusion, evidencia, supuestos y limites;
 - `embeddings` muestra modelos, versiones, colecciones y obsoletos;
 - `stats` incluye estado RAG sin reindexar;
@@ -349,6 +353,7 @@ H3 no modifica parsers H2 ni implementa ingenieria inversa H4 o generacion de sp
 **Criterios de aceptacion:**
 
 - resultados exponen objeto, lenguaje, archivo, rangos y scores;
+- los rangos `start_line`/`end_line` expuestos por H3 corresponden al chunk recuperado, no al documento completo, incluso cuando H2 genera chunks con overlap;
 - resultados exponen campos simbolicos preparados para H4, aunque esten NULL inicialmente;
 - SQLite v3 crea `symbol_occurrences(id, chunk_id, symbol_name, symbol_kind, line_start, line_end)` para compatibilidad futura;
 - H3 no implementa extraccion avanzada ni convierte estas ocurrencias en grafo;

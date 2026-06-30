@@ -2,9 +2,9 @@
 
 ## Estado
 
-**Estado:** pendiente de revision humana.
+**Estado:** aceptado.
 
-H4 no se declara aceptado en este documento. La aceptacion queda bloqueada hasta recibir feedback humano sobre inventario, fichas de componente, impacto cruzado, falsos positivos, falsos negativos y utilidad practica.
+H4 queda aceptado por feedback humano recibido el 2026-06-30. La evidencia T12, las correcciones puntuales posteriores y la revision de utilidad practica se consideran suficientes para cerrar el hito.
 
 ## Contexto de ejecucion
 
@@ -123,7 +123,7 @@ Muestra: grafo sintetico `tests.integration.test_describe_cli._seed_graph`.
 | Relaciones no resueltas | 0 |
 | Relaciones dinamicas | 0 |
 | Relaciones externas | 0 |
-| Revision humana | pendiente |
+| Revision humana | aceptada |
 
 Comandos de muestra:
 
@@ -198,13 +198,13 @@ Resultado:
 |---|---:|---|
 | Falsos positivos conocidos | 0 | En la muestra sintetica revisada no aparecieron relaciones no esperadas. |
 | Falsos negativos conocidos | 0 | En la muestra sintetica revisada se encontraron las relaciones esperadas. |
-| Pendientes de revision | N/A | Requiere feedback humano sobre utilidad y cobertura en casos representativos reales o aceptados por el usuario. |
+| Pendientes de revision | 0 | Feedback humano recibido; H4 se considera cerrado. |
 
 ## Decision de aceptacion
 
-H4 queda **listo para revision humana**, pero **no aceptado**.
+H4 queda **aceptado y cerrado**.
 
-Condiciones pendientes antes de declarar aceptacion:
+Condiciones revisadas antes de declarar aceptacion:
 
 1. Revisar `reports/h4/inventory-oracle.md`.
 2. Revisar `reports/h4/describe-oracle.md`.
@@ -236,4 +236,14 @@ Resultado:
 - `10 passed`
 - `1 warning` de cache pytest por permisos sobre `.pytest_cache` en Windows.
 
-Esta correccion no declara H4 aceptado. La aceptacion sigue pendiente de feedback humano.
+Esta correccion queda incorporada al cierre de H4.
+
+## Addendum de cierre: feedback humano
+
+Fecha: 2026-06-30.
+
+Resultado:
+
+- H4 se da por cerrado.
+- Los ajustes posteriores de `ask`, diagnostico `--debug`, validacion y repair se tratan como correcciones puntuales posteriores a T12.
+- `docs/EVOLUTION.md` queda fuera del MVP y no forma parte del cierre de H4.

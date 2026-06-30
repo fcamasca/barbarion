@@ -1,6 +1,6 @@
 # H4 — Reverse Engineering
 
-**Estado:** pendiente; depende de H3.
+**Estado:** completado y aceptado.
 
 Generar inventarios, relaciones y análisis de impacto básico distinguiendo evidencia, inferencias y puntos por confirmar.
 

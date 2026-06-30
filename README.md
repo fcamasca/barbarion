@@ -11,7 +11,7 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 `H1-Foundation` está completado y aceptado en la versión `0.1.0`.
 `H2-Ingestion` está completado y aceptado en la versión `0.2.0`.
 `H3-RAG` está completado y aceptado en la versión `0.3.0`.
-`H4-ReverseEngineering` está implementado como candidato de revisión en la versión `0.4.0`; queda pendiente de aceptación humana.
+`H4-ReverseEngineering` está completado, revisado y aceptado en la versión `0.4.0`.
 
 H3 incluye:
 
@@ -339,7 +339,7 @@ Las pruebas usan directorios temporales y un endpoint Ollama falso en loopback. 
 - entregables pequeños y verificables;
 - revisión humana de resultados futuros.
 
-No forman parte del MVP una extensión de VS Code, UI web, autenticación, microservicios, Kubernetes, base de datos empresarial ni grafo avanzado.
+No forman parte del MVP una extensión de VS Code, UI web, autenticación, microservicios, Kubernetes, base de datos empresarial ni grafo avanzado. `docs/EVOLUTION.md` documenta ideas posteriores y no forma parte del alcance MVP.
 
 ## Roadmap
 
@@ -361,6 +361,7 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 - [Referencia CLI](docs/CLI.md)
 - [Operación de ingesta H2](docs/INGESTION.md)
 - [Aceptación H3](specs/H3-RAG/acceptance.md)
+- [Aceptación H4](specs/H4-ReverseEngineering/acceptance.md)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)
 

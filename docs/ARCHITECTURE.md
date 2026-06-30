@@ -14,7 +14,7 @@ La separación entre módulos existe para mantener el código comprensible y com
 | Backend | Python 3.12, una aplicación | Ecosistema sólido para parsing, RAG y modelos locales |
 | API HTTP | No usar inicialmente | FastAPI no aporta al flujo CLI de un solo usuario; puede añadirse como adaptador futuro |
 | Metadata | SQLite | Local, transaccional, inspeccionable y sin servidor |
-| Vectores | Qdrant en modo local | Búsqueda vectorial y filtros sin operar un servicio separado |
+| Vectores | SQLite + sqlite-vec | Mantiene metadata y vectores en el mismo archivo local y conserva el índice reconstruible |
 | LLM y embeddings | Ollama | Inferencia local con una interfaz estable y modelos sustituibles por configuración |
 | Entregables | Markdown | Legible, editable, versionable y adecuado para specs |
 | Parsing | Heurísticas por tipo + fallback de texto | Valor temprano sin intentar compiladores completos |
@@ -29,8 +29,7 @@ flowchart LR
     U["Desarrollador del sistema legacy"] --> CLI["Barbarion CLI"]
     SRC["Código y documentación autorizados"] --> CLI
     CLI --> APP["Aplicación Python local"]
-    APP --> SQL[("SQLite\nmetadata y relaciones")]
-    APP --> VEC[("Qdrant local\nembeddings")]
+    APP --> SQL[("SQLite\nmetadata, relaciones y sqlite-vec")]
     APP --> OL["Ollama\nembeddings y LLM"]
     APP --> MD["Documentos Markdown"]
 ```
@@ -47,11 +46,10 @@ flowchart TD
     D --> E["Chunks + metadata + referencias"]
     E --> F[("SQLite")]
     E --> G["Ollama embeddings"]
-    G --> H[("Qdrant local")]
+    G --> F
 
     Q["Pregunta o comando"] --> R["Recuperación semántica + filtros"]
     F --> R
-    H --> R
     R --> P["Construcción de contexto"]
     P --> L["Ollama LLM"]
     L --> V["Validación y formato"]
@@ -65,13 +63,13 @@ flowchart TD
 3. El decoder conserva información sobre encoding y registra sustituciones o fallos.
 4. El parser extrae unidades lógicas y referencias conocidas; si falla, se usa texto segmentado.
 5. SQLite guarda la identidad, procedencia, estado y relaciones.
-6. Ollama genera embeddings y Qdrant almacena cada vector con un identificador estable.
+6. Ollama genera embeddings y SQLite/sqlite-vec almacena cada vector con un identificador estable.
 7. Una operación de sincronización retira metadata y vectores obsoletos.
 
 ### Consulta RAG
 
 1. La consulta se convierte en embedding.
-2. Qdrant recupera candidatos, opcionalmente filtrados por metadata.
+2. sqlite-vec recupera candidatos, opcionalmente filtrados por metadata.
 3. SQLite aporta datos de archivo, objeto y relaciones simples.
 4. Un ensamblador limita y ordena el contexto según presupuesto configurable.
 5. El LLM responde bajo una plantilla que exige evidencia, supuestos y límites.
@@ -115,7 +113,7 @@ Un archivo local, por ejemplo `barbarion.toml`, define:
 - URL local de Ollama y modelos seleccionados;
 - tamaños y solapamiento de chunks;
 - top-k y límites de contexto;
-- ubicación de SQLite y Qdrant local;
+- ubicación de SQLite y configuración de sqlite-vec;
 - nivel de logging.
 
 Se versiona un archivo de ejemplo, no la configuración con rutas, secretos o datos reales. Los valores efectivos deben poder mostrarse con datos sensibles ocultos.
@@ -147,23 +145,33 @@ Modelo conceptual mínimo:
 
 ```mermaid
 erDiagram
-    SOURCE_FILE ||--o{ CHUNK : contiene
-    SOURCE_FILE ||--o{ SYMBOL : declara
+    FILE ||--o{ DOCUMENT : normaliza
+    DOCUMENT ||--o{ CHUNK : contiene
+    FILE ||--o{ SYMBOL : declara
     CHUNK ||--o{ SYMBOL : ubica
+    SYMBOL ||--o{ SYMBOL_REFERENCE : origen
+    SYMBOL_REFERENCE ||--o{ RELATION : resuelve
     SYMBOL ||--o{ RELATION : origen
     SYMBOL ||--o{ RELATION : destino
-    INGESTION_RUN ||--o{ SOURCE_FILE : procesa
+    ANALYSIS_RUN ||--o{ SYMBOL : actualiza
+    ANALYSIS_RUN ||--o{ SYMBOL_REFERENCE : actualiza
+    ANALYSIS_RUN ||--o{ RELATION : actualiza
 
-    SOURCE_FILE {
+    FILE {
         string id
         string path
         string checksum
         string kind
         string status
     }
-    CHUNK {
+    DOCUMENT {
         string id
         string file_id
+        string parser_id
+    }
+    CHUNK {
+        string id
+        string document_id
         int start_line
         int end_line
         string content_hash
@@ -174,34 +182,41 @@ erDiagram
         string name
         string kind
     }
+    SYMBOL_REFERENCE {
+        string id
+        string source_symbol_id
+        string normalized_target
+        string resolution_status
+    }
     RELATION {
         string source_symbol_id
+        string target_symbol_id
         string target_key
         string kind
         string evidence_chunk_id
         float confidence
     }
-    INGESTION_RUN {
+    ANALYSIS_RUN {
         string id
         datetime started_at
         string status
     }
 ```
 
-Este modelo puede evolucionar mediante migraciones pequeñas. `target_key` permite registrar una referencia aunque el destino aún no se haya resuelto. SQLite no almacena embeddings.
+Este modelo puede evolucionar mediante migraciones pequeñas. Las tablas permanentes de reverse engineering usan nombres sin prefijo de hito: `analysis_runs`, `symbols`, `symbol_references`, `relations`, `relation_candidates` y `generated_artifacts`. `target_key` permite registrar una referencia aunque el destino aún no se haya resuelto.
 
 ### 5.5 Vector store local
 
-Qdrant guarda:
+sqlite-vec guarda en SQLite:
 
 - ID estable del chunk;
 - vector de embedding;
-- payload mínimo para filtros: dominio, tipo, ruta y símbolo principal;
+- metadata mínima para filtros: dominio, tipo, ruta y símbolo principal;
 - hash del contenido y versión del modelo de embedding.
 
-SQLite es la fuente de verdad de procedencia y estado. Qdrant es un índice reconstruible. Si cambia el modelo de embedding, se crea o reconstruye la colección; no se mezclan dimensiones ni modelos silenciosamente.
+SQLite es la fuente de verdad de procedencia, estado y vectores. El índice vectorial es reconstruible desde `chunks` y los manifiestos de embeddings. Si cambia el modelo de embedding, se crea o reconstruye el manifiesto; no se mezclan dimensiones ni modelos silenciosamente.
 
-Durante el MVP se usa Qdrant en modo local. Ejecutarlo como servicio se evaluará solo si aparecen límites reales de volumen, bloqueo o concurrencia.
+Durante el MVP se usa SQLite + sqlite-vec. Qdrant queda como alternativa futura si aparecen límites reales de volumen, filtros, bloqueo o concurrencia.
 
 ### 5.6 RAG
 
@@ -323,8 +338,8 @@ La división `application/domain/infrastructure` debe mantenerse ligera. Si un a
 - una biblioteca CLI madura;
 - validación de configuración;
 - cliente de Ollama;
-- cliente de Qdrant con modo local;
 - acceso estándar o liviano a SQLite;
+- sqlite-vec para búsqueda vectorial local;
 - motor de plantillas Markdown;
 - framework de pruebas y herramientas de calidad.
 
@@ -347,7 +362,7 @@ Para un MVP local basta con:
 - ID de corrida de ingesta;
 - conteos de procesados, omitidos, actualizados y fallidos;
 - tiempos por etapa y latencia de consulta;
-- comando `doctor` para rutas, SQLite, Qdrant y Ollama;
+- comando `doctor` para rutas, SQLite, sqlite-vec y Ollama;
 - mensajes de error con archivo y acción recomendada.
 
 No se requiere una plataforma de métricas, trazas distribuidas ni telemetría remota.
@@ -355,7 +370,7 @@ No se requiere una plataforma de métricas, trazas distribuidas ni telemetría r
 ## 9. Estrategia de pruebas
 
 - **Unitarias:** chunking, checksums, parsers, filtros, renderers y validadores de citas.
-- **Integración:** SQLite, Qdrant local y Ollama sustituible por un fake estable.
+- **Integración:** SQLite, sqlite-vec y Ollama sustituible por un fake estable.
 - **Golden files:** Markdown esperado para entradas controladas.
 - **Evaluación RAG:** conjunto versionado de preguntas, fuentes esperadas y métrica top-k.
 - **Smoke test:** recorrido CLI mínimo sobre un corpus pequeño.
@@ -377,7 +392,7 @@ flowchart LR
 
 FastAPI solo se justificará cuando una interfaz futura necesite comunicación persistente o múltiples clientes. La lógica de negocio permanecerá fuera de la API, por lo que añadirla no exigirá reescribir el núcleo.
 
-Otras evoluciones posibles —un segundo dominio, más formatos, Qdrant como servicio o un grafo— requieren evidencia de necesidad, una spec propia y métricas que justifiquen el costo.
+Otras evoluciones posibles —un segundo dominio, más formatos, Qdrant como alternativa vectorial o un grafo— requieren evidencia de necesidad, una spec propia y métricas que justifiquen el costo.
 
 ## 11. Criterios de calidad arquitectónica
 
@@ -385,7 +400,7 @@ La arquitectura se considera adecuada para el MVP si:
 
 - el flujo completo puede ejecutarse desde CLI en una máquina local;
 - cada fragmento y relación puede rastrearse a su fuente;
-- Qdrant puede reconstruirse desde el corpus y SQLite;
+- el índice sqlite-vec puede reconstruirse desde chunks y manifiestos en SQLite;
 - un fallo de parser o archivo no invalida toda la ingesta;
 - modelos y rutas cambian por configuración;
 - los módulos centrales pueden probarse sin ejecutar un LLM real;

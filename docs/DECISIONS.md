@@ -26,6 +26,7 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 | D-012 | 2026-06-23 | Aceptada | Se pospone un comando explícito `barbarion init` | H1 necesita un flujo mínimo y ya cuenta con diagnóstico operativo | En H1, `barbarion doctor` también realiza el bootstrap idempotente de directorios y SQLite; `init` se reconsiderará si separar ambos comportamientos aporta valor |
 | D-013 | 2026-06-23 | Aceptada | La comunicación de Barbarion con el usuario será en español | Favorece claridad y consistencia para sus usuarios iniciales | Ayuda, mensajes CLI, errores, diagnósticos, logs, comentarios y docstrings se escriben en español; identificadores, claves de configuración, APIs y códigos técnicos estables pueden permanecer en inglés |
 | D-014 | 2026-06-29 | Aceptada | SQLite + sqlite-vec como vector store inicial del MVP | Mantiene metadata y vectores en un único archivo local, reduce operación y conserva el índice reconstruible desde chunks H2 | H3 usa SQLite + sqlite-vec; Qdrant se reevalúa en H4 o posterior si volumen, filtros o latencia lo requieren |
+| D-015 | 2026-06-30 | Aceptada | Las tablas permanentes de reverse engineering no usan prefijo de hito | El catálogo técnico ya forma parte del modelo de datos permanente de Barbarion, igual que `files`, `documents` y `chunks` | El esquema usa `analysis_runs`, `symbols`, `symbol_references`, `relations`, `relation_candidates` y `generated_artifacts`; se evita `references` por ser problemático en SQLite |
 
 ## Cómo añadir una decisión
 

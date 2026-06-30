@@ -2,7 +2,7 @@
 
 ## 1. Objetivo
 
-Verificar que H5 genera especificaciones Markdown trazables desde un requerimiento funcional, reutilizando RAG H3 y reverse engineering H4, sin inventar informacion, sin sobrescribir trabajo humano y sin depender de un LLM real en la suite normal.
+Verificar que H5 genera especificaciones Markdown trazables desde un requerimiento funcional, reutilizando RAG H3 y reverse engineering H4, sin inventar informacion, sin sobrescribir trabajo humano y sin depender de sintesis asistida real en la suite normal.
 
 ## 2. Alcance
 
@@ -12,6 +12,7 @@ Incluye:
 - recuperacion de evidencia H3;
 - integracion con simbolos, relaciones e impacto H4;
 - sintesis de reglas, riesgos, supuestos y preguntas abiertas;
+- Review automatico interno sobre `SpecDraft`;
 - generacion de `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`;
 - validacion de estructura, IDs y citas;
 - CLI `spec create` y `spec validate`;
@@ -30,8 +31,8 @@ Excluye:
 
 ## 3. Estrategia
 
-- unit tests para dominio, interpretacion, evidencia, sintesis, validacion y rutas;
-- integration tests con SQLite temporal, fixtures H2/H3/H4 y fakes de RAG/LLM;
+- unit tests para dominio, interpretacion, evidencia, sintesis, Review, validacion y rutas;
+- integration tests con SQLite temporal, fixtures H2/H3/H4 y fakes de RAG/sintesis;
 - CLI tests para `spec create` y `spec validate`;
 - golden files Markdown para estructura estable;
 - casos negativos de evidencia insuficiente, ambiguedad y citas invalidas;
@@ -46,7 +47,7 @@ Excluye:
 - SQLite local con schema vigente H4;
 - sqlite-vec instalado para no romper H3;
 - Ollama real opcional;
-- LLM fake determinista por defecto;
+- fake determinista de sintesis por defecto;
 - `pytest --basetemp .pytest-tmp/h5` recomendado en Windows.
 
 ## 5. Fixtures y datos
@@ -104,49 +105,57 @@ Cada regla detectada cita evidencia; contradicciones y evidencia parcial quedan 
 
 Genera los cuatro archivos con secciones obligatorias y estructura estable.
 
-### H5-TP-008 - Tareas y aceptacion unica
+### H5-TP-008 - Review automatico
+
+Review verifica consistencia entre documentos proyectados, evidencia por requisito, tareas/pruebas asociadas a requisitos, conclusiones dentro del alcance de la evidencia, citas validas y ausencia de contradicciones internas. Si falla, detiene generacion o degrada solo secciones afectadas.
+
+### H5-TP-009 - Tareas y aceptacion unica
 
 `tasks.md` contiene tareas implementables y una sola ultima tarea de validacion y aceptacion integral.
 
-### H5-TP-009 - Trazabilidad
+### H5-TP-010 - Trazabilidad
 
 Requisitos, decisiones, tareas y pruebas se enlazan entre si y con evidencia.
 
-### H5-TP-010 - Validacion de citas
+### H5-TP-011 - Validacion de citas
 
 Citas existentes pasan; citas inexistentes, duplicadas o no usadas generan issue.
 
-### H5-TP-011 - Validacion estructural
+### H5-TP-012 - Validacion estructural
 
 Detecta documentos faltantes, secciones ausentes, IDs duplicados y requisitos sin criterios.
 
-### H5-TP-012 - Rutas y no sobrescritura
+### H5-TP-013 - Rutas y no sobrescritura
 
 Valida slug seguro, salida bajo ruta permitida, directorio existente sin `--overwrite` y nombres predecibles.
 
-### H5-TP-013 - Observabilidad
+### H5-TP-014 - Observabilidad
 
 Etapas, conteos, advertencias, limites y errores esperados se reportan sin traceback.
 
-### H5-TP-014 - CLI argumentos y codigos
+### H5-TP-015 - CLI argumentos y codigos
 
 Help en espanol, argumentos invalidos codigo 2, errores operativos codigo 1, exitos codigo 0.
 
-### H5-TP-015 - Modo sin LLM
+### H5-TP-016 - Modo sin sintesis asistida
 
 Genera draft conservador, marca secciones inciertas y mantiene estructura valida.
 
-### H5-TP-016 - Limites de evidencia
+### H5-TP-017 - Limites de evidencia
 
 Cuando se alcanza `top-k`, presupuesto de contexto o limite de componentes, la spec lo declara.
 
-### H5-TP-017 - LLM fake y validacion de salida
+### H5-TP-018 - Sintesis fake y validacion de salida
 
 Salida del fake con citas validas pasa; salida con citas inventadas se rechaza o degrada.
 
-### H5-TP-018 - Golden Markdown
+### H5-TP-019 - Golden Markdown
 
 Golden files no tienen rutas personales, ordenan fuentes de forma canonica y son estables con clock fake.
+
+### H5-TP-020 - Validacion integral de spec piloto
+
+La spec piloto se genera, pasa Review, pasa `spec validate`, conserva trazabilidad y queda lista para revision humana documentada en la ultima tarea.
 
 ## 7. Pruebas de integracion
 
@@ -166,11 +175,11 @@ Genera spec parcial con preguntas abiertas, sin inventar reglas ni componentes.
 
 Si no hay catalogo H4, advierte y genera solo evidencia RAG cuando sea posible.
 
-### INT-H5-05 - Sin LLM real
+### INT-H5-05 - Sin sintesis asistida real
 
 `spec create --no-llm` completa con salida util y validable.
 
-### INT-H5-06 - LLM fake
+### INT-H5-06 - Sintesis fake
 
 `spec create` con fake produce contenido sintetizado, citas validas y salida determinista.
 
@@ -206,7 +215,7 @@ La suite con fakes no intenta internet ni servicios cloud.
 - modo invalido;
 - ruta existente sin overwrite;
 - spec con citas rotas;
-- LLM no disponible;
+- sintesis asistida no disponible;
 - base sin ingesta;
 - base sin catalogo H4.
 
@@ -227,7 +236,7 @@ Reglas:
 
 - fechas fijadas con clock fake;
 - IDs y fuentes ordenados de forma canonica;
-- LLM fake determinista;
+- fake determinista de sintesis;
 - Mermaid sintacticamente simple;
 - sin rutas personales;
 - secciones obligatorias siempre presentes.
@@ -243,8 +252,11 @@ Reglas:
 | corpus no ingerido | sugerir `barbarion ingest` |
 | indice RAG no disponible | sugerir `barbarion index` o modo keyword |
 | H4 sin analyze | advertir y sugerir `barbarion analyze` |
-| LLM no disponible | salida `--no-llm` o mensaje accionable |
-| citas inventadas por LLM | falla validacion o degrada contenido |
+| sintesis asistida no disponible | salida estructurada basada en evidencia o mensaje accionable |
+| citas inventadas por sintesis asistida | falla Review/validacion o degrada contenido |
+| Review con tarea sin requisito | falla antes de render o degrada seccion afectada |
+| Review con prueba sin requisito | falla antes de render o degrada seccion afectada |
+| Review con contradiccion interna | falla antes de render con issue accionable |
 | referencias ambiguas | quedan `por_confirmar`, no resueltas silenciosamente |
 | evidencia insuficiente | spec parcial con vacios y preguntas |
 | interrupcion | codigo 130 y no deja carpeta parcial como valida |
@@ -266,11 +278,12 @@ H5 no debe cambiar comportamiento existente de `ask`, `search`, `analyze`, `inve
 Mediciones iniciales:
 
 1. `spec create --no-llm` con modo keyword;
-2. `spec create` con LLM fake;
+2. `spec create` con fake de sintesis;
 3. recuperacion H3 con `top-k` default;
 4. consulta H4 con profundidad 1;
-5. validacion de spec generada;
-6. escritura de cuatro documentos.
+5. Review de `SpecDraft`;
+6. validacion de spec generada;
+7. escritura de cuatro documentos.
 
 Metricas:
 
@@ -329,27 +342,27 @@ La evidencia se registra en `specs/H5-SpecMode/acceptance.md` solo durante H5-T1
 
 | Requisito | Pruebas principales |
 |---|---|
-| H5-RF-001 | TP-001, TP-014, CLI |
-| H5-RF-002 | TP-002, TP-015 |
-| H5-RF-003 | TP-003, TP-004, TP-016, INT-H5-01 |
+| H5-RF-001 | TP-001, TP-015, CLI |
+| H5-RF-002 | TP-002, TP-016 |
+| H5-RF-003 | TP-003, TP-004, TP-017, INT-H5-01 |
 | H5-RF-004 | TP-004, TP-005, INT-H5-02 |
-| H5-RF-005 | TP-006, TP-017 |
-| H5-RF-006 | TP-007, TP-008, TP-018, golden files |
-| H5-RF-007 | TP-009, TP-010 |
-| H5-RF-008 | TP-010, TP-011, INT-H5-07 |
-| H5-RF-009 | TP-012, TP-018, INT-H5-08 |
-| H5-RF-010 | TP-013, TP-014 |
+| H5-RF-005 | TP-006, TP-018 |
+| H5-RF-006 | TP-007, TP-008, TP-009, TP-019, golden files |
+| H5-RF-007 | TP-010, TP-011 |
+| H5-RF-008 | TP-008, TP-011, TP-012, INT-H5-07 |
+| H5-RF-009 | TP-013, TP-019, INT-H5-08 |
+| H5-RF-010 | TP-014, TP-015 |
 | H5-RF-011 | INT-H5-01, calidad, validacion manual |
 | H5-RNF-001 | INT-H5-10 |
-| H5-RNF-002 | TP-006, TP-009, TP-010 |
-| H5-RNF-003 | TP-012, INT-H5-08 |
-| H5-RNF-004 | TP-018, golden files |
-| H5-RNF-005 | TP-015, INT-H5-05, INT-H5-06 |
+| H5-RNF-002 | TP-006, TP-008, TP-010, TP-011 |
+| H5-RNF-003 | TP-013, INT-H5-08 |
+| H5-RNF-004 | TP-019, golden files |
+| H5-RNF-005 | TP-016, INT-H5-05, INT-H5-06 |
 | H5-RNF-006 | smoke Windows/Python 3.12 |
 | H5-RNF-007 | revision estructural/imports |
 | H5-RNF-008 | scan de fixtures/specs/reportes |
 | H5-RNF-009 | regresion H1-H4 |
-| H5-RNF-010 | TP-016, rendimiento |
+| H5-RNF-010 | TP-017, rendimiento |
 
 ## 16. Evidencia esperada para aceptacion
 
@@ -357,11 +370,12 @@ La evidencia se registra en `specs/H5-SpecMode/acceptance.md` solo durante H5-T1
 - suite completa y duracion;
 - smoke test instalado;
 - spec piloto generada;
+- resultado de Review automatico;
 - salida de `spec validate`;
 - conteos de requisitos, tareas, pruebas y fuentes;
 - lista de preguntas abiertas;
 - evidencia de modo `--no-llm`;
-- evidencia con LLM fake;
+- evidencia con fake de sintesis;
 - regresion H1-H4;
 - scan de datos sensibles;
 - revision humana;
@@ -372,6 +386,7 @@ La evidencia se registra en `specs/H5-SpecMode/acceptance.md` solo durante H5-T1
 
 - todos los Must tienen pruebas pasando;
 - `spec create` genera los cuatro documentos sin sobrescribir por defecto;
+- Review verifica `SpecDraft` antes de Markdown y detiene o degrada secciones afectadas;
 - `spec validate` detecta problemas estructurales y de citas;
 - cada conclusion factual tiene evidencia o queda marcada como supuesto/por confirmar;
 - componentes afectados no se declaran solo por similitud semantica;

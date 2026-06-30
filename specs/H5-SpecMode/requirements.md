@@ -6,7 +6,7 @@ H5 convierte el conocimiento producido por H2, H3 y H4 en especificaciones Markd
 
 El modo Spec permite que un analista describa un requerimiento funcional y que Barbarion construya una propuesta de especificacion sustentada por evidencia existente: chunks RAG, simbolos, referencias, relaciones, analisis de impacto y documentacion ingerida.
 
-H5 no genera codigo, no aprueba cambios y no sustituye la validacion humana. Su objetivo es reducir el esfuerzo de analisis, hacer visibles supuestos y vacios, y producir una base editable para continuar el diseno funcional y tecnico.
+H5 no genera codigo, no aprueba cambios y no sustituye la validacion humana. Su objetivo es reducir el esfuerzo de analisis, hacer visibles supuestos y vacios, y producir una base editable para continuar el diseno funcional y tecnico. Barbarion es un motor de especificaciones basado en evidencia; cualquier sintesis automatica es opcional y subordinada a las fuentes recuperadas.
 
 ## 2. Alcance
 
@@ -20,9 +20,10 @@ H5 no genera codigo, no aprueba cambios y no sustituye la validacion humana. Su 
 - registro explicito de riesgos, supuestos, vacios de informacion y preguntas abiertas;
 - generacion de `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`;
 - trazabilidad entre conclusiones, requisitos, diseno, tareas, pruebas y fuentes;
+- Review automatico interno de `SpecDraft` antes de renderizar Markdown;
 - validacion estructural antes de escribir artefactos;
 - escritura segura en `specs/<nombre>/` u otro directorio permitido;
-- modo determinista sin LLM cuando sea posible y fakes para pruebas;
+- modo determinista sin sintesis asistida cuando sea posible y fakes para pruebas;
 - evaluacion con una spec piloto revisada por una persona.
 
 ### Excluido
@@ -54,7 +55,7 @@ H5 no genera codigo, no aprueba cambios y no sustituye la validacion humana. Su 
 - `barbarion analyze` ya produjo simbolos y relaciones vigentes.
 - SQLite es la fuente de verdad local para metadata, RAG y reverse engineering.
 - SQLite + sqlite-vec sigue siendo el vector store del MVP.
-- Ollama local puede no estar disponible; H5 debe ofrecer salida util sin LLM o error accionable.
+- Ollama local puede no estar disponible; H5 debe construir una especificacion estructurada sin depender de sintesis asistida.
 - Las fuentes publicas, fixtures y specs piloto usan nombres sinteticos o anonimizados.
 - El usuario es responsable de revisar, editar y aprobar la spec generada.
 
@@ -87,7 +88,7 @@ Como desarrollador legacy, quiero conocer componentes Oracle, PowerBuilder y doc
 
 Como equipo de mantenimiento, quiero que los archivos Markdown generados sean editables y versionables sin herramientas especiales.
 
-### HU-05 - Operar sin LLM real en pruebas
+### HU-05 - Operar sin sintesis asistida en pruebas
 
 Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas para no depender de Ollama ni de internet.
 
@@ -102,14 +103,14 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 **Criterios de aceptacion:**
 
 - existe `barbarion spec create "REQUERIMIENTO"` o subcomando equivalente;
-- permite indicar nombre de spec, salida, modo RAG, profundidad de impacto y uso/no uso de LLM;
+- permite indicar nombre de spec, salida, modo RAG, profundidad de impacto y uso/no uso de sintesis asistida;
 - valida argumentos y muestra ayuda en espanol;
 - no sobrescribe una spec existente salvo `--overwrite`;
 - devuelve codigo `0` si genera la spec, `1` ante error operativo y `2` ante argumentos invalidos;
 - no modifica codigo fuente ingerido ni ejecuta tareas.
 
 **Diseno:** H5-DD-001, H5-DD-010.  
-**Pruebas:** H5-TP-001, H5-TP-014.  
+**Pruebas:** H5-TP-001, H5-TP-015.
 **Tareas:** H5-T01, H5-T08.
 
 ### H5-RF-002 - Comprension inicial del requerimiento
@@ -124,10 +125,10 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 - extrae terminos candidatos, componentes mencionados y acciones solicitadas;
 - diferencia requerimiento funcional, restriccion tecnica, supuesto y pregunta abierta cuando sea posible;
 - si el requerimiento es ambiguo, no inventa alcance y registra preguntas abiertas;
-- funciona con un modo determinista basico sin LLM.
+- funciona con un modo determinista basico sin sintesis asistida.
 
 **Diseno:** H5-DD-002.  
-**Pruebas:** H5-TP-002, H5-TP-015.  
+**Pruebas:** H5-TP-002, H5-TP-016.
 **Tareas:** H5-T02.
 
 ### H5-RF-003 - Recuperacion de evidencia
@@ -146,7 +147,7 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 - declara evidencia insuficiente cuando no hay resultados utiles.
 
 **Diseno:** H5-DD-003, H5-DD-004.  
-**Pruebas:** H5-TP-003, H5-TP-004, H5-TP-016.  
+**Pruebas:** H5-TP-003, H5-TP-004, H5-TP-017.
 **Tareas:** H5-T03, H5-T04.
 
 ### H5-RF-004 - Identificacion de componentes afectados
@@ -183,7 +184,7 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 - registra vacios de informacion cuando no sea posible concluir.
 
 **Diseno:** H5-DD-005, H5-DD-007.  
-**Pruebas:** H5-TP-006, H5-TP-017.  
+**Pruebas:** H5-TP-006, H5-TP-018.
 **Tareas:** H5-T05.
 
 ### H5-RF-006 - Generacion de documentos de spec
@@ -203,7 +204,7 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 - los documentos son editables, versionables y no contienen rutas personales.
 
 **Diseno:** H5-DD-007, H5-DD-008.  
-**Pruebas:** H5-TP-007, H5-TP-008, H5-TP-018.  
+**Pruebas:** H5-TP-007, H5-TP-008, H5-TP-009, H5-TP-019.
 **Tareas:** H5-T06, H5-T07.
 
 ### H5-RF-007 - Trazabilidad interna de la spec
@@ -222,26 +223,31 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 - la validacion detecta citas inexistentes o no usadas.
 
 **Diseno:** H5-DD-008, H5-DD-009.  
-**Pruebas:** H5-TP-009, H5-TP-010.  
+**Pruebas:** H5-TP-010, H5-TP-011.
 **Tareas:** H5-T07.
 
-### H5-RF-008 - Validacion estructural y de citas
+### H5-RF-008 - Review interno y validacion estructural
 
-**Descripcion:** Validar la spec generada antes de escribirla o antes de marcarla como generada correctamente.
+**Descripcion:** Ejecutar un Review automatico sobre `SpecDraft` antes de generar Markdown y validar la spec renderizada antes de escribirla o marcarla como generada correctamente.
 
 **Prioridad:** Must.
 
 **Criterios de aceptacion:**
 
-- valida presencia de documentos y secciones obligatorias;
+- Review verifica consistencia entre requisitos, diseno, tareas y pruebas antes de renderizar;
+- Review verifica que cada requisito tenga evidencia suficiente o quede marcado como evidencia insuficiente;
+- Review detecta tareas y pruebas sin requisito asociado;
+- Review detecta conclusiones que exceden la evidencia disponible o contradicciones internas;
+- valida presencia de documentos y secciones obligatorias despues del render;
 - valida IDs duplicados o referencias rotas;
 - valida que las citas `[F#]` existan en el bloque de evidencia;
 - valida que no haya afirmaciones marcadas como detectadas sin fuente;
+- si Review falla, detiene la generacion o degrada solo las secciones afectadas a `por_confirmar` o `evidencia insuficiente`;
 - falla con mensaje accionable si la estructura es invalida;
 - puede ejecutarse sobre una carpeta existente con `barbarion spec validate`.
 
 **Diseno:** H5-DD-009, H5-DD-010.  
-**Pruebas:** H5-TP-010, H5-TP-011, H5-TP-014.  
+**Pruebas:** H5-TP-008, H5-TP-011, H5-TP-012, H5-TP-015.
 **Tareas:** H5-T07, H5-T09.
 
 ### H5-RF-009 - Escritura segura y artefactos generados
@@ -260,7 +266,7 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 - si se persiste en `generated_artifacts`, no requiere migracion nueva salvo necesidad justificada.
 
 **Diseno:** H5-DD-008, H5-DD-011.  
-**Pruebas:** H5-TP-012, H5-TP-018.  
+**Pruebas:** H5-TP-013, H5-TP-019.
 **Tareas:** H5-T06, H5-T08.
 
 ### H5-RF-010 - Observabilidad y errores
@@ -271,15 +277,15 @@ Como mantenedor de Barbarion, quiero probar Spec Mode con fakes deterministas pa
 
 **Criterios de aceptacion:**
 
-- muestra etapas: interpretacion, recuperacion, impacto, sintesis, render y validacion;
+- muestra etapas: interpretacion, recuperacion, impacto, SpecDraft, Review, render y validacion;
 - informa cantidad de fuentes, componentes, requisitos, tareas y preguntas abiertas;
-- reporta LLM no disponible con recomendacion accionable;
+- reporta sintesis asistida no disponible sin bloquear la generacion estructurada;
 - reporta evidencia insuficiente sin fallar si la spec parcial puede generarse;
 - logs no vuelcan contenido fuente completo salvo debug explicito;
 - conserva compatibilidad con codigos de salida existentes.
 
 **Diseno:** H5-DD-010, H5-DD-012.  
-**Pruebas:** H5-TP-013, H5-TP-014.  
+**Pruebas:** H5-TP-014, H5-TP-015.
 **Tareas:** H5-T08, H5-T10.
 
 ### H5-RF-011 - Evaluacion de calidad
@@ -318,7 +324,7 @@ La generacion nunca debe reemplazar specs existentes sin una opcion explicita.
 
 La estructura, secciones, IDs, orden de evidencia y nombres de archivo deben ser estables con fakes.
 
-### H5-RNF-005 - Pruebas sin LLM real
+### H5-RNF-005 - Pruebas sin sintesis asistida real
 
 La suite normal debe ejecutarse sin Ollama real mediante fakes deterministas.
 
@@ -349,11 +355,12 @@ La generacion debe aplicar limites de fuentes, tokens, profundidad y nodos para 
 1. El usuario ejecuta `barbarion spec create "Agregar validacion de limite de credito" --name limite-credito`.
 2. Barbarion interpreta el requerimiento y genera terminos de busqueda.
 3. Recupera evidencia RAG y datos H4.
-4. Genera los cuatro documentos Markdown.
-5. Valida estructura y citas.
-6. Informa fuentes, preguntas abiertas y ruta de salida.
+4. Ejecuta Review automatico sobre `SpecDraft`.
+5. Genera los cuatro documentos Markdown.
+6. Valida estructura y citas.
+7. Informa fuentes, preguntas abiertas y ruta de salida.
 
-### CU-02 - Crear spec sin LLM
+### CU-02 - Crear spec sin sintesis asistida
 
 1. El usuario ejecuta `barbarion spec create "..." --no-llm`.
 2. Barbarion recupera evidencia y arma una spec determinista parcial.
@@ -384,16 +391,16 @@ La generacion debe aplicar limites de fuentes, tokens, profundidad y nodos para 
 
 | Requisito | Diseno | Pruebas | Tareas |
 |---|---|---|---|
-| H5-RF-001 | DD-001, DD-010 | TP-001, TP-014 | T01, T08 |
-| H5-RF-002 | DD-002 | TP-002, TP-015 | T02 |
-| H5-RF-003 | DD-003, DD-004 | TP-003, TP-004, TP-016 | T03, T04 |
+| H5-RF-001 | DD-001, DD-010 | TP-001, TP-015 | T01, T08 |
+| H5-RF-002 | DD-002 | TP-002, TP-016 | T02 |
+| H5-RF-003 | DD-003, DD-004 | TP-003, TP-004, TP-017 | T03, T04 |
 | H5-RF-004 | DD-004, DD-006 | TP-004, TP-005 | T04 |
-| H5-RF-005 | DD-005, DD-007 | TP-006, TP-017 | T05 |
-| H5-RF-006 | DD-007, DD-008 | TP-007, TP-008, TP-018 | T06, T07 |
-| H5-RF-007 | DD-008, DD-009 | TP-009, TP-010 | T07 |
-| H5-RF-008 | DD-009, DD-010 | TP-010, TP-011, TP-014 | T07, T09 |
-| H5-RF-009 | DD-008, DD-011 | TP-012, TP-018 | T06, T08 |
-| H5-RF-010 | DD-010, DD-012 | TP-013, TP-014 | T08, T10 |
+| H5-RF-005 | DD-005, DD-007 | TP-006, TP-018 | T05 |
+| H5-RF-006 | DD-007, DD-008 | TP-007, TP-008, TP-009, TP-019 | T06, T07 |
+| H5-RF-007 | DD-008, DD-009 | TP-010, TP-011 | T07 |
+| H5-RF-008 | DD-009, DD-010 | TP-008, TP-011, TP-012, TP-015 | T07, T09 |
+| H5-RF-009 | DD-008, DD-011 | TP-013, TP-019 | T06, T08 |
+| H5-RF-010 | DD-010, DD-012 | TP-014, TP-015 | T08, T10 |
 | H5-RF-011 | DD-013 | TP-019, TP-020 | T11 |
 
 ## 12. Criterio global

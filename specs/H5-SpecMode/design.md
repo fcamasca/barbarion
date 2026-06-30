@@ -11,9 +11,9 @@ Barbarion ya cuenta con:
 - RAG H3 sobre SQLite + sqlite-vec, con `search`, `ask`, `ContextBuilder`, citas y metricas;
 - reverse engineering H4 con `analyze`, `inventory`, `describe`, `impact`, simbolos, referencias, relaciones, recorridos e impacto tecnico;
 - generacion Markdown para artefactos tecnicos H4;
-- operacion on-premise y uso opcional de Ollama local.
+- operacion on-premise y sintesis asistida opcional mediante Ollama local.
 
-H5 se apoya en esas capacidades. No debe reimplementar busqueda, contexto, extraccion de simbolos ni analisis de impacto. Su responsabilidad es orquestar evidencia existente y producir una spec trazable.
+H5 se apoya en esas capacidades. No debe reimplementar busqueda, contexto, extraccion de simbolos ni analisis de impacto. Su responsabilidad es orquestar evidencia existente y producir una spec trazable. La evidencia tiene prioridad sobre cualquier texto sintetizado.
 
 ## 2. Decisiones de diseno
 
@@ -24,13 +24,13 @@ H5 se apoya en esas capacidades. No debe reimplementar busqueda, contexto, extra
 | H5-DD-003 | Reutilizar RAG H3 para recuperacion documental y tecnica; H5 no implementa un retriever nuevo | H5-RF-003 |
 | H5-DD-004 | Reutilizar H4 para simbolos, dependencias e impacto; similitud semantica sola no basta para declarar afectacion | H5-RF-003, H5-RF-004 |
 | H5-DD-005 | Sintetizar reglas existentes solo desde evidencia citada; si falta evidencia, declarar vacio o pregunta abierta | H5-RF-005 |
-| H5-DD-006 | Construir un modelo intermedio `SpecDraft` antes de renderizar Markdown | H5-RF-004, H5-RF-006 |
+| H5-DD-006 | Construir un modelo intermedio `SpecDraft` antes de Review y renderizado Markdown | H5-RF-004, H5-RF-006 |
 | H5-DD-007 | Usar plantillas Markdown versionadas con estructura fija para los cuatro documentos | H5-RF-005, H5-RF-006 |
 | H5-DD-008 | Asignar IDs deterministas a requisitos, decisiones, tareas, pruebas y fuentes dentro de cada generacion | H5-RF-006, H5-RF-007, H5-RF-009 |
-| H5-DD-009 | Validar estructura y citas con un validador propio pequeno, no con un framework documental externo | H5-RF-007, H5-RF-008 |
+| H5-DD-009 | Ejecutar Review automatico sobre `SpecDraft` y validar estructura/citas con un validador propio pequeno, no con un framework documental externo | H5-RF-007, H5-RF-008 |
 | H5-DD-010 | Mantener errores esperados en espanol, sin traceback, y progreso por etapas compatible con comandos previos | H5-RF-001, H5-RF-008, H5-RF-010 |
 | H5-DD-011 | Reutilizar `generated_artifacts` si alcanza; agregar migracion solo si aparece una necesidad persistente no cubierta | H5-RF-009 |
-| H5-DD-012 | La salida sin LLM debe ser util aunque menos rica; el LLM sintetiza, no crea evidencia | H5-RF-010 |
+| H5-DD-012 | La salida sin sintesis asistida debe ser util; las conclusiones provienen de evidencia, no del mecanismo de sintesis | H5-RF-010 |
 | H5-DD-013 | La aceptacion se define con spec piloto, suite, smoke, trazabilidad y revision humana en la ultima tarea | H5-RF-011 |
 
 ## 3. Arquitectura funcional
@@ -43,15 +43,16 @@ flowchart LR
     APP --> RAG["H3 SearchService / ContextBuilder"]
     APP --> H4["H4 Inventory / Impact / Dependency services"]
     APP --> SYN["SpecSynthesizer"]
+    SYN --> REV["SpecReview"]
     APP --> VAL["SpecValidator"]
     APP --> MD["MarkdownRenderer"]
     RAG --> DB[("SQLite + sqlite-vec")]
     H4 --> DB
-    SYN --> LLM["Ollama local opcional"]
+    REV --> MD
     MD --> OUT["specs/<nombre>/"]
 ```
 
-La CLI solo interpreta argumentos y presenta resultados. La aplicacion coordina el pipeline. Dominio contiene modelos y reglas de validacion. Infraestructura consulta SQLite, RAG, LLM y filesystem.
+La CLI solo interpreta argumentos y presenta resultados. La aplicacion coordina el pipeline. Dominio contiene modelos y reglas de Review/validacion. Infraestructura consulta SQLite, RAG, sintesis opcional y filesystem.
 
 ## 4. Integracion con modulos existentes
 
@@ -91,8 +92,9 @@ H5 reutiliza el renderer o patrones de escritura segura existentes. Las plantill
 | `RequirementAnalyzer` | dominio/aplicacion | estructurar el requerimiento y derivar consultas |
 | `EvidenceCollector` | aplicacion | combinar RAG H3, simbolos y relaciones H4 |
 | `ImpactCollector` | aplicacion | pedir recorridos H4 con profundidad y filtros |
-| `SpecSynthesizer` | aplicacion | construir `SpecDraft` con o sin LLM |
-| `SpecValidator` | dominio | validar secciones, IDs, citas y trazabilidad |
+| `SpecSynthesizer` | aplicacion | construir `SpecDraft` desde evidencia, con sintesis asistida opcional |
+| `SpecReview` | dominio | revisar `SpecDraft` antes de Markdown: consistencia, evidencia, asociaciones y contradicciones |
+| `SpecValidator` | dominio | validar documentos renderizados, secciones, IDs, citas y trazabilidad |
 | `SpecMarkdownRenderer` | infraestructura | renderizar documentos H5 versionados |
 | `SafeSpecWriter` | infraestructura | crear directorios y escribir sin sobrescribir por defecto |
 
@@ -110,6 +112,7 @@ No es obligatorio crear todos como archivos separados si el codigo queda mas cla
 | `SpecDraft` | modelo intermedio de requisitos, diseno, tareas, pruebas, riesgos y fuentes |
 | `TraceLink` | enlace entre requisito, decision, tarea, prueba y evidencia |
 | `ValidationIssue` | error o advertencia estructural |
+| `ReviewIssue` | error o advertencia detectada sobre `SpecDraft` antes del render |
 
 Clasificaciones:
 
@@ -185,14 +188,19 @@ flowchart TD
     E --> G["Unificar y ordenar evidencia"]
     F --> G
     G --> H{"Evidencia suficiente?"}
-    H -->|parcial o si| I["Sintetizar SpecDraft"]
+    H -->|parcial o si| I["Construir SpecDraft"]
     H -->|no| J["Crear draft con vacios y preguntas"]
-    I --> K["Renderizar Markdown"]
+    I --> K["Review automatico"]
     J --> K
-    K --> L["Validar estructura y citas"]
-    L --> M{"Valido?"}
-    M -->|si| N["Escribir archivos"]
-    M -->|no| O["Fallar con issues accionables"]
+    K --> L{"Review valido?"}
+    L -->|si| M["Renderizar Markdown"]
+    L -->|degradable| N["Degradar secciones afectadas"]
+    N --> M
+    L -->|no| O["Detener con issues accionables"]
+    M --> P["Validar estructura y citas"]
+    P --> Q{"Valido?"}
+    Q -->|si| R["Escribir archivos"]
+    Q -->|no| S["Fallar con issues accionables"]
 ```
 
 ## 9. Pipeline interno
@@ -201,12 +209,13 @@ flowchart TD
 2. **Interpretacion:** conservar texto original y derivar terminos, entidades, verbos y restricciones.
 3. **Recuperacion:** ejecutar busquedas H3 y consultas H4 con limites.
 4. **Normalizacion de evidencia:** asignar `[F#]`, deduplicar, ordenar y clasificar.
-5. **Sintesis:** construir requisitos, diseno, tareas, pruebas, riesgos, supuestos y preguntas.
+5. **SpecDraft:** construir requisitos, diseno, tareas, pruebas, riesgos, supuestos y preguntas desde evidencia.
 6. **Trazabilidad:** enlazar cada item con evidencia y requerimientos.
-7. **Render:** generar Markdown desde plantillas.
-8. **Validacion:** revisar estructura, IDs, citas y reglas de aceptacion.
-9. **Escritura:** escribir archivos y registrar artefacto si corresponde.
-10. **Resumen:** mostrar ruta, conteos, advertencias y proximo paso humano.
+7. **Review:** verificar consistencia interna del `SpecDraft`, evidencia suficiente, tareas/pruebas asociadas, citas validas y ausencia de conclusiones que excedan las fuentes.
+8. **Render:** generar Markdown desde plantillas si Review pasa o despues de degradar solo las secciones afectadas.
+9. **Validacion:** revisar estructura renderizada, IDs, citas y reglas de aceptacion.
+10. **Escritura:** escribir archivos y registrar artefacto si corresponde.
+11. **Resumen:** mostrar ruta, conteos, advertencias y proximo paso humano.
 
 ## 10. CLI propuesta
 
@@ -230,7 +239,7 @@ Reglas:
 - `--output` por defecto apunta a `specs/<name>`;
 - `--depth` usa limites H4;
 - `--top-k` limita fuentes RAG;
-- `--no-llm` produce una spec estructurada con sintesis minima;
+- `--no-llm` produce una spec estructurada sin sintesis asistida;
 - `--overwrite` permite reemplazar una carpeta existente despues de validaciones de ruta.
 
 ### `barbarion spec validate`
@@ -328,9 +337,23 @@ Reglas:
 - no se permite una conclusion `detectado` sin cita;
 - una fuente puede respaldar varias conclusiones;
 - fuentes ambiguas o dinamicas se pueden citar, pero la conclusion queda `por_confirmar`;
-- si el LLM devuelve citas inexistentes, se rechaza o se degrada la seccion a `por_confirmar`.
+- si una seccion sintetizada contiene citas inexistentes, se rechaza o se degrada a `por_confirmar`.
 
-## 13. Manejo de errores
+## 13. Review automatico
+
+Review es una etapa interna y automatica sobre `SpecDraft`; no representa revision humana. Usa la informacion ya generada para verificar, como minimo:
+
+- consistencia entre documentos proyectados;
+- cada requisito posee evidencia suficiente o queda marcado como evidencia insuficiente;
+- no existen tareas sin requisito asociado;
+- no existen pruebas sin requisito asociado;
+- no existen conclusiones que excedan la evidencia disponible;
+- referencias y citas validas;
+- ausencia de contradicciones internas entre requisitos, diseno, tareas y pruebas.
+
+Si Review falla, Barbarion debe detener la generacion o degradar unicamente las secciones afectadas a `por_confirmar` o `evidencia insuficiente`.
+
+## 14. Manejo de errores
 
 | Caso | Comportamiento |
 |---|---|
@@ -338,14 +361,15 @@ Reglas:
 | Sin ingesta | mensaje indica ejecutar `barbarion ingest` |
 | Sin indice RAG | mensaje indica ejecutar `barbarion index` o usar modo keyword si aplica |
 | Sin catalogo H4 | advertencia y sugerencia `barbarion analyze` |
-| LLM no disponible | usar `--no-llm` o informar configuracion Ollama |
+| Sintesis asistida no disponible | continuar con estructura basada en evidencia o sugerir `--no-llm` |
 | Evidencia insuficiente | generar spec parcial si hay estructura minima, con preguntas abiertas |
+| Review fallido | detener generacion o degradar solo secciones afectadas |
 | Ruta existente | fallar sin `--overwrite` |
 | Citas invalidas | fallar validacion con lista de IDs |
 
 Errores esperados no muestran traceback. El traceback queda reservado para debug explicito o fallas inesperadas en logs.
 
-## 14. Seguridad y privacidad
+## 15. Seguridad y privacidad
 
 - no ejecutar codigo ingerido;
 - no conectar a Oracle productivo;
@@ -355,7 +379,7 @@ Errores esperados no muestran traceback. El traceback queda reservado para debug
 - sanitizar nombres de spec y archivos;
 - fixtures y ejemplos publicos deben ser sinteticos.
 
-## 15. Rendimiento y limites
+## 16. Rendimiento y limites
 
 Limites recomendados:
 
@@ -369,7 +393,7 @@ Limites recomendados:
 
 Si se alcanza un limite, la spec debe indicarlo en limitaciones.
 
-## 16. Alternativas descartadas
+## 17. Alternativas descartadas
 
 | Alternativa | Motivo |
 |---|---|
@@ -381,7 +405,7 @@ Si se alcanza un limite, la spec debe indicarlo en limitaciones.
 | API HTTP | No aporta al flujo CLI de un usuario local |
 | Plantillas multiples en MVP | Debe quedar como evolucion futura, no requisito inicial |
 
-## 17. Evoluciones futuras
+## 18. Evoluciones futuras
 
 Identificadas pero fuera del MVP H5:
 
@@ -394,7 +418,7 @@ Identificadas pero fuera del MVP H5:
 - recomendaciones de implementacion mas detalladas;
 - validaciones funcionales asistidas por expertos.
 
-## 18. Trazabilidad hacia requisitos
+## 19. Trazabilidad hacia requisitos
 
 | Decision | Requisitos |
 |---|---|

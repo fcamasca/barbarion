@@ -17,10 +17,10 @@ Estados iniciales: `pendiente`.
 ### H5-T01 - Definir base de dominio y contratos Spec Mode
 
 **Estado:** completado.  
-**Objetivo:** crear modelos y contratos minimos para representar solicitudes, evidencia, draft de spec, trazabilidad y errores de validacion.  
-**Descripcion:** Definir `SpecRequest`, `RequirementIntent`, `EvidenceItem`, `AffectedComponent`, `ExistingRule`, `SpecDraft`, `TraceLink` y `ValidationIssue` o equivalentes. Mantenerlos independientes de Typer/CLI y de detalles SQLite.  
+**Objetivo:** crear modelos y contratos minimos para representar solicitudes, evidencia, draft de spec, Review, trazabilidad y errores de validacion.
+**Descripcion:** Definir `SpecRequest`, `RequirementIntent`, `EvidenceItem`, `AffectedComponent`, `ExistingRule`, `SpecDraft`, `TraceLink`, `ReviewIssue` y `ValidationIssue` o equivalentes. Mantenerlos independientes de Typer/CLI y de detalles SQLite.
 **Dependencias:** H4 aceptado.  
-**Resultado esperado:** dominio H5 testeable, sin acceso a filesystem ni LLM, con IDs estables y clasificaciones `detectado`, `inferido`, `supuesto`, `por_confirmar`.  
+**Resultado esperado:** dominio H5 testeable, sin acceso a filesystem ni sintesis asistida, con IDs estables y clasificaciones `detectado`, `inferido`, `supuesto`, `por_confirmar`.
 **Requisitos:** H5-RF-001, H5-RF-007, H5-RNF-004, H5-RNF-007.  
 **Checkpoint:** `python -m pytest tests/unit/test_h5_domain.py`.
 
@@ -28,7 +28,7 @@ Estados iniciales: `pendiente`.
 
 **Estado:** pendiente.  
 **Objetivo:** convertir el texto del usuario en una intencion estructurada y consultas candidatas.  
-**Descripcion:** Conservar el texto original, extraer terminos, entidades, acciones, restricciones, supuestos y preguntas abiertas con reglas deterministas y, si se habilita, apoyo LLM local.  
+**Descripcion:** Conservar el texto original, extraer terminos, entidades, acciones, restricciones, supuestos y preguntas abiertas con reglas deterministas y sintesis asistida opcional.
 **Dependencias:** H5-T01.  
 **Resultado esperado:** un requerimiento ambiguo produce preguntas abiertas en vez de alcance inventado; un requerimiento concreto produce terminos de busqueda y entidades candidatas.  
 **Requisitos:** H5-RF-002.  
@@ -58,27 +58,27 @@ Estados iniciales: `pendiente`.
 
 **Estado:** pendiente.  
 **Objetivo:** construir contenido analitico de la spec sin inventar informacion.  
-**Descripcion:** Generar reglas existentes, riesgos, dependencias tecnicas, supuestos, vacios y preguntas abiertas desde evidencia citada. En modo LLM, validar citas; en modo `--no-llm`, producir sintesis conservadora.  
+**Descripcion:** Generar reglas existentes, riesgos, dependencias tecnicas, supuestos, vacios y preguntas abiertas desde evidencia citada. La sintesis asistida es opcional; en modo `--no-llm`, producir sintesis conservadora.
 **Dependencias:** H5-T04.  
 **Resultado esperado:** `SpecDraft` contiene hallazgos clasificados y toda conclusion factual referencia fuentes existentes.  
 **Requisitos:** H5-RF-005, H5-RNF-002, H5-RNF-005.  
 **Checkpoint:** `python -m pytest tests/unit/test_h5_synthesis.py`.
 
-### H5-T06 - Renderizar documentos Markdown H5
+### H5-T06 - Implementar Review y renderizar documentos Markdown H5
 
 **Estado:** pendiente.  
-**Objetivo:** generar `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` desde `SpecDraft`.  
-**Descripcion:** Implementar plantillas `spec.v1` con secciones obligatorias, Mermaid en diseno, tareas pequenas y una unica ultima tarea de aceptacion integral. Mantener estructura determinista.  
+**Objetivo:** revisar automaticamente `SpecDraft` y generar `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` solo si el draft es consistente o degradable.
+**Descripcion:** Implementar Review interno antes de Markdown y plantillas `spec.v1` con secciones obligatorias, Mermaid en diseno, tareas pequenas y una unica ultima tarea de aceptacion integral. Mantener estructura determinista.
 **Dependencias:** H5-T05.  
-**Resultado esperado:** cuatro documentos Markdown estables, editables y sin rutas personales, cubiertos por golden files.  
+**Resultado esperado:** Review detecta inconsistencias, evidencia insuficiente, tareas/pruebas sin requisito, citas invalidas y contradicciones; cuando procede, se generan cuatro documentos Markdown estables, editables y sin rutas personales, cubiertos por golden files.
 **Requisitos:** H5-RF-006, H5-RF-009, H5-RNF-003, H5-RNF-004, H5-RNF-008.  
-**Checkpoint:** `python -m pytest tests/golden/test_h5_markdown.py`.
+**Checkpoint:** `python -m pytest tests/unit/test_h5_review.py tests/golden/test_h5_markdown.py`.
 
 ### H5-T07 - Implementar validacion de estructura, IDs y citas
 
 **Estado:** pendiente.  
 **Objetivo:** detectar specs incompletas o sin trazabilidad antes de considerarlas generadas.  
-**Descripcion:** Validar documentos requeridos, secciones, IDs duplicados, enlaces requisito-diseno-tarea-prueba, citas `[F#]`, conclusiones detectadas sin fuente y tarea final unica de aceptacion.  
+**Descripcion:** Validar documentos renderizados requeridos, secciones, IDs duplicados, enlaces requisito-diseno-tarea-prueba, citas `[F#]`, conclusiones detectadas sin fuente y tarea final unica de aceptacion. Mantener coherencia con el Review interno, pero aplicado a archivos ya generados o editados.
 **Dependencias:** H5-T06.  
 **Resultado esperado:** `SpecValidator` devuelve errores y advertencias accionables en texto y JSON.  
 **Requisitos:** H5-RF-006, H5-RF-007, H5-RF-008.  
@@ -108,7 +108,7 @@ Estados iniciales: `pendiente`.
 
 **Estado:** pendiente.  
 **Objetivo:** consolidar mensajes, progreso, logs y documentacion de uso de Spec Mode.  
-**Descripcion:** Reportar etapas, conteos, limites, LLM no disponible, evidencia insuficiente y sugerencias accionables. Actualizar README/docs de CLI solo si el flujo ya esta implementado.  
+**Descripcion:** Reportar etapas, conteos, limites, Review, sintesis asistida no disponible, evidencia insuficiente y sugerencias accionables. Actualizar README/docs de CLI solo si el flujo ya esta implementado.
 **Dependencias:** H5-T08, H5-T09.  
 **Resultado esperado:** usuario puede diagnosticar por que una spec quedo parcial o invalida, sin ver tracebacks en errores esperados.  
 **Requisitos:** H5-RF-010, H5-RNF-001, H5-RNF-008, H5-RNF-009.  
@@ -132,7 +132,7 @@ flowchart LR
     T02 --> T03["T03 RAG H3"]
     T03 --> T04["T04 H4 impacto"]
     T04 --> T05["T05 Sintesis"]
-    T05 --> T06["T06 Markdown"]
+    T05 --> T06["T06 Review + Markdown"]
     T06 --> T07["T07 Validacion"]
     T07 --> T08["T08 spec create"]
     T07 --> T09["T09 spec validate"]
@@ -166,12 +166,13 @@ flowchart LR
 - smoke test instalado;
 - comandos `spec create` y `spec validate`;
 - spec piloto generada;
+- resultado de Review automatico;
 - validacion de estructura e IDs;
 - validacion de citas `[F#]`;
 - conteos de fuentes RAG, simbolos, relaciones y componentes afectados;
 - evidencia insuficiente y preguntas abiertas registradas;
 - salida con `--no-llm`;
-- comportamiento con LLM fake;
+- comportamiento con sintesis fake;
 - no regresion de H1-H4;
 - revision humana de utilidad y accionabilidad;
 - falsos positivos, falsos negativos y limitaciones conocidas;

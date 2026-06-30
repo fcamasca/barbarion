@@ -1292,6 +1292,7 @@ class H4SymbolSource:
     file_id: int
     document_id: int
     chunk_id: str
+    content: str
     artifact_kind: str
     relative_path: str
     extension: str
@@ -2032,11 +2033,26 @@ class SQLiteReverseEngineeringRepository:
 
     database_path: Path
 
-    def symbol_sources(self, *, domain: str) -> tuple[H4SymbolSource, ...]:
+    def symbol_sources(
+        self,
+        *,
+        domain: str,
+        path_prefix: str | None = None,
+    ) -> tuple[H4SymbolSource, ...]:
         """Lee chunks H2 vigentes que pueden alimentar el catalogo de simbolos."""
+        clauses = [
+            "files.domain = ?",
+            "files.status = 'processed'",
+            "documents.source_sha256 = files.sha256",
+        ]
+        parameters: list[object] = [domain]
+        if path_prefix is not None:
+            clauses.append("files.relative_path LIKE ?")
+            parameters.append(f"{path_prefix.rstrip('/')}%")
+        where = " AND ".join(clauses)
         with self._connect_readonly() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT
                     files.id AS file_id,
                     files.relative_path AS relative_path,
@@ -2044,6 +2060,7 @@ class SQLiteReverseEngineeringRepository:
                     files.artifact_kind AS artifact_kind,
                     documents.id AS document_id,
                     chunks.id AS chunk_id,
+                    chunks.content AS content,
                     chunks.chunk_type AS chunk_type,
                     chunks.object_type AS object_type,
                     chunks.object_name AS object_name,
@@ -2053,12 +2070,10 @@ class SQLiteReverseEngineeringRepository:
                 FROM chunks
                 JOIN documents ON documents.id = chunks.document_id
                 JOIN files ON files.id = documents.file_id
-                WHERE files.domain = ?
-                  AND files.status = 'processed'
-                  AND documents.source_sha256 = files.sha256
+                WHERE {where}
                 ORDER BY files.relative_path, chunks.ordinal, chunks.id
                 """,
-                (domain,),
+                tuple(parameters),
             ).fetchall()
         return tuple(_h4_symbol_source_from_row(row) for row in rows)
 
@@ -2318,6 +2333,91 @@ class SQLiteReverseEngineeringRepository:
             ).fetchall()
         return tuple(_h4_reference_from_row(row) for row in rows)
 
+    def reconcile_h4_scope(
+        self,
+        *,
+        run_id: int,
+        file_ids: tuple[int, ...],
+    ) -> tuple[int, int, int]:
+        """Marca obsoletas filas H4 de archivos del scope no vistas en el run."""
+        if not file_ids:
+            return (0, 0, 0)
+        placeholders = ", ".join("?" for _ in file_ids)
+        now = _utc_now()
+        with self._connect() as connection:
+            symbol_cursor = connection.execute(
+                f"""
+                UPDATE h4_symbols
+                SET status = 'stale', updated_at = ?
+                WHERE file_id IN ({placeholders})
+                  AND last_run_id <> ?
+                  AND status = 'active'
+                """,
+                (now, *file_ids, run_id),
+            )
+            reference_cursor = connection.execute(
+                f"""
+                UPDATE h4_references
+                SET resolution_status = 'unresolved', updated_at = ?
+                WHERE source_file_id IN ({placeholders})
+                  AND last_run_id <> ?
+                """,
+                (now, *file_ids, run_id),
+            )
+            relation_cursor = connection.execute(
+                f"""
+                UPDATE h4_relations
+                SET status = 'stale', updated_at = ?
+                WHERE evidence_file_id IN ({placeholders})
+                  AND last_run_id <> ?
+                  AND status = 'active'
+                """,
+                (now, *file_ids, run_id),
+            )
+            connection.commit()
+        return (
+            int(symbol_cursor.rowcount),
+            int(reference_cursor.rowcount),
+            int(relation_cursor.rowcount),
+        )
+
+    def reconcile_h4_deleted_files(self) -> tuple[int, int, int]:
+        """Marca obsoletas filas H4 cuyo archivo H2 ya no esta vigente."""
+        now = _utc_now()
+        with self._connect() as connection:
+            symbol_cursor = connection.execute(
+                """
+                UPDATE h4_symbols
+                SET status = 'deleted', updated_at = ?
+                WHERE file_id IN (SELECT id FROM files WHERE status = 'deleted')
+                  AND status <> 'deleted'
+                """,
+                (now,),
+            )
+            reference_cursor = connection.execute(
+                """
+                UPDATE h4_references
+                SET resolution_status = 'unresolved', updated_at = ?
+                WHERE source_file_id IN (SELECT id FROM files WHERE status = 'deleted')
+                """,
+                (now,),
+            )
+            relation_cursor = connection.execute(
+                """
+                UPDATE h4_relations
+                SET status = 'stale', updated_at = ?
+                WHERE evidence_file_id IN (SELECT id FROM files WHERE status = 'deleted')
+                  AND status = 'active'
+                """,
+                (now,),
+            )
+            connection.commit()
+        return (
+            int(symbol_cursor.rowcount),
+            int(reference_cursor.rowcount),
+            int(relation_cursor.rowcount),
+        )
+
     def upsert_relation(self, *, run_id: int, relation: H4Relation) -> None:
         """Inserta o actualiza una relacion H4."""
         now = _utc_now()
@@ -2562,6 +2662,7 @@ def _h4_symbol_source_from_row(row: sqlite3.Row) -> H4SymbolSource:
         file_id=int(row["file_id"]),
         document_id=int(row["document_id"]),
         chunk_id=str(row["chunk_id"]),
+        content=str(row["content"]),
         artifact_kind=str(row["artifact_kind"]),
         relative_path=str(row["relative_path"]),
         extension=str(row["extension"]),

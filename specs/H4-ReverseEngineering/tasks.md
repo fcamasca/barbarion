@@ -59,7 +59,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T05 - Implementar `barbarion analyze` incremental
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** ejecutar extraccion/resolucion H4 por alcance, con full, partial, dry-run, progreso y cancelacion.  
 **Modulos estimados:** `application/reverse_engineering.py`, `cli.py`, `domain/progress.py`, `infrastructure/sqlite.py`.  
 **Requisitos:** H4-RF-001, H4-RF-010, H4-RF-011, H4-RNF-003, H4-RNF-004, H4-RNF-005.  

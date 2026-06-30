@@ -1,4 +1,10 @@
-"""Modelos puros para H4 Reverse Engineering."""
+"""Modelos puros para H4 Reverse Engineering.
+
+El modulo define identidades, estados y validaciones de dominio para simbolos,
+referencias y relaciones H4. No accede a infraestructura ni persiste datos; su
+responsabilidad es mantener contratos inmutables y reproducibles para las capas
+de aplicacion e infraestructura.
+"""
 
 from __future__ import annotations
 
@@ -68,7 +74,12 @@ class H4RelationStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class H4AnalysisRunRecord:
-    """Resumen persistido de una corrida H4."""
+    """Resumen persistido de una corrida H4.
+
+    El registro representa el estado observable de una ejecucion H4. Sus
+    conteos nunca son negativos y `scope` se congela para evitar mutaciones
+    accidentales despues de construido el objeto.
+    """
 
     id: int
     mode: H4AnalysisRunMode
@@ -84,6 +95,7 @@ class H4AnalysisRunRecord:
     duration_ms: int | None = None
 
     def __post_init__(self) -> None:
+        """Valida invariantes numericas y congela el alcance de la corrida."""
         _require_positive(self.id, "id")
         for field_name in (
             "symbols_detected",
@@ -102,7 +114,17 @@ class H4AnalysisRunRecord:
 
 @dataclass(frozen=True, slots=True)
 class H4Symbol:
-    """Simbolo logico vigente detectado por H4."""
+    """Simbolo logico detectado por H4.
+
+    Un simbolo representa la identidad consultable de una unidad tecnica, como
+    un package, procedure, evento, ventana o tabla. `symbol_id` es una identidad
+    determinista de 64 caracteres y los nombres normalizados deben llegar ya
+    preparados por la capa que construye el modelo.
+
+    Note:
+        `metadata` se copia y congela durante la inicializacion para preservar
+        la inmutabilidad externa de la dataclass.
+    """
 
     symbol_id: str
     original_name: str
@@ -123,6 +145,7 @@ class H4Symbol:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Valida identidad, campos obligatorios y rangos de ubicacion."""
         _require_sha256(self.symbol_id, "symbol_id")
         _require_non_empty(self.original_name, "original_name")
         _require_non_empty(self.normalized_name, "normalized_name")
@@ -145,7 +168,16 @@ class H4Symbol:
 
 @dataclass(frozen=True, slots=True)
 class H4Reference:
-    """Referencia textual vigente antes o despues de resolverla."""
+    """Referencia textual detectada antes o despues de resolverla.
+
+    La referencia conserva evidencia de origen, objetivo normalizado y estado de
+    resolucion. Puede permanecer `unresolved`, `dynamic` o `external` sin que
+    exista una relacion exacta hacia un simbolo interno.
+
+    Note:
+        El modelo no resuelve por si mismo; solo valida que la evidencia
+        recibida sea consistente y trazable.
+    """
 
     reference_id: str
     source_file_id: int
@@ -163,6 +195,7 @@ class H4Reference:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Valida identidad, origen, evidencia textual y rangos opcionales."""
         _require_sha256(self.reference_id, "reference_id")
         _require_positive(self.source_file_id, "source_file_id")
         _require_non_empty(self.raw_text, "raw_text")
@@ -180,7 +213,16 @@ class H4Reference:
 
 @dataclass(frozen=True, slots=True)
 class H4Relation:
-    """Relacion canonica source -> target derivada de una referencia."""
+    """Relacion canonica `source -> target` derivada de una referencia.
+
+    La relacion almacena origen, destino resuelto o clave objetivo, y evidencia
+    de archivo/chunk. La direccion de consulta no se persiste: se calcula segun
+    el simbolo desde el que se navega.
+
+    Warning:
+        Las relaciones con `resolution_status` dynamic deben conservar
+        `classification` como `TO_CONFIRM`.
+    """
 
     relation_id: str
     reference_id: str
@@ -199,6 +241,7 @@ class H4Relation:
     status: H4RelationStatus = H4RelationStatus.ACTIVE
 
     def __post_init__(self) -> None:
+        """Valida identidad, evidencia y restricciones de relaciones dinamicas."""
         _require_sha256(self.relation_id, "relation_id")
         _require_sha256(self.reference_id, "reference_id")
         _require_non_empty(self.relation_type, "relation_type")
@@ -223,7 +266,12 @@ class H4Relation:
 
 @dataclass(frozen=True, slots=True)
 class H4RelationCandidate:
-    """Candidato alternativo para relaciones ambiguas."""
+    """Candidato alternativo para una relacion ambigua.
+
+    Se usa cuando una referencia coincide con mas de un simbolo compatible. El
+    `rank` expresa el orden estable calculado por el resolvedor, no una certeza
+    semantica.
+    """
 
     relation_id: str
     candidate_symbol_id: str
@@ -231,6 +279,7 @@ class H4RelationCandidate:
     reason: str
 
     def __post_init__(self) -> None:
+        """Valida identidad de relacion, simbolo candidato y ranking."""
         _require_sha256(self.relation_id, "relation_id")
         _require_sha256(self.candidate_symbol_id, "candidate_symbol_id")
         _require_positive(self.rank, "rank")
@@ -238,7 +287,19 @@ class H4RelationCandidate:
 
 
 def normalize_symbol_name(value: str) -> str:
-    """Normaliza nombres de simbolos para identidad logica y busqueda."""
+    """Normaliza nombres de simbolos para identidad logica y busqueda.
+
+    Args:
+        value: Nombre simple o calificado que puede incluir espacios alrededor
+            de los separadores `.` o comillas externas por segmento.
+
+    Returns:
+        Nombre normalizado en minusculas, con segmentos no vacios unidos por
+        puntos.
+
+    Raises:
+        ValueError: Si `value` esta vacio o no contiene identificadores.
+    """
     _require_non_empty(value, "value")
     parts = [
         _unquote_identifier(part.strip())
@@ -257,7 +318,17 @@ def h4_symbol_id(
     technology: str,
     container_name: str | None = None,
 ) -> str:
-    """Calcula la identidad logica determinista de un simbolo vigente."""
+    """Calcula la identidad logica determinista de un simbolo vigente.
+
+    Args:
+        normalized_name: Nombre logico del simbolo.
+        symbol_type: Tipo tecnico del simbolo.
+        technology: Tecnologia de origen usada para separar universos.
+        container_name: Contenedor normalizado opcional del simbolo.
+
+    Returns:
+        SHA-256 hexadecimal estable para la identidad logica del simbolo.
+    """
     return _sha256_payload(
         "barbarion.h4.symbol-id.v1",
         {
@@ -280,7 +351,23 @@ def h4_reference_id(
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> str:
-    """Calcula un ID estable para una referencia textual."""
+    """Calcula un ID estable para una referencia textual.
+
+    Args:
+        source_file_id: Archivo donde se detecto la referencia.
+        raw_text: Texto original usado como evidencia.
+        normalized_target: Objetivo normalizado de la referencia.
+        reference_type: Tipo de referencia detectada.
+        start_line: Linea inicial opcional de la evidencia.
+        end_line: Linea final opcional de la evidencia.
+
+    Returns:
+        SHA-256 hexadecimal estable para la ocurrencia textual.
+
+    Raises:
+        ValueError: Si el archivo no es positivo o el rango de lineas es
+        incompleto o invalido.
+    """
     _require_positive(source_file_id, "source_file_id")
     _validate_optional_range(start_line, end_line, "line")
     return _sha256_payload(
@@ -304,7 +391,22 @@ def h4_relation_id(
     target_symbol_id: str | None = None,
     target_key: str | None = None,
 ) -> str:
-    """Calcula un ID estable para la relacion canonica source -> target."""
+    """Calcula un ID estable para la relacion canonica `source -> target`.
+
+    Args:
+        reference_id: Identidad de la referencia que origina la relacion.
+        relation_type: Tipo canonico de relacion.
+        source_symbol_id: Simbolo origen opcional.
+        target_symbol_id: Simbolo destino cuando la resolucion es exacta.
+        target_key: Clave objetivo cuando el destino no tiene simbolo unico.
+
+    Returns:
+        SHA-256 hexadecimal estable para la relacion derivada.
+
+    Raises:
+        ValueError: Si algun identificador SHA-256 no cumple el formato
+        esperado.
+    """
     _require_sha256(reference_id, "reference_id")
     if source_symbol_id is not None:
         _require_sha256(source_symbol_id, "source_symbol_id")
@@ -323,6 +425,7 @@ def h4_relation_id(
 
 
 def _sha256_payload(namespace: str, payload: dict[str, Any]) -> str:
+    """Serializa un payload canonico y devuelve su SHA-256 hexadecimal."""
     encoded = json.dumps(
         {"namespace": namespace, "payload": payload},
         sort_keys=True,
@@ -333,37 +436,44 @@ def _sha256_payload(namespace: str, payload: dict[str, Any]) -> str:
 
 
 def _normalized_token(value: str) -> str:
+    """Normaliza tokens tecnicos que no admiten estructura calificada."""
     _require_non_empty(value, "value")
     return value.strip().lower()
 
 
 def _unquote_identifier(value: str) -> str:
+    """Remueve comillas externas simetricas de un identificador."""
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'", "`"}:
         return value[1:-1]
     return value
 
 
 def _require_non_empty(value: str, key: str) -> None:
+    """Exige que un valor sea texto no vacio."""
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} debe ser una cadena no vacia.")
 
 
 def _require_positive(value: int, key: str) -> None:
+    """Exige que un valor sea un entero positivo no booleano."""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{key} debe ser un entero mayor que 0.")
 
 
 def _require_non_negative(value: int, key: str) -> None:
+    """Exige que un valor sea un entero no negativo no booleano."""
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{key} debe ser un entero mayor o igual que 0.")
 
 
 def _validate_optional_positive(value: int | None, key: str) -> None:
+    """Valida un entero positivo cuando el valor esta presente."""
     if value is not None:
         _require_positive(value, key)
 
 
 def _require_sha256(value: str, key: str) -> None:
+    """Exige un SHA-256 hexadecimal en minusculas."""
     if (
         not isinstance(value, str)
         or len(value) != 64
@@ -377,6 +487,7 @@ def _validate_optional_range(
     end: int | None,
     label: str,
 ) -> None:
+    """Valida que un rango opcional tenga inicio, fin y orden correcto."""
     if start is None and end is None:
         return
     if start is None or end is None:
@@ -388,4 +499,5 @@ def _validate_optional_range(
 
 
 def _freeze_mapping(values: dict[str, Any]) -> MappingProxyType[str, Any]:
+    """Devuelve una copia de solo lectura de un diccionario."""
     return MappingProxyType(dict(values))

@@ -22,6 +22,11 @@ from barbarion.application.rag import (
     PromptBuilder,
     SearchService,
 )
+from barbarion.application.reverse_engineering import (
+    AnalyzeScope,
+    AnalyzeService,
+    AnalyzeSummary,
+)
 from barbarion.application.reporting import generate_h3_report
 from barbarion.bootstrap import DirectoryResult, initialize_directories
 from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
@@ -43,6 +48,10 @@ from barbarion.domain.rag import (
     SearchRequest,
     SearchResponse,
 )
+from barbarion.domain.reverse_engineering import (
+    H4AnalysisRunMode,
+    H4AnalysisRunStatus,
+)
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
 from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
@@ -57,6 +66,7 @@ from barbarion.infrastructure.parsers import (
 from barbarion.infrastructure.parsers.registry import ParserRegistry
 from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
+from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.logging_config import configure_logging
@@ -238,8 +248,10 @@ class ConsoleProgressReporter:
         stream=None,
         *,
         min_interval_seconds: float = 0.25,
+        title: str = "Barbarion Index",
     ) -> None:
         self._stream = stream or sys.stderr
+        self._title = title
         self._started_at = time.monotonic()
         self._last_emit_at = 0.0
         self._min_interval_seconds = min_interval_seconds
@@ -261,7 +273,7 @@ class ConsoleProgressReporter:
         global_percent = _progress_percent(snapshot.global_current, snapshot.global_total)
         counters = _progress_counter_values(snapshot.counters)
         block = (
-            "Barbarion Index",
+            self._title,
             "Ctrl+C cancela de forma segura; puedes reanudar luego.",
             "",
             (
@@ -373,6 +385,41 @@ def _run_reindex(args: argparse.Namespace) -> int:
     _log_index_error_summary(settings, summary)
     _render_index_summary(summary)
     return _index_exit_code(summary)
+
+
+def _run_analyze(args: argparse.Namespace) -> int:
+    """Ejecuta analisis H4 sobre chunks ya ingeridos."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' e "
+            "ingesta el corpus antes de analizar.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_analyze_service(settings)
+    mode = H4AnalysisRunMode.FULL if args.full else H4AnalysisRunMode.INCREMENTAL
+    path_prefixes = _analyze_path_prefixes(args.path)
+    if path_prefixes:
+        mode = H4AnalysisRunMode.PARTIAL
+    cancellation = CliCancellationToken()
+    summaries: list[AnalyzeSummary] = []
+    with _index_cancellation_context(cancellation):
+        for path_prefix in path_prefixes or (None,):
+            summary = service.run(
+                mode=mode,
+                scope=AnalyzeScope(path_prefix=path_prefix),
+                dry_run=args.dry_run,
+                progress=ConsoleProgressReporter(title="Barbarion Analyze"),
+                cancellation=cancellation,
+            )
+            summaries.append(summary)
+            if summary.status == H4AnalysisRunStatus.INTERRUPTED:
+                break
+    for summary in summaries:
+        _render_analyze_summary(summary)
+    return _analyze_exit_code(tuple(summaries))
 
 
 def _run_search(args: argparse.Namespace) -> int:
@@ -665,6 +712,13 @@ def _build_index_service(settings: Settings) -> IndexService:
     )
 
 
+def _build_analyze_service(settings: Settings) -> AnalyzeService:
+    return AnalyzeService(
+        settings=settings,
+        repository=SQLiteReverseEngineeringRepository(settings.database_path),
+    )
+
+
 def _build_search_service(settings: Settings) -> SearchService:
     vector_table = f"{settings.vector_store.table_prefix}_vectors"
     return SearchService(
@@ -929,6 +983,20 @@ def _render_index_summary(summary: IndexRunSummary) -> None:
     print(f"Duracion: {summary.duration_ms} ms")
 
 
+def _render_analyze_summary(summary: AnalyzeSummary) -> None:
+    prefix = "Dry-run de analyze H4" if summary.dry_run else "Analyze H4"
+    print(f"{prefix}: {summary.status.value}")
+    print(f"Run: {summary.run_id if summary.run_id is not None else 'ninguno'}")
+    print(f"Archivos: {summary.files_scanned}")
+    print(f"Chunks: {summary.chunks_scanned}")
+    print(f"Simbolos: {summary.symbols_detected}")
+    print(f"Referencias: {summary.references_detected}")
+    print(f"Relaciones resueltas: {summary.relations_resolved}")
+    print(f"Relaciones ambiguas: {summary.relations_ambiguous}")
+    print(f"Relaciones no resueltas: {summary.relations_unresolved}")
+    print(f"Duracion: {summary.duration_ms} ms")
+
+
 def _progress_percent(current: int, total: int | None) -> str:
     if total is None or total <= 0:
         return "n/a"
@@ -996,6 +1064,20 @@ def _index_exit_code(summary: IndexRunSummary) -> int:
     }:
         return 1
     return 0
+
+
+def _analyze_exit_code(summaries: tuple[AnalyzeSummary, ...]) -> int:
+    if any(summary.status == H4AnalysisRunStatus.INTERRUPTED for summary in summaries):
+        return 130
+    if any(summary.status == H4AnalysisRunStatus.FAILED for summary in summaries):
+        return 1
+    return 0
+
+
+def _analyze_path_prefixes(paths: Sequence[str] | None) -> tuple[str, ...]:
+    if not paths:
+        return ()
+    return tuple(str(Path(path).as_posix()).strip("/") for path in paths)
 
 
 def _settings_with_ingest_paths(settings: Settings, paths: Sequence[str] | None) -> Settings:
@@ -1262,6 +1344,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="elimina vectores obsoletos durante una reindexacion completa",
     )
     reindex_parser.set_defaults(handler=_run_reindex)
+
+    analyze_parser = commands.add_parser(
+        "analyze",
+        help="analiza simbolos y relaciones H4",
+        description="Ejecuta analisis H4 incremental sobre chunks ingeridos.",
+        add_help=False,
+    )
+    _add_help_option(analyze_parser)
+    analyze_parser.add_argument(
+        "--full",
+        action="store_true",
+        help="analiza todos los chunks vigentes",
+    )
+    analyze_parser.add_argument(
+        "--path",
+        action="append",
+        metavar="PREFIJO",
+        help="limita el analisis por prefijo de ruta persistida; puede repetirse",
+    )
+    analyze_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="calcula alcance y resultados esperados sin escribir SQLite",
+    )
+    analyze_parser.set_defaults(handler=_run_analyze)
 
     search_parser = commands.add_parser(
         "search",

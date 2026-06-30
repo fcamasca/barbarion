@@ -474,7 +474,7 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     ON symbols(file_id, status)
     """,
     """
-    CREATE TABLE IF NOT EXISTS references (
+    CREATE TABLE IF NOT EXISTS symbol_references (
         id TEXT PRIMARY KEY,
         last_run_id INTEGER NOT NULL REFERENCES analysis_runs(id),
         source_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
@@ -504,22 +504,22 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_references_normalized_resolution
-    ON references(normalized_target, resolution_status)
+    CREATE INDEX IF NOT EXISTS idx_symbol_references_normalized_resolution
+    ON symbol_references(normalized_target, resolution_status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_references_source_file_resolution
-    ON references(source_file_id, resolution_status)
+    CREATE INDEX IF NOT EXISTS idx_symbol_references_source_file_resolution
+    ON symbol_references(source_file_id, resolution_status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_references_source_symbol
-    ON references(source_symbol_id)
+    CREATE INDEX IF NOT EXISTS idx_symbol_references_source_symbol
+    ON symbol_references(source_symbol_id)
     """,
     """
     CREATE TABLE IF NOT EXISTS relations (
         id TEXT PRIMARY KEY,
         last_run_id INTEGER NOT NULL REFERENCES analysis_runs(id),
-        reference_id TEXT NOT NULL REFERENCES references(id) ON DELETE CASCADE,
+        reference_id TEXT NOT NULL REFERENCES symbol_references(id) ON DELETE CASCADE,
         source_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
         target_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
         target_key TEXT,
@@ -2256,7 +2256,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO references(
+                INSERT INTO symbol_references(
                     id, last_run_id, source_symbol_id, source_file_id,
                     source_chunk_id, raw_text, normalized_target, reference_type,
                     technology, start_line, end_line, detection_method,
@@ -2312,7 +2312,7 @@ class SQLiteReverseEngineeringRepository:
                        raw_text, normalized_target, reference_type, technology,
                        start_line, end_line, detection_method, confidence,
                        resolution_status, metadata_json
-                FROM references
+                FROM symbol_references
                 WHERE id = ?
                 """,
                 (reference_id,),
@@ -2328,7 +2328,7 @@ class SQLiteReverseEngineeringRepository:
                        raw_text, normalized_target, reference_type, technology,
                        start_line, end_line, detection_method, confidence,
                        resolution_status, metadata_json
-                FROM references
+                FROM symbol_references
                 ORDER BY source_file_id, start_line, id
                 """
             ).fetchall()
@@ -2358,7 +2358,7 @@ class SQLiteReverseEngineeringRepository:
             )
             reference_cursor = connection.execute(
                 f"""
-                UPDATE references
+                UPDATE symbol_references
                 SET resolution_status = 'unresolved', updated_at = ?
                 WHERE source_file_id IN ({placeholders})
                   AND last_run_id <> ?
@@ -2397,7 +2397,7 @@ class SQLiteReverseEngineeringRepository:
             )
             reference_cursor = connection.execute(
                 """
-                UPDATE references
+                UPDATE symbol_references
                 SET resolution_status = 'unresolved', updated_at = ?
                 WHERE source_file_id IN (SELECT id FROM files WHERE status = 'deleted')
                 """,

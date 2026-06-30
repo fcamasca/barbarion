@@ -28,9 +28,9 @@ def test_h4_analyze_dry_run_does_not_mutate_sqlite(
 
     assert exit_code == 0, captured.err
     assert "Dry-run de analyze H4: completed" in captured.out
-    assert _scalar(db_path, "SELECT COUNT(*) FROM h4_analysis_runs") == 0
-    assert _scalar(db_path, "SELECT COUNT(*) FROM h4_symbols") == 0
-    assert _scalar(db_path, "SELECT COUNT(*) FROM h4_references") == 0
+    assert _scalar(db_path, "SELECT COUNT(*) FROM analysis_runs") == 0
+    assert _scalar(db_path, "SELECT COUNT(*) FROM symbols") == 0
+    assert _scalar(db_path, 'SELECT COUNT(*) FROM symbol_references') == 0
 
 
 def test_h4_analyze_incremental_resolution_transitions(
@@ -78,7 +78,7 @@ def test_h4_analyze_incremental_resolution_transitions(
     _run_analyze(config, capsys)
     assert _reference_status(db_path, "procesar") == "ambiguous"
     assert _active_relation_statuses(db_path, "procesar") == ("ambiguous",)
-    assert _scalar(db_path, "SELECT COUNT(*) FROM h4_relation_candidates") == 2
+    assert _scalar(db_path, "SELECT COUNT(*) FROM relation_candidates") == 2
 
     _mark_file_deleted(db_path, file_id=3)
     _run_analyze(config, capsys)
@@ -214,7 +214,7 @@ def _reference_status(db_path: Path, target: str) -> str:
         row = connection.execute(
             """
             SELECT resolution_status
-            FROM h4_references
+            FROM symbol_references
             WHERE normalized_target = ?
             ORDER BY updated_at DESC, id
             LIMIT 1
@@ -229,12 +229,13 @@ def _active_relation_statuses(db_path: Path, target: str) -> tuple[str, ...]:
     with sqlite3.connect(db_path) as connection:
         rows = connection.execute(
             """
-            SELECT h4_relations.resolution_status
-            FROM h4_relations
-            JOIN h4_references ON h4_references.id = h4_relations.reference_id
-            WHERE h4_references.normalized_target = ?
-              AND h4_relations.status = 'active'
-            ORDER BY h4_relations.resolution_status
+            SELECT relations.resolution_status
+            FROM relations
+            JOIN symbol_references AS reference_rows
+              ON reference_rows.id = relations.reference_id
+            WHERE reference_rows.normalized_target = ?
+              AND relations.status = 'active'
+            ORDER BY relations.resolution_status
             """,
             (target,),
         ).fetchall()

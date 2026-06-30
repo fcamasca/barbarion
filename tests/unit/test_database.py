@@ -74,6 +74,7 @@ def test_schema_contains_h2_tables(tmp_path: Path) -> None:
         ).fetchall()
 
     assert tables == [
+        ("analysis_runs",),
         ("chunk_embeddings",),
         ("chunks",),
         ("documents",),
@@ -81,16 +82,15 @@ def test_schema_contains_h2_tables(tmp_path: Path) -> None:
         ("embedding_runs",),
         ("errors",),
         ("files",),
-        ("h4_analysis_runs",),
-        ("h4_generated_artifacts",),
-        ("h4_references",),
-        ("h4_relation_candidates",),
-        ("h4_relations",),
-        ("h4_symbols",),
+        ("generated_artifacts",),
         ("ingestion_runs",),
         ("rag_queries",),
+        ("relation_candidates",),
+        ("relations",),
         ("schema_migrations",),
         ("symbol_occurrences",),
+        ("symbol_references",),
+        ("symbols",),
     ]
     assert [
         (column[1], column[2], column[3], column[5])
@@ -274,27 +274,27 @@ def test_h4_schema_contains_expected_tables_columns_and_indexes(
             )
         }
         symbol_columns = [
-            row[1] for row in connection.execute("PRAGMA table_info(h4_symbols)")
+            row[1] for row in connection.execute("PRAGMA table_info(symbols)")
         ]
         reference_columns = [
-            row[1] for row in connection.execute("PRAGMA table_info(h4_references)")
+            row[1] for row in connection.execute('PRAGMA table_info(symbol_references)')
         ]
         relation_columns = [
-            row[1] for row in connection.execute("PRAGMA table_info(h4_relations)")
+            row[1] for row in connection.execute("PRAGMA table_info(relations)")
         ]
 
     assert {
-        "h4_analysis_runs",
-        "h4_symbols",
-        "h4_references",
-        "h4_relations",
-        "h4_relation_candidates",
-        "h4_generated_artifacts",
+        "analysis_runs",
+        "symbols",
+        "symbol_references",
+        "relations",
+        "relation_candidates",
+        "generated_artifacts",
     }.issubset(tables)
     assert {
-        "idx_h4_references_normalized_resolution",
-        "idx_h4_symbols_normalized_type_status",
-        "idx_h4_symbols_container_name_status",
+        "idx_symbol_references_normalized_resolution",
+        "idx_symbols_normalized_type_status",
+        "idx_symbols_container_name_status",
     }.issubset(indexes)
     assert "last_run_id" in symbol_columns
     assert "run_id" not in symbol_columns
@@ -477,12 +477,12 @@ def test_failed_v2_migration_preserves_v1_database(
     initialize_database(path)
 
     with sqlite3.connect(path) as connection:
-        connection.execute("DROP TABLE h4_generated_artifacts")
-        connection.execute("DROP TABLE h4_relation_candidates")
-        connection.execute("DROP TABLE h4_relations")
-        connection.execute("DROP TABLE h4_references")
-        connection.execute("DROP TABLE h4_symbols")
-        connection.execute("DROP TABLE h4_analysis_runs")
+        connection.execute("DROP TABLE generated_artifacts")
+        connection.execute("DROP TABLE relation_candidates")
+        connection.execute("DROP TABLE relations")
+        connection.execute('DROP TABLE symbol_references')
+        connection.execute("DROP TABLE symbols")
+        connection.execute("DROP TABLE analysis_runs")
         connection.execute("DROP TABLE symbol_occurrences")
         connection.execute("DROP TABLE rag_queries")
         connection.execute("DROP TABLE chunk_embeddings")

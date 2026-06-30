@@ -104,7 +104,7 @@ No inventa destinos; conserva `target_key`, razon y evidencia.
 
 ### H4-TP-008 - Persistencia de relaciones
 
-FK, indices, estados, evidencia, candidatos, cascadas y ausencia de huerfanos. Debe verificar como minimo `h4_references(normalized_target, resolution_status)`, `h4_symbols(normalized_name, symbol_type, status)` y `h4_symbols(container_name, normalized_name, status)`.
+FK, indices, estados, evidencia, candidatos, cascadas y ausencia de huerfanos. Debe verificar como minimo `symbol_references(normalized_target, resolution_status)`, `symbols(normalized_name, symbol_type, status)` y `symbols(container_name, normalized_name, status)`.
 
 ### H4-TP-009 - Recorrido por profundidad
 

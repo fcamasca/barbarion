@@ -20,7 +20,7 @@ Estados iniciales: `pendiente`.
 **Modulos estimados:** `domain/reverse_engineering.py`, `domain/ports.py`, `database.py`, `infrastructure/sqlite.py`.  
 **Requisitos:** H4-RF-001, H4-RF-002, H4-RF-005, H4-RF-010, H4-RNF-003, H4-RNF-009.  
 **Dependencias:** H3 aceptado.  
-**Pruebas exigidas:** migracion nueva, upgrade v3-v4, idempotencia, FK, version futura, IDs deterministas e indices `references(normalized_target, resolution_status)`, `symbols(normalized_name, symbol_type, status)` y `symbols(container_name, normalized_name, status)`.  
+**Pruebas exigidas:** migracion nueva, upgrade v3-v4, idempotencia, FK, version futura, IDs deterministas e indices `symbol_references(normalized_target, resolution_status)`, `symbols(normalized_name, symbol_type, status)` y `symbols(container_name, normalized_name, status)`.
 **Condicion de finalizacion:** SQLite v4 crea tablas H4 sin romper H1-H3 y el repositorio permite insertar/leer runs, simbolos y relaciones fixture.  
 **Checkpoint:** `python -m pytest tests/unit/test_database.py tests/unit/test_domain_models.py`.
 
@@ -33,7 +33,7 @@ Estados iniciales: `pendiente`.
 **Dependencias:** H4-T01.  
 **Pruebas exigidas:** normalizacion Oracle/PowerBuilder, contenedores, confianza, estados, deduplicacion, simbolos desconocidos.  
 **Condicion de finalizacion:** una corrida H4 sobre fixtures H2 crea simbolos active con procedencia y sin duplicados.  
-**Checkpoint:** `python -m pytest tests/unit/test_symbols.py`.
+**Checkpoint:** `python -m pytest tests/unit/test_h4_symbols.py`.
 
 ### H4-T03 - Implementar extractores de referencias Oracle y PowerBuilder
 
@@ -55,7 +55,7 @@ Estados iniciales: `pendiente`.
 **Dependencias:** H4-T03.  
 **Pruebas exigidas:** exact match, nombres calificados, case-insensitive, multiples candidatos, externos, dinamicos, autorreferencias.  
 **Condicion de finalizacion:** relaciones y candidatos quedan persistidos con evidencia y sin resolucion silenciosa.  
-**Checkpoint:** `python -m pytest tests/unit/test_h4_resolution.py tests/integration/test_relations_sqlite.py`.
+**Checkpoint:** `python -m pytest tests/unit/test_h4_resolution.py tests/integration/test_h4_relations_sqlite.py`.
 
 ### H4-T05 - Implementar `barbarion analyze` incremental
 

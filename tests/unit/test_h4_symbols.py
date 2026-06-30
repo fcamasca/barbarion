@@ -40,7 +40,7 @@ def test_h4_symbol_catalog_builds_active_symbols_without_duplicates(
             """
             SELECT normalized_name, symbol_type, technology, container_name,
                    confidence, status, file_id, chunk_id
-            FROM h4_symbols
+            FROM symbols
             ORDER BY technology, normalized_name, symbol_type, chunk_id
             """
         ).fetchall()

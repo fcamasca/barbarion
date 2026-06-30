@@ -33,7 +33,7 @@ Precedencia aplicada: DECISIONS y codigo vigente primero. H4 usa SQLite + sqlite
 | H4-DD-005 | Las tablas H4 representan el estado vigente: `id` es identidad logica determinista y `last_run_id` registra la ultima corrida que actualizo la fila | H4-RF-002, H4-RF-005, H4-RNF-004 |
 | H4-DD-006 | Los extractores H4 reutilizan texto normalizado/chunks H2 y complementan parsers con reglas de simbolos/referencias | H4-RF-003 |
 | H4-DD-007 | La resolucion es explicita: `resolved`, `ambiguous`, `unresolved`, `external`, `dynamic`; nunca se elige silenciosamente ante multiples candidatos | H4-RF-003, H4-RF-004, H4-RF-005 |
-| H4-DD-008 | El inventario combina `files`, `documents`, `chunks`, `h4_symbols` y `h4_relations`, mas conteos RAG cuando aporten contexto | H4-RF-001 |
+| H4-DD-008 | El inventario combina `files`, `documents`, `chunks`, `symbols` y `relations`, mas conteos RAG cuando aporten contexto | H4-RF-001 |
 | H4-DD-009 | Dependencias se recorren con SQL y Python simple, profundidad y nodos limitados, sin base de grafos | H4-RF-006, H4-RNF-006 |
 | H4-DD-010 | `describe` tiene modo determinista y modo asistido por LLM; el LLM sintetiza, no crea fuentes | H4-RF-007, H4-RNF-012 |
 | H4-DD-011 | `impact` usa relaciones y caminos, no similitud semantica aislada, y clasifica detectado/inferido/por_confirmar | H4-RF-008, H4-RNF-012 |
@@ -113,19 +113,19 @@ Estados principales:
 
 H4 adopta explicitamente una politica de **estado vigente incremental**, no historial completo por corrida:
 
-- `h4_symbols`, `h4_references` y `h4_relations` guardan la version vigente de cada identidad logica;
+- `symbols`, `symbol_references` y `relations` guardan la version vigente de cada identidad logica;
 - `id` es determinista y funciona como identidad logica estable;
 - `last_run_id` indica la ultima corrida que creo, actualizo, marco stale/deleted o resolvio la fila;
 - `created_at` conserva la primera aparicion y `updated_at` la ultima actualizacion;
 - si una corrida vuelve a detectar el mismo simbolo, referencia o relacion, hace upsert sobre la misma fila;
-- el historial completo queda resumido en `h4_analysis_runs`; si en el futuro se requiere auditoria por ocurrencia/run, debe agregarse una tabla historica separada como `h4_symbol_events`, no mezclarla con el estado vigente;
+- el historial completo queda resumido en `analysis_runs`; si en el futuro se requiere auditoria por ocurrencia/run, debe agregarse una tabla historica separada como `symbol_events`, no mezclarla con el estado vigente;
 - una interrupcion conserva filas ya confirmadas por archivos procesados y revierte solo el archivo/scope en curso.
 
 Esta eleccion evita conflictos entre PK deterministas y `run_id`, y mantiene el catalogo consultable sin filtrar por la ultima corrida completa.
 
 ### Nuevas tablas propuestas
 
-#### `h4_analysis_runs`
+#### `analysis_runs`
 
 | Columna | Tipo | Regla |
 |---|---|---|
@@ -138,12 +138,12 @@ Esta eleccion evita conflictos entre PK deterministas y `run_id`, y mantiene el 
 | `relations_unresolved`, `relations_ambiguous`, `warning_count`, `error_count` | INTEGER | default 0 |
 | `duration_ms` | INTEGER | nullable |
 
-#### `h4_symbols`
+#### `symbols`
 
 | Columna | Tipo | Regla |
 |---|---|---|
 | `id` | TEXT | PK determinista |
-| `last_run_id` | INTEGER | FK `h4_analysis_runs`; ultima corrida que actualizo la fila |
+| `last_run_id` | INTEGER | FK `analysis_runs`; ultima corrida que actualizo la fila |
 | `file_id` | INTEGER | FK `files`, ON DELETE CASCADE |
 | `document_id` | INTEGER | FK `documents`, ON DELETE CASCADE |
 | `chunk_id` | TEXT | FK `chunks`, ON DELETE SET NULL |
@@ -165,11 +165,11 @@ Indices: `(normalized_name)`, `(symbol_type, technology)`, `(file_id)`, `(chunk_
 
 Indices obligatorios:
 
-- `h4_symbols(normalized_name, symbol_type, status)`;
-- `h4_symbols(container_name, normalized_name, status)`;
-- `h4_symbols(file_id, status)`;
+- `symbols(normalized_name, symbol_type, status)`;
+- `symbols(container_name, normalized_name, status)`;
+- `symbols(file_id, status)`;
 
-#### `h4_references`
+#### `symbol_references`
 
 | Columna | Tipo | Regla |
 |---|---|---|
@@ -191,17 +191,17 @@ Indices obligatorios:
 
 Indices obligatorios:
 
-- `h4_references(normalized_target, resolution_status)`;
-- `h4_references(source_file_id, resolution_status)`;
-- `h4_references(source_symbol_id)`;
+- `symbol_references(normalized_target, resolution_status)`;
+- `symbol_references(source_file_id, resolution_status)`;
+- `symbol_references(source_symbol_id)`;
 
-#### `h4_relations`
+#### `relations`
 
 | Columna | Tipo | Regla |
 |---|---|---|
 | `id` | TEXT | PK determinista |
 | `last_run_id` | INTEGER | FK; ultima corrida que actualizo la fila |
-| `reference_id` | TEXT | FK `h4_references` |
+| `reference_id` | TEXT | FK `symbol_references` |
 | `source_symbol_id` | TEXT | FK nullable |
 | `target_symbol_id` | TEXT | FK nullable |
 | `target_key` | TEXT | textual para unresolved/external |
@@ -216,7 +216,7 @@ Indices obligatorios:
 | `status` | TEXT | active/stale/deleted |
 | `created_at`, `updated_at` | TEXT | UTC |
 
-#### `h4_relation_candidates`
+#### `relation_candidates`
 
 | Columna | Tipo | Regla |
 |---|---|---|
@@ -226,7 +226,7 @@ Indices obligatorios:
 | `rank` | INTEGER | >= 1 |
 | `reason` | TEXT | motivo de candidatura |
 
-#### `h4_generated_artifacts`
+#### `generated_artifacts`
 
 | Columna | Tipo | Regla |
 |---|---|---|
@@ -342,7 +342,7 @@ flowchart TD
     A["Chunks vigentes H2"] --> B["Extractor por tecnologia"]
     B --> C["Referencias crudas con evidencia"]
     C --> D["Normalizacion de nombres"]
-    D --> E["Resolucion contra h4_symbols"]
+    D --> E["Resolucion contra symbols"]
     E -->|unico candidato| F["Relacion resolved"]
     E -->|varios candidatos| G["Relacion ambiguous + candidatos"]
     E -->|sin candidato| H["Relacion unresolved/external/dynamic"]

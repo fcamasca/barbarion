@@ -926,18 +926,15 @@ class PromptBuilder:
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
         return (
-            "Reescribe la respuesta candidata en espanol usando solo la evidencia provista.\n"
-            "No agregues informacion nueva ni inventes fuentes.\n"
-            "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
+            "Reescribe la respuesta en espanol usando solo la evidencia provista.\n"
+            "Incluye citas inline validas como [F1].\n"
             f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
-            "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
-            "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n\n"
-            "Si la evidencia no responde directamente la pregunta, responde "
-            "\"Evidencia insuficiente\", indica que evidencia falto y cita las "
-            "fuentes que demuestran el limite.\n\n"
+            "Si el contexto no responde la pregunta, responde "
+            "\"Evidencia insuficiente\" y cita la evidencia disponible.\n"
+            "No generes codigo ni completes codigo; solo corrige la respuesta textual.\n\n"
             f"Pregunta:\n{question}\n\n"
             f"Contexto:\n{context.rendered_context}\n\n"
-            f"Respuesta candidata rechazada:\n{answer}\n\n"
+            f"Respuesta original:\n{answer}\n\n"
             "Respuesta corregida:"
         )
 

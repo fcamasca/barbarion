@@ -315,8 +315,9 @@ def test_ask_repairs_llm_answer_without_inline_citation(tmp_path) -> None:
     assert result.status == RagQueryStatus.COMPLETED
     assert result.answer == "order_total se selecciona desde dual [F1]."
     assert len(fake_llm.prompts) == 2
-    assert "Respuesta candidata rechazada:\nConclusion sin cita." in fake_llm.prompts[1]
+    assert "Respuesta original:\nConclusion sin cita." in fake_llm.prompts[1]
     assert "Usa solo estos IDs de fuente existentes: [F1]." in fake_llm.prompts[1]
+    assert "No generes codigo ni completes codigo" in fake_llm.prompts[1]
     assert result.debug["citation_repair_attempted"] is True
     assert result.debug["citation_repair_valid"] is True
 

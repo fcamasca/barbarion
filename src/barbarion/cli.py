@@ -1,6 +1,7 @@
 """Punto de entrada de la línea de comandos de Barbarion."""
 
 import argparse
+import ctypes
 import json
 import logging
 import re
@@ -2886,12 +2887,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _configure_stdio_encoding() -> None:
-    """Configura UTF-8 para stdout/stderr cuando el runtime lo permite."""
+    """Configura stdout/stderr con el codepage activo de la consola."""
+    encoding = _console_output_encoding()
     for stream in (sys.stdout, sys.stderr):
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
         try:
-            reconfigure(encoding="utf-8", errors="replace")
+            reconfigure(encoding=encoding, errors="replace")
         except (OSError, ValueError):
             continue
+
+
+def _console_output_encoding() -> str:
+    """Devuelve el encoding que PowerShell usa para capturar streams nativos."""
+    if sys.platform == "win32":
+        codepage = ctypes.windll.kernel32.GetConsoleOutputCP()
+        if codepage:
+            return f"cp{codepage}"
+    return sys.stderr.encoding or "utf-8"

@@ -56,6 +56,7 @@ from barbarion.domain.reverse_engineering import (
     H4AnalysisRunRecord,
     H4AnalysisRunStatus,
     H4Classification,
+    H4DependencyDirection,
     H4Reference,
     H4Relation,
     H4RelationCandidate,
@@ -400,7 +401,7 @@ RAG_SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
-    CREATE TABLE IF NOT EXISTS h4_analysis_runs (
+    CREATE TABLE IF NOT EXISTS analysis_runs (
         id INTEGER PRIMARY KEY,
         mode TEXT NOT NULL CHECK (mode IN ('incremental', 'full', 'partial')),
         status TEXT NOT NULL CHECK (
@@ -426,17 +427,17 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_analysis_runs_started_at
-    ON h4_analysis_runs(started_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_analysis_runs_started_at
+    ON analysis_runs(started_at DESC)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_analysis_runs_status
-    ON h4_analysis_runs(status)
+    CREATE INDEX IF NOT EXISTS idx_analysis_runs_status
+    ON analysis_runs(status)
     """,
     """
-    CREATE TABLE IF NOT EXISTS h4_symbols (
+    CREATE TABLE IF NOT EXISTS symbols (
         id TEXT PRIMARY KEY,
-        last_run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id),
+        last_run_id INTEGER NOT NULL REFERENCES analysis_runs(id),
         file_id INTEGER REFERENCES files(id) ON DELETE CASCADE,
         document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
         chunk_id TEXT REFERENCES chunks(id) ON DELETE SET NULL,
@@ -444,7 +445,7 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
         normalized_name TEXT NOT NULL,
         symbol_type TEXT NOT NULL,
         technology TEXT NOT NULL,
-        parent_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        parent_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
         container_name TEXT,
         signature TEXT,
         start_line INTEGER CHECK (start_line IS NULL OR start_line > 0),
@@ -461,22 +462,22 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_symbols_normalized_type_status
-    ON h4_symbols(normalized_name, symbol_type, status)
+    CREATE INDEX IF NOT EXISTS idx_symbols_normalized_type_status
+    ON symbols(normalized_name, symbol_type, status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_symbols_container_name_status
-    ON h4_symbols(container_name, normalized_name, status)
+    CREATE INDEX IF NOT EXISTS idx_symbols_container_name_status
+    ON symbols(container_name, normalized_name, status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_symbols_file_status
-    ON h4_symbols(file_id, status)
+    CREATE INDEX IF NOT EXISTS idx_symbols_file_status
+    ON symbols(file_id, status)
     """,
     """
-    CREATE TABLE IF NOT EXISTS h4_references (
+    CREATE TABLE IF NOT EXISTS references (
         id TEXT PRIMARY KEY,
-        last_run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id),
-        source_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        last_run_id INTEGER NOT NULL REFERENCES analysis_runs(id),
+        source_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
         source_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
         source_chunk_id TEXT REFERENCES chunks(id) ON DELETE SET NULL,
         raw_text TEXT NOT NULL,
@@ -503,24 +504,24 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_references_normalized_resolution
-    ON h4_references(normalized_target, resolution_status)
+    CREATE INDEX IF NOT EXISTS idx_references_normalized_resolution
+    ON references(normalized_target, resolution_status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_references_source_file_resolution
-    ON h4_references(source_file_id, resolution_status)
+    CREATE INDEX IF NOT EXISTS idx_references_source_file_resolution
+    ON references(source_file_id, resolution_status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_references_source_symbol
-    ON h4_references(source_symbol_id)
+    CREATE INDEX IF NOT EXISTS idx_references_source_symbol
+    ON references(source_symbol_id)
     """,
     """
-    CREATE TABLE IF NOT EXISTS h4_relations (
+    CREATE TABLE IF NOT EXISTS relations (
         id TEXT PRIMARY KEY,
-        last_run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id),
-        reference_id TEXT NOT NULL REFERENCES h4_references(id) ON DELETE CASCADE,
-        source_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
-        target_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        last_run_id INTEGER NOT NULL REFERENCES analysis_runs(id),
+        reference_id TEXT NOT NULL REFERENCES references(id) ON DELETE CASCADE,
+        source_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
+        target_symbol_id TEXT REFERENCES symbols(id) ON DELETE SET NULL,
         target_key TEXT,
         relation_type TEXT NOT NULL,
         classification TEXT NOT NULL CHECK (
@@ -552,39 +553,39 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_relations_reference
-    ON h4_relations(reference_id)
+    CREATE INDEX IF NOT EXISTS idx_relations_reference
+    ON relations(reference_id)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_relations_source_status
-    ON h4_relations(source_symbol_id, status)
+    CREATE INDEX IF NOT EXISTS idx_relations_source_status
+    ON relations(source_symbol_id, status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_relations_target_status
-    ON h4_relations(target_symbol_id, status)
+    CREATE INDEX IF NOT EXISTS idx_relations_target_status
+    ON relations(target_symbol_id, status)
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_relations_resolution_status
-    ON h4_relations(resolution_status, status)
+    CREATE INDEX IF NOT EXISTS idx_relations_resolution_status
+    ON relations(resolution_status, status)
     """,
     """
-    CREATE TABLE IF NOT EXISTS h4_relation_candidates (
+    CREATE TABLE IF NOT EXISTS relation_candidates (
         id INTEGER PRIMARY KEY,
-        relation_id TEXT NOT NULL REFERENCES h4_relations(id) ON DELETE CASCADE,
-        candidate_symbol_id TEXT NOT NULL REFERENCES h4_symbols(id) ON DELETE CASCADE,
+        relation_id TEXT NOT NULL REFERENCES relations(id) ON DELETE CASCADE,
+        candidate_symbol_id TEXT NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
         rank INTEGER NOT NULL CHECK (rank > 0),
         reason TEXT NOT NULL,
         UNIQUE(relation_id, candidate_symbol_id)
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_relation_candidates_relation
-    ON h4_relation_candidates(relation_id, rank)
+    CREATE INDEX IF NOT EXISTS idx_relation_candidates_relation
+    ON relation_candidates(relation_id, rank)
     """,
     """
-    CREATE TABLE IF NOT EXISTS h4_generated_artifacts (
+    CREATE TABLE IF NOT EXISTS generated_artifacts (
         id INTEGER PRIMARY KEY,
-        run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id) ON DELETE CASCADE,
+        run_id INTEGER NOT NULL REFERENCES analysis_runs(id) ON DELETE CASCADE,
         artifact_type TEXT NOT NULL,
         relative_path TEXT NOT NULL,
         content_sha256 TEXT NOT NULL,
@@ -594,8 +595,8 @@ REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE INDEX IF NOT EXISTS idx_h4_generated_artifacts_run
-    ON h4_generated_artifacts(run_id, artifact_type)
+    CREATE INDEX IF NOT EXISTS idx_generated_artifacts_run
+    ON generated_artifacts(run_id, artifact_type)
     """,
 )
 
@@ -2087,7 +2088,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             cursor = connection.execute(
                 """
-                INSERT INTO h4_analysis_runs(mode, status, scope_json, started_at)
+                INSERT INTO analysis_runs(mode, status, scope_json, started_at)
                 VALUES (?, 'running', ?, ?)
                 """,
                 (mode.value, _canonical_json(scope or {}), _utc_now()),
@@ -2104,7 +2105,7 @@ class SQLiteReverseEngineeringRepository:
                        references_detected, relations_resolved,
                        relations_unresolved, relations_ambiguous, warning_count,
                        error_count, duration_ms
-                FROM h4_analysis_runs
+                FROM analysis_runs
                 WHERE id = ?
                 """,
                 (run_id,),
@@ -2129,7 +2130,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                UPDATE h4_analysis_runs
+                UPDATE analysis_runs
                 SET status = ?,
                     finished_at = ?,
                     symbols_detected = ?,
@@ -2164,7 +2165,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO h4_symbols(
+                INSERT INTO symbols(
                     id, last_run_id, file_id, document_id, chunk_id,
                     original_name, normalized_name, symbol_type, technology,
                     parent_symbol_id, container_name, signature, start_line,
@@ -2226,7 +2227,7 @@ class SQLiteReverseEngineeringRepository:
                        normalized_name, symbol_type, technology, parent_symbol_id,
                        container_name, signature, start_line, end_line,
                        extraction_method, confidence, status, metadata_json
-                FROM h4_symbols
+                FROM symbols
                 WHERE id = ?
                 """,
                 (symbol_id,),
@@ -2242,7 +2243,7 @@ class SQLiteReverseEngineeringRepository:
                        normalized_name, symbol_type, technology, parent_symbol_id,
                        container_name, signature, start_line, end_line,
                        extraction_method, confidence, status, metadata_json
-                FROM h4_symbols
+                FROM symbols
                 WHERE status = 'active'
                 ORDER BY technology, container_name, normalized_name, id
                 """
@@ -2255,7 +2256,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO h4_references(
+                INSERT INTO references(
                     id, last_run_id, source_symbol_id, source_file_id,
                     source_chunk_id, raw_text, normalized_target, reference_type,
                     technology, start_line, end_line, detection_method,
@@ -2311,7 +2312,7 @@ class SQLiteReverseEngineeringRepository:
                        raw_text, normalized_target, reference_type, technology,
                        start_line, end_line, detection_method, confidence,
                        resolution_status, metadata_json
-                FROM h4_references
+                FROM references
                 WHERE id = ?
                 """,
                 (reference_id,),
@@ -2327,7 +2328,7 @@ class SQLiteReverseEngineeringRepository:
                        raw_text, normalized_target, reference_type, technology,
                        start_line, end_line, detection_method, confidence,
                        resolution_status, metadata_json
-                FROM h4_references
+                FROM references
                 ORDER BY source_file_id, start_line, id
                 """
             ).fetchall()
@@ -2347,7 +2348,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             symbol_cursor = connection.execute(
                 f"""
-                UPDATE h4_symbols
+                UPDATE symbols
                 SET status = 'stale', updated_at = ?
                 WHERE file_id IN ({placeholders})
                   AND last_run_id <> ?
@@ -2357,7 +2358,7 @@ class SQLiteReverseEngineeringRepository:
             )
             reference_cursor = connection.execute(
                 f"""
-                UPDATE h4_references
+                UPDATE references
                 SET resolution_status = 'unresolved', updated_at = ?
                 WHERE source_file_id IN ({placeholders})
                   AND last_run_id <> ?
@@ -2366,7 +2367,7 @@ class SQLiteReverseEngineeringRepository:
             )
             relation_cursor = connection.execute(
                 f"""
-                UPDATE h4_relations
+                UPDATE relations
                 SET status = 'stale', updated_at = ?
                 WHERE evidence_file_id IN ({placeholders})
                   AND last_run_id <> ?
@@ -2387,7 +2388,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             symbol_cursor = connection.execute(
                 """
-                UPDATE h4_symbols
+                UPDATE symbols
                 SET status = 'deleted', updated_at = ?
                 WHERE file_id IN (SELECT id FROM files WHERE status = 'deleted')
                   AND status <> 'deleted'
@@ -2396,7 +2397,7 @@ class SQLiteReverseEngineeringRepository:
             )
             reference_cursor = connection.execute(
                 """
-                UPDATE h4_references
+                UPDATE references
                 SET resolution_status = 'unresolved', updated_at = ?
                 WHERE source_file_id IN (SELECT id FROM files WHERE status = 'deleted')
                 """,
@@ -2404,7 +2405,7 @@ class SQLiteReverseEngineeringRepository:
             )
             relation_cursor = connection.execute(
                 """
-                UPDATE h4_relations
+                UPDATE relations
                 SET status = 'stale', updated_at = ?
                 WHERE evidence_file_id IN (SELECT id FROM files WHERE status = 'deleted')
                   AND status = 'active'
@@ -2424,7 +2425,7 @@ class SQLiteReverseEngineeringRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO h4_relations(
+                INSERT INTO relations(
                     id, last_run_id, reference_id, source_symbol_id,
                     target_symbol_id, target_key, relation_type, classification,
                     resolution_status, confidence, evidence_file_id,
@@ -2482,12 +2483,44 @@ class SQLiteReverseEngineeringRepository:
                        target_key, relation_type, classification, resolution_status,
                        confidence, evidence_file_id, evidence_chunk_id, start_line,
                        end_line, notes, status
-                FROM h4_relations
+                FROM relations
                 WHERE id = ?
                 """,
                 (relation_id,),
             ).fetchone()
         return None if row is None else _h4_relation_from_row(row)
+
+    def active_relations_for_symbol(
+        self,
+        symbol_id: str,
+        *,
+        direction: H4DependencyDirection,
+    ) -> tuple[H4Relation, ...]:
+        """Lista relaciones activas adyacentes a un simbolo H4."""
+        if direction == H4DependencyDirection.OUTGOING:
+            where = "source_symbol_id = ?"
+            params = (symbol_id,)
+        elif direction == H4DependencyDirection.INCOMING:
+            where = "target_symbol_id = ?"
+            params = (symbol_id,)
+        else:
+            where = "(source_symbol_id = ? OR target_symbol_id = ?)"
+            params = (symbol_id, symbol_id)
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, reference_id, source_symbol_id, target_symbol_id,
+                       target_key, relation_type, classification, resolution_status,
+                       confidence, evidence_file_id, evidence_chunk_id, start_line,
+                       end_line, notes, status
+                FROM relations
+                WHERE status = 'active'
+                  AND {where}
+                ORDER BY relation_type, resolution_status, target_key, id
+                """,
+                params,
+            ).fetchall()
+        return tuple(_h4_relation_from_row(row) for row in rows)
 
     def relations_for_reference(self, reference_id: str) -> tuple[H4Relation, ...]:
         """Lista relaciones persistidas para una referencia."""
@@ -2498,7 +2531,7 @@ class SQLiteReverseEngineeringRepository:
                        target_key, relation_type, classification, resolution_status,
                        confidence, evidence_file_id, evidence_chunk_id, start_line,
                        end_line, notes, status
-                FROM h4_relations
+                FROM relations
                 WHERE reference_id = ?
                 ORDER BY id
                 """,
@@ -2515,12 +2548,12 @@ class SQLiteReverseEngineeringRepository:
         """Reemplaza candidatos ambiguos de una relacion."""
         with self._connect() as connection:
             connection.execute(
-                "DELETE FROM h4_relation_candidates WHERE relation_id = ?",
+                "DELETE FROM relation_candidates WHERE relation_id = ?",
                 (relation_id,),
             )
             connection.executemany(
                 """
-                INSERT INTO h4_relation_candidates(
+                INSERT INTO relation_candidates(
                     relation_id, candidate_symbol_id, rank, reason
                 )
                 VALUES (?, ?, ?, ?)
@@ -2546,7 +2579,7 @@ class SQLiteReverseEngineeringRepository:
             rows = connection.execute(
                 """
                 SELECT relation_id, candidate_symbol_id, rank, reason
-                FROM h4_relation_candidates
+                FROM relation_candidates
                 WHERE relation_id = ?
                 ORDER BY rank, candidate_symbol_id
                 """,

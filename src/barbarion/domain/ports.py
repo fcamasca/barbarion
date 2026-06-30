@@ -31,8 +31,10 @@ from barbarion.domain.reverse_engineering import (
     H4AnalysisRunMode,
     H4AnalysisRunRecord,
     H4AnalysisRunStatus,
+    H4DependencyDirection,
     H4Reference,
     H4Relation,
+    H4RelationCandidate,
     H4Symbol,
 )
 from barbarion.domain.ingestion import PersistedFileState
@@ -248,6 +250,9 @@ class ReverseEngineeringRepositoryPort(Protocol):
     def get_symbol(self, symbol_id: str) -> H4Symbol | None:
         """Lee un simbolo por ID determinista."""
 
+    def active_symbols(self) -> tuple[H4Symbol, ...]:
+        """Lista simbolos activos del catalogo H4 vigente."""
+
     def upsert_reference(self, *, run_id: int, reference: H4Reference) -> None:
         """Inserta o actualiza una referencia vigente."""
 
@@ -259,3 +264,17 @@ class ReverseEngineeringRepositoryPort(Protocol):
 
     def get_relation(self, relation_id: str) -> H4Relation | None:
         """Lee una relacion por ID determinista."""
+
+    def active_relations_for_symbol(
+        self,
+        symbol_id: str,
+        *,
+        direction: H4DependencyDirection,
+    ) -> tuple[H4Relation, ...]:
+        """Lista relaciones activas adyacentes a un simbolo."""
+
+    def relation_candidates(
+        self,
+        relation_id: str,
+    ) -> tuple[H4RelationCandidate, ...]:
+        """Lee candidatos de una relacion ambigua."""

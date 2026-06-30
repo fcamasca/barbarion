@@ -9,26 +9,40 @@ duplicar decisiones de negocio.
 from __future__ import annotations
 
 import time
+from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import Any
 
 from barbarion.config import Settings
 from barbarion.domain.models import Confidence
+from barbarion.domain.ports import LlmProviderPort
 from barbarion.domain.progress import (
     CancellationTokenPort,
     ProgressReporterPort,
     ProgressSnapshot,
     ProgressStage,
 )
+from barbarion.domain.rag import RetrievalFilter, RetrievalMode, SearchRequest
 from barbarion.domain.reverse_engineering import (
     H4AnalysisRunMode,
     H4AnalysisRunStatus,
     H4Classification,
-    H4Symbol,
+    H4ComponentDescription,
+    H4DependencyDirection,
+    H4DependencyEdge,
+    H4DependencyFilters,
+    H4DependencyNode,
+    H4DependencyWalk,
+    H4EvidenceItem,
+    H4ImpactAnalysis,
+    H4ObjectResolution,
     H4Reference,
     H4Relation,
     H4RelationCandidate,
     H4ResolutionStatus,
+    H4Symbol,
+    H4SymbolStatus,
     h4_symbol_id,
     h4_relation_id,
     normalize_symbol_name,
@@ -110,6 +124,45 @@ class AnalyzeScope:
     """
 
     path_prefix: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class H4ObjectRequest:
+    """Solicitud comun para resolver un objeto H4 por ID o nombre.
+
+    Args:
+        query: Nombre simple o calificado recibido desde capas superiores.
+        symbol_id: Identificador determinista opcional; cuando se informa,
+            tiene prioridad sobre `query`.
+        symbol_type: Tipo tecnico opcional usado para desambiguar.
+    """
+
+    query: str
+    symbol_id: str | None = None
+    symbol_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DescribeRequest:
+    """Solicitud estructurada para producir una descripcion de componente."""
+
+    target: H4ObjectRequest
+    depth: int = 1
+    no_llm: bool = True
+    include_rag: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ImpactRequest:
+    """Solicitud estructurada para producir un analisis de impacto basico."""
+
+    target: H4ObjectRequest
+    direction: H4DependencyDirection = H4DependencyDirection.BOTH
+    depth: int = 2
+    node_limit: int = 500
+    no_llm: bool = True
+    include_rag: bool = False
+    filters: H4DependencyFilters | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -491,6 +544,284 @@ class RelationResolutionService:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class DependencyWalkService:
+    """Recorre dependencias H4 con BFS local, profundidad y limite de nodos.
+
+    El servicio consulta relaciones activas desde el repositorio y calcula la
+    direccion en tiempo de consulta. No construye un grafo externo ni intenta
+    resolver referencias nuevas durante el recorrido.
+    """
+
+    repository: SQLiteReverseEngineeringRepository
+
+    def walk(
+        self,
+        seed_symbol_id: str,
+        *,
+        direction: H4DependencyDirection = H4DependencyDirection.OUTGOING,
+        max_depth: int = 1,
+        node_limit: int = 500,
+        filters: H4DependencyFilters | None = None,
+    ) -> H4DependencyWalk:
+        """Recorre dependencias desde un simbolo semilla.
+
+        Args:
+            seed_symbol_id: Simbolo activo desde el que inicia el recorrido.
+            direction: Direccion calculada para leer relaciones adyacentes.
+            max_depth: Profundidad maxima permitida, entre 0 y 5.
+            node_limit: Cantidad maxima de simbolos activos incluidos.
+            filters: Filtros opcionales aplicados sobre relaciones activas.
+
+        Returns:
+            Resultado BFS con nodos, aristas visibles, ciclos detectados e
+            indicador de limite alcanzado.
+
+        Raises:
+            ValueError: Si la semilla no existe, no esta activa, o los limites
+            solicitados estan fuera del contrato H4.
+        """
+        _validate_dependency_limits(max_depth=max_depth, node_limit=node_limit)
+        filters = filters or H4DependencyFilters()
+        seed = self.repository.get_symbol(seed_symbol_id)
+        if seed is None or seed.status != H4SymbolStatus.ACTIVE:
+            raise ValueError("seed_symbol_id debe identificar un simbolo activo.")
+
+        nodes: dict[str, H4DependencyNode] = {
+            seed.symbol_id: H4DependencyNode(symbol=seed, depth=0),
+        }
+        edges: list[H4DependencyEdge] = []
+        cycles: list[tuple[str, ...]] = []
+        limit_reached = False
+        queue: deque[tuple[H4Symbol, int, tuple[str, ...]]] = deque(
+            [(seed, 0, (seed.symbol_id,))]
+        )
+
+        while queue:
+            current, depth, path = queue.popleft()
+            if depth >= max_depth:
+                continue
+            adjacent = self.repository.active_relations_for_symbol(
+                current.symbol_id,
+                direction=direction,
+            )
+            for relation in _filter_relations(adjacent, filters, self.repository):
+                edge_direction = _edge_direction(current.symbol_id, relation)
+                source = _relation_symbol(relation.source_symbol_id, self.repository)
+                target = _relation_symbol(relation.target_symbol_id, self.repository)
+                candidate_ids = _candidate_symbol_ids(relation, self.repository)
+                next_symbol = _next_symbol(current.symbol_id, relation, source, target)
+                is_cycle = (
+                    next_symbol is not None and next_symbol.symbol_id in path
+                )
+                if is_cycle:
+                    cycle = (*path, next_symbol.symbol_id)
+                    if cycle not in cycles:
+                        cycles.append(cycle)
+                edges.append(
+                    H4DependencyEdge(
+                        relation=relation,
+                        depth=depth + 1,
+                        direction=edge_direction,
+                        source_symbol=source,
+                        target_symbol=target,
+                        target_key=relation.target_key,
+                        candidate_symbol_ids=candidate_ids,
+                        is_cycle=is_cycle,
+                    )
+                )
+                if next_symbol is None or is_cycle:
+                    continue
+                if next_symbol.symbol_id in nodes:
+                    continue
+                if len(nodes) >= node_limit:
+                    limit_reached = True
+                    continue
+                nodes[next_symbol.symbol_id] = H4DependencyNode(
+                    symbol=next_symbol,
+                    depth=depth + 1,
+                )
+                queue.append((next_symbol, depth + 1, (*path, next_symbol.symbol_id)))
+
+        ordered_nodes = tuple(
+            sorted(
+                nodes.values(),
+                key=lambda node: (node.depth, _symbol_sort_key(node.symbol)),
+            )
+        )
+        ordered_edges = tuple(sorted(edges, key=_edge_sort_key))
+        return H4DependencyWalk(
+            seed_symbol_id=seed.symbol_id,
+            direction=direction,
+            max_depth=max_depth,
+            node_limit=node_limit,
+            nodes=ordered_nodes,
+            edges=ordered_edges,
+            cycles=tuple(cycles),
+            limit_reached=limit_reached,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DescribeService:
+    """Produce DTOs deterministas para descripcion de componentes H4.
+
+    El servicio resuelve el objeto, consume `DependencyWalkService` para
+    dependencias y consumidores, y opcionalmente agrega contexto RAG o una
+    sintesis LLM. El LLM no participa en la seleccion de relaciones.
+    """
+
+    repository: SQLiteReverseEngineeringRepository
+    dependency_walk_service: DependencyWalkService
+    search_service: Any | None = None
+    context_builder: Any | None = None
+    llm_provider: LlmProviderPort | None = None
+    llm_timeout_seconds: float = 30.0
+
+    def describe(self, request: DescribeRequest) -> H4ComponentDescription:
+        """Describe un componente tecnico desde simbolos y relaciones H4.
+
+        Args:
+            request: Parametros de resolucion, profundidad y uso opcional de
+                RAG o LLM.
+
+        Returns:
+            DTO con identificacion, relaciones relevantes, evidencia,
+            inferencias, puntos por confirmar y limitaciones.
+        """
+        resolution = _resolve_h4_object(self.repository, request.target)
+        if resolution.symbol is None:
+            return _unresolved_description(resolution)
+
+        outgoing = self.dependency_walk_service.walk(
+            resolution.symbol.symbol_id,
+            direction=H4DependencyDirection.OUTGOING,
+            max_depth=request.depth,
+        )
+        incoming = self.dependency_walk_service.walk(
+            resolution.symbol.symbol_id,
+            direction=H4DependencyDirection.INCOMING,
+            max_depth=request.depth,
+        )
+        evidence = _walk_evidence((*outgoing.edges, *incoming.edges))
+        to_confirm = _to_confirm_from_edges((*outgoing.edges, *incoming.edges))
+        limitations = _walk_limitations(outgoing) + _walk_limitations(incoming)
+        rag_sources = _rag_sources(
+            query=f"describe {resolution.symbol.normalized_name}",
+            include_rag=request.include_rag,
+            search_service=self.search_service,
+            context_builder=self.context_builder,
+        )
+        responsibilities = _component_responsibilities(
+            resolution.symbol,
+            outgoing,
+            incoming,
+        )
+        deterministic_summary = _describe_summary(
+            resolution.symbol,
+            outgoing,
+            incoming,
+        )
+        summary, no_llm, llm_limitations = _maybe_llm_summary(
+            deterministic_summary,
+            request.no_llm,
+            self.llm_provider,
+            self.llm_timeout_seconds,
+        )
+        return H4ComponentDescription(
+            resolution=resolution,
+            outgoing=outgoing,
+            incoming=incoming,
+            responsibilities=responsibilities,
+            evidence=evidence,
+            inferences=_description_inferences(outgoing, incoming),
+            to_confirm=to_confirm,
+            limitations=(*limitations, *llm_limitations),
+            rag_sources=rag_sources,
+            summary=summary,
+            no_llm=no_llm,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ImpactService:
+    """Produce DTOs deterministas para analisis de impacto H4.
+
+    El servicio usa exclusivamente `DependencyWalkService` para seleccionar
+    nodos y aristas de impacto. RAG y LLM pueden sintetizar evidencia, pero no
+    agregan ni remueven elementos del impacto.
+    """
+
+    repository: SQLiteReverseEngineeringRepository
+    dependency_walk_service: DependencyWalkService
+    search_service: Any | None = None
+    context_builder: Any | None = None
+    llm_provider: LlmProviderPort | None = None
+    llm_timeout_seconds: float = 30.0
+
+    def analyze(self, request: ImpactRequest) -> H4ImpactAnalysis:
+        """Analiza impacto basico desde relaciones H4 persistidas.
+
+        Args:
+            request: Parametros de resolucion, direccion, profundidad, limites
+                y uso opcional de RAG o LLM.
+
+        Returns:
+            DTO con consumidores, dependencias, indirectos, ciclos, riesgos,
+            puntos por confirmar, evidencia y limitaciones.
+        """
+        resolution = _resolve_h4_object(self.repository, request.target)
+        if resolution.symbol is None:
+            return _unresolved_impact(resolution)
+
+        walk = self.dependency_walk_service.walk(
+            resolution.symbol.symbol_id,
+            direction=request.direction,
+            max_depth=request.depth,
+            node_limit=request.node_limit,
+            filters=request.filters,
+        )
+        consumers = tuple(
+            edge for edge in walk.edges if edge.direction == H4DependencyDirection.INCOMING
+        )
+        dependencies = tuple(
+            edge for edge in walk.edges if edge.direction == H4DependencyDirection.OUTGOING
+        )
+        indirect = tuple(edge for edge in walk.edges if edge.depth > 1)
+        cross_technology = _cross_technology_edges(walk.edges)
+        risks = _impact_risks(walk)
+        to_confirm = _to_confirm_from_edges(walk.edges)
+        limitations = _walk_limitations(walk)
+        rag_sources = _rag_sources(
+            query=f"impact {resolution.symbol.normalized_name}",
+            include_rag=request.include_rag,
+            search_service=self.search_service,
+            context_builder=self.context_builder,
+        )
+        deterministic_summary = _impact_summary(resolution.symbol, walk)
+        summary, no_llm, llm_limitations = _maybe_llm_summary(
+            deterministic_summary,
+            request.no_llm,
+            self.llm_provider,
+            self.llm_timeout_seconds,
+        )
+        return H4ImpactAnalysis(
+            resolution=resolution,
+            walk=walk,
+            consumers=consumers,
+            dependencies=dependencies,
+            indirect=indirect,
+            cross_technology=cross_technology,
+            risks=risks,
+            to_confirm=to_confirm,
+            evidence=_walk_evidence(walk.edges),
+            limitations=(*limitations, *llm_limitations),
+            rag_sources=rag_sources,
+            summary=summary,
+            no_llm=no_llm,
+        )
+
+
 def relation_from_reference(
     reference: H4Reference,
     symbols: tuple[H4Symbol, ...],
@@ -667,6 +998,397 @@ def _symbols_from_sources(sources: tuple[H4SymbolSource, ...]) -> tuple[H4Symbol
         symbol = symbol_from_source(source)
         by_id.setdefault(symbol.symbol_id, symbol)
     return tuple(by_id.values())
+
+
+def _resolve_h4_object(
+    repository: SQLiteReverseEngineeringRepository,
+    request: H4ObjectRequest,
+) -> H4ObjectResolution:
+    """Resuelve un objeto H4 por ID o nombre sin elegir candidatos ambiguos."""
+    if request.symbol_id is not None:
+        symbol = repository.get_symbol(request.symbol_id)
+        if symbol is not None and symbol.status == H4SymbolStatus.ACTIVE:
+            return H4ObjectResolution(query=request.query, symbol=symbol)
+        return H4ObjectResolution(query=request.query, status="not_found")
+
+    normalized_query = normalize_symbol_name(request.query)
+    requested_type = request.symbol_type.lower() if request.symbol_type else None
+    candidates = tuple(
+        symbol
+        for symbol in repository.active_symbols()
+        if (
+            symbol.normalized_name == normalized_query
+            or symbol.original_name.lower() == request.query.lower()
+        )
+        and (requested_type is None or symbol.symbol_type == requested_type)
+    )
+    candidates = tuple(sorted(candidates, key=_symbol_sort_key))
+    if not candidates:
+        return H4ObjectResolution(query=request.query, status="not_found")
+    if len(candidates) > 1:
+        return H4ObjectResolution(
+            query=request.query,
+            candidates=candidates,
+            status="ambiguous",
+        )
+    return H4ObjectResolution(query=request.query, symbol=candidates[0])
+
+
+def _unresolved_description(resolution: H4ObjectResolution) -> H4ComponentDescription:
+    """Construye una descripcion para objetos inexistentes o ambiguos."""
+    if resolution.status == "ambiguous":
+        summary = "Objeto ambiguo; se requiere seleccionar un candidato explicito."
+        limitations = ("multiples simbolos compatibles",)
+        to_confirm = tuple(symbol.normalized_name for symbol in resolution.candidates)
+    else:
+        summary = "Objeto no encontrado en el catalogo H4 vigente."
+        limitations = ("sin simbolo activo para la consulta",)
+        to_confirm = ()
+    return H4ComponentDescription(
+        resolution=resolution,
+        to_confirm=to_confirm,
+        limitations=limitations,
+        summary=summary,
+        no_llm=True,
+    )
+
+
+def _unresolved_impact(resolution: H4ObjectResolution) -> H4ImpactAnalysis:
+    """Construye un impacto para objetos inexistentes o ambiguos."""
+    if resolution.status == "ambiguous":
+        summary = "Impacto no calculado porque el objeto es ambiguo."
+        limitations = ("multiples simbolos compatibles",)
+        to_confirm = tuple(symbol.normalized_name for symbol in resolution.candidates)
+    else:
+        summary = "Impacto no calculado porque el objeto no existe en H4."
+        limitations = ("sin simbolo activo para la consulta",)
+        to_confirm = ()
+    return H4ImpactAnalysis(
+        resolution=resolution,
+        to_confirm=to_confirm,
+        limitations=limitations,
+        summary=summary,
+        no_llm=True,
+    )
+
+
+def _component_responsibilities(
+    symbol: H4Symbol,
+    outgoing: H4DependencyWalk,
+    incoming: H4DependencyWalk,
+) -> tuple[str, ...]:
+    """Deriva responsabilidades descriptivas desde relaciones visibles."""
+    responsibilities = [
+        f"{symbol.symbol_type} {symbol.normalized_name} en tecnologia {symbol.technology}",
+    ]
+    if outgoing.edges:
+        responsibilities.append(f"declara {len(outgoing.edges)} dependencias salientes")
+    if incoming.edges:
+        responsibilities.append(f"tiene {len(incoming.edges)} consumidores detectados")
+    return tuple(responsibilities)
+
+
+def _description_inferences(
+    outgoing: H4DependencyWalk,
+    incoming: H4DependencyWalk,
+) -> tuple[str, ...]:
+    """Genera inferencias conservadoras para describe."""
+    inferences = []
+    if outgoing.edges:
+        inferences.append("las dependencias salientes sugieren colaboraciones tecnicas")
+    if incoming.edges:
+        inferences.append("los consumidores detectados sugieren superficie de cambio")
+    return tuple(inferences)
+
+
+def _walk_evidence(edges: Iterable[H4DependencyEdge]) -> tuple[H4EvidenceItem, ...]:
+    """Convierte aristas de dependencia en evidencia trazable."""
+    return tuple(
+        H4EvidenceItem(
+            source="relation",
+            detail=(
+                f"{edge.relation.relation_type} "
+                f"{edge.relation.resolution_status.value}"
+            ),
+            reference_id=edge.relation.reference_id,
+            relation_id=edge.relation.relation_id,
+            chunk_id=edge.relation.evidence_chunk_id,
+        )
+        for edge in edges
+    )
+
+
+def _to_confirm_from_edges(edges: Iterable[H4DependencyEdge]) -> tuple[str, ...]:
+    """Extrae puntos por confirmar desde relaciones no resueltas exactamente."""
+    values = []
+    for edge in edges:
+        if edge.relation.resolution_status in {
+            H4ResolutionStatus.AMBIGUOUS,
+            H4ResolutionStatus.UNRESOLVED,
+            H4ResolutionStatus.DYNAMIC,
+            H4ResolutionStatus.EXTERNAL,
+        }:
+            values.append(edge.target_key or edge.relation.target_key or "destino sin resolver")
+    return tuple(dict.fromkeys(values))
+
+
+def _walk_limitations(walk: H4DependencyWalk) -> tuple[str, ...]:
+    """Resume limites y ciclos observados en un recorrido."""
+    limitations = []
+    if walk.limit_reached:
+        limitations.append(f"limite de nodos alcanzado: {walk.node_limit}")
+    if walk.cycles:
+        limitations.append(f"ciclos detectados: {len(walk.cycles)}")
+    if walk.max_depth == 0:
+        limitations.append("profundidad 0: solo se incluye la semilla")
+    return tuple(limitations)
+
+
+def _cross_technology_edges(
+    edges: Iterable[H4DependencyEdge],
+) -> tuple[H4DependencyEdge, ...]:
+    """Selecciona relaciones que cruzan tecnologias entre origen y destino."""
+    return tuple(
+        edge
+        for edge in edges
+        if edge.source_symbol is not None
+        and edge.target_symbol is not None
+        and edge.source_symbol.technology != edge.target_symbol.technology
+    )
+
+
+def _impact_risks(walk: H4DependencyWalk) -> tuple[str, ...]:
+    """Deriva riesgos basicos desde el recorrido determinista."""
+    risks = []
+    if any(edge.direction == H4DependencyDirection.INCOMING for edge in walk.edges):
+        risks.append("hay consumidores que podrian requerir verificacion")
+    if _cross_technology_edges(walk.edges):
+        risks.append("existen cruces entre tecnologias")
+    if _to_confirm_from_edges(walk.edges):
+        risks.append("hay relaciones por confirmar")
+    if walk.cycles:
+        risks.append("hay ciclos de dependencia")
+    if walk.limit_reached:
+        risks.append("el impacto puede estar truncado por limite de nodos")
+    return tuple(risks)
+
+
+def _describe_summary(
+    symbol: H4Symbol,
+    outgoing: H4DependencyWalk,
+    incoming: H4DependencyWalk,
+) -> str:
+    """Construye una sintesis determinista para describe."""
+    return (
+        f"{symbol.normalized_name} es un {symbol.symbol_type} {symbol.technology}. "
+        f"Dependencias salientes: {len(outgoing.edges)}. "
+        f"Consumidores: {len(incoming.edges)}."
+    )
+
+
+def _impact_summary(symbol: H4Symbol, walk: H4DependencyWalk) -> str:
+    """Construye una sintesis determinista para impact."""
+    return (
+        f"Impacto basico de {symbol.normalized_name}: "
+        f"{len(walk.nodes)} nodos y {len(walk.edges)} relaciones evaluadas "
+        f"hasta profundidad {walk.max_depth}."
+    )
+
+
+def _rag_sources(
+    *,
+    query: str,
+    include_rag: bool,
+    search_service: Any | None,
+    context_builder: Any | None,
+) -> tuple[str, ...]:
+    """Recupera fuentes RAG complementarias sin seleccionar impacto."""
+    if not include_rag or search_service is None or context_builder is None:
+        return ()
+    search = search_service.search(
+        SearchRequest(
+            query=query,
+            mode=RetrievalMode.KEYWORD,
+            filters=RetrievalFilter(),
+            top_k=3,
+            candidate_k=3,
+            similarity_threshold=0.0,
+        )
+    )
+    context = context_builder.build(search.candidates)
+    return tuple(
+        f"{source.source_id}:{source.candidate.chunk_id}"
+        for source in context.sources
+    )
+
+
+def _maybe_llm_summary(
+    deterministic_summary: str,
+    no_llm: bool,
+    llm_provider: LlmProviderPort | None,
+    timeout_seconds: float,
+) -> tuple[str, bool, tuple[str, ...]]:
+    """Sintetiza con LLM opcional y conserva fallback determinista."""
+    if no_llm or llm_provider is None:
+        return deterministic_summary, True, ()
+    prompt = (
+        "Sintetiza en espanol sin agregar nodos ni relaciones no provistas.\n"
+        f"Datos deterministas:\n{deterministic_summary}\n"
+    )
+    try:
+        summary = llm_provider.generate(
+            prompt=prompt,
+            timeout_seconds=timeout_seconds,
+        )
+    except Exception:
+        return deterministic_summary, True, ("LLM no disponible; salida deterministica",)
+    if not summary.strip():
+        return deterministic_summary, True, ("LLM sin contenido; salida deterministica",)
+    return summary.strip(), False, ()
+
+
+def _validate_dependency_limits(*, max_depth: int, node_limit: int) -> None:
+    """Valida los limites contractuales del recorrido de dependencias."""
+    if isinstance(max_depth, bool) or max_depth < 0 or max_depth > 5:
+        raise ValueError("max_depth debe estar entre 0 y 5.")
+    if isinstance(node_limit, bool) or node_limit <= 0:
+        raise ValueError("node_limit debe ser mayor que 0.")
+
+
+def _filter_relations(
+    relations: Iterable[H4Relation],
+    filters: H4DependencyFilters,
+    repository: SQLiteReverseEngineeringRepository,
+) -> tuple[H4Relation, ...]:
+    """Aplica filtros de navegacion sobre relaciones activas adyacentes."""
+    accepted = []
+    for relation in relations:
+        if (
+            filters.relation_type is not None
+            and relation.relation_type != filters.relation_type
+        ):
+            continue
+        if (
+            filters.resolution_status is not None
+            and relation.resolution_status != filters.resolution_status
+        ):
+            continue
+        if (
+            filters.min_confidence is not None
+            and _confidence_rank(relation.confidence)
+            < _confidence_rank(filters.min_confidence)
+        ):
+            continue
+        if filters.technology is not None and not _relation_has_technology(
+            relation,
+            filters.technology,
+            repository,
+        ):
+            continue
+        accepted.append(relation)
+    return tuple(accepted)
+
+
+def _relation_has_technology(
+    relation: H4Relation,
+    technology: str,
+    repository: SQLiteReverseEngineeringRepository,
+) -> bool:
+    """Comprueba tecnologia contra los simbolos disponibles de la relacion."""
+    expected = technology.strip().lower()
+    symbols = (
+        _relation_symbol(relation.source_symbol_id, repository),
+        _relation_symbol(relation.target_symbol_id, repository),
+    )
+    return any(symbol is not None and symbol.technology == expected for symbol in symbols)
+
+
+def _confidence_rank(confidence: Confidence) -> int:
+    """Convierte `Confidence` en orden numerico para filtros minimos."""
+    return {
+        Confidence.LOW: 1,
+        Confidence.MEDIUM: 2,
+        Confidence.HIGH: 3,
+    }[confidence]
+
+
+def _edge_direction(
+    current_symbol_id: str,
+    relation: H4Relation,
+) -> H4DependencyDirection:
+    """Calcula direccion de una arista desde el simbolo que se esta expandiendo."""
+    if (
+        relation.target_symbol_id == current_symbol_id
+        and relation.source_symbol_id != current_symbol_id
+    ):
+        return H4DependencyDirection.INCOMING
+    return H4DependencyDirection.OUTGOING
+
+
+def _relation_symbol(
+    symbol_id: str | None,
+    repository: SQLiteReverseEngineeringRepository,
+) -> H4Symbol | None:
+    """Lee un simbolo activo asociado a una relacion, si existe."""
+    if symbol_id is None:
+        return None
+    symbol = repository.get_symbol(symbol_id)
+    if symbol is None or symbol.status != H4SymbolStatus.ACTIVE:
+        return None
+    return symbol
+
+
+def _candidate_symbol_ids(
+    relation: H4Relation,
+    repository: SQLiteReverseEngineeringRepository,
+) -> tuple[str, ...]:
+    """Lee candidatos visibles solo para relaciones ambiguas."""
+    if relation.resolution_status != H4ResolutionStatus.AMBIGUOUS:
+        return ()
+    return tuple(
+        candidate.candidate_symbol_id
+        for candidate in repository.relation_candidates(relation.relation_id)
+    )
+
+
+def _next_symbol(
+    current_symbol_id: str,
+    relation: H4Relation,
+    source: H4Symbol | None,
+    target: H4Symbol | None,
+) -> H4Symbol | None:
+    """Devuelve el simbolo vecino que debe entrar a la cola BFS."""
+    if relation.source_symbol_id == current_symbol_id:
+        return target
+    if relation.target_symbol_id == current_symbol_id:
+        return source
+    return None
+
+
+def _symbol_sort_key(symbol: H4Symbol) -> tuple[str, str, str, str]:
+    """Clave canonica de orden para simbolos en resultados de dependencia."""
+    return (
+        symbol.technology,
+        symbol.normalized_name,
+        symbol.symbol_type,
+        symbol.symbol_id,
+    )
+
+
+def _edge_sort_key(edge: H4DependencyEdge) -> tuple[int, str, str, str, str]:
+    """Clave canonica de orden para aristas de dependencia."""
+    neighbor = (
+        edge.target_symbol
+        if edge.direction == H4DependencyDirection.OUTGOING
+        else edge.source_symbol
+    )
+    return (
+        edge.depth,
+        edge.relation.relation_type,
+        neighbor.technology if neighbor is not None else "",
+        neighbor.normalized_name if neighbor is not None else edge.target_key or "",
+        edge.relation.relation_id,
+    )
 
 
 def _references_from_sources(

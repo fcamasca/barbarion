@@ -8,6 +8,7 @@ from barbarion.domain.reverse_engineering import (
     H4AnalysisRunMode,
     H4AnalysisRunStatus,
     H4Classification,
+    H4DependencyDirection,
     H4Reference,
     H4Relation,
     H4ResolutionStatus,
@@ -116,3 +117,11 @@ def test_h4_repository_inserts_and_reads_run_symbols_references_and_relations(
     assert repository.get_symbol(symbol_id) == symbol
     assert repository.get_reference(reference_id) == reference
     assert repository.get_relation(relation_id) == relation
+    assert repository.active_relations_for_symbol(
+        symbol_id,
+        direction=H4DependencyDirection.INCOMING,
+    ) == (relation,)
+    assert repository.active_relations_for_symbol(
+        symbol_id,
+        direction=H4DependencyDirection.OUTGOING,
+    ) == ()

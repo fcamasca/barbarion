@@ -72,6 +72,14 @@ class H4RelationStatus(StrEnum):
     DELETED = "deleted"
 
 
+class H4DependencyDirection(StrEnum):
+    """Direccion calculada para recorrer dependencias desde una semilla."""
+
+    INCOMING = "incoming"
+    OUTGOING = "outgoing"
+    BOTH = "both"
+
+
 @dataclass(frozen=True, slots=True)
 class H4AnalysisRunRecord:
     """Resumen persistido de una corrida H4.
@@ -284,6 +292,196 @@ class H4RelationCandidate:
         _require_sha256(self.candidate_symbol_id, "candidate_symbol_id")
         _require_positive(self.rank, "rank")
         _require_non_empty(self.reason, "reason")
+
+
+@dataclass(frozen=True, slots=True)
+class H4DependencyFilters:
+    """Filtros aplicables al recorrido de dependencias H4.
+
+    Los filtros se evaluan sobre relaciones activas ya persistidas. `technology`
+    se compara contra los simbolos origen o destino disponibles; las relaciones
+    sin simbolo destino siguen siendo visibles si el simbolo origen coincide.
+    """
+
+    technology: str | None = None
+    relation_type: str | None = None
+    resolution_status: H4ResolutionStatus | None = None
+    min_confidence: Confidence | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class H4DependencyNode:
+    """Nodo visible en un recorrido BFS de dependencias.
+
+    Attributes:
+        symbol: Simbolo activo alcanzado por el recorrido.
+        depth: Distancia desde el simbolo semilla.
+    """
+
+    symbol: H4Symbol
+    depth: int
+
+    def __post_init__(self) -> None:
+        """Valida que la profundidad del nodo sea no negativa."""
+        _require_non_negative(self.depth, "depth")
+
+
+@dataclass(frozen=True, slots=True)
+class H4DependencyEdge:
+    """Arista visible derivada de una relacion H4 activa.
+
+    La arista conserva la relacion original y la direccion calculada desde el
+    nodo expandido. Si la relacion no tiene destino resuelto, `target_symbol`
+    queda en `None` y `target_key` permite mostrar la hoja unresolved, ambiguous,
+    dynamic o external.
+    """
+
+    relation: H4Relation
+    depth: int
+    direction: H4DependencyDirection
+    source_symbol: H4Symbol | None
+    target_symbol: H4Symbol | None
+    target_key: str | None
+    candidate_symbol_ids: tuple[str, ...] = ()
+    is_cycle: bool = False
+
+    def __post_init__(self) -> None:
+        """Valida profundidad y candidatos de una arista de dependencia."""
+        _require_non_negative(self.depth, "depth")
+        for candidate_symbol_id in self.candidate_symbol_ids:
+            _require_sha256(candidate_symbol_id, "candidate_symbol_id")
+
+
+@dataclass(frozen=True, slots=True)
+class H4DependencyWalk:
+    """Resultado completo de un recorrido BFS de dependencias H4.
+
+    `nodes` contiene simbolos activos alcanzados hasta el limite solicitado.
+    `edges` conserva tambien hojas unresolved, ambiguous, dynamic y external,
+    porque esas relaciones son evidencia relevante aunque no agreguen nodos al
+    recorrido.
+    """
+
+    seed_symbol_id: str
+    direction: H4DependencyDirection
+    max_depth: int
+    node_limit: int
+    nodes: tuple[H4DependencyNode, ...]
+    edges: tuple[H4DependencyEdge, ...]
+    cycles: tuple[tuple[str, ...], ...] = ()
+    limit_reached: bool = False
+
+    def __post_init__(self) -> None:
+        """Valida limites y la identidad de la semilla."""
+        _require_sha256(self.seed_symbol_id, "seed_symbol_id")
+        _require_non_negative(self.max_depth, "max_depth")
+        _require_positive(self.node_limit, "node_limit")
+
+
+@dataclass(frozen=True, slots=True)
+class H4ObjectResolution:
+    """Resultado determinista de resolver un objeto tecnico solicitado.
+
+    El resultado evita elegir automaticamente cuando hay multiples simbolos
+    compatibles. Los servicios `describe` e `impact` solo continuan con walks
+    cuando `symbol` esta presente.
+    """
+
+    query: str
+    symbol: H4Symbol | None = None
+    candidates: tuple[H4Symbol, ...] = ()
+    status: str = "resolved"
+
+    def __post_init__(self) -> None:
+        """Valida la consulta y el estado declarado de resolucion."""
+        _require_non_empty(self.query, "query")
+        if self.status not in {"resolved", "not_found", "ambiguous"}:
+            raise ValueError("status debe ser resolved, not_found o ambiguous.")
+
+
+@dataclass(frozen=True, slots=True)
+class H4EvidenceItem:
+    """Evidencia trazable usada por servicios H4 de descripcion e impacto.
+
+    Attributes:
+        source: Origen logico de la evidencia, por ejemplo `symbol`, `relation`
+            o `rag`.
+        detail: Texto breve y estable que puede mostrarse en salidas futuras.
+        reference_id: Identificador opcional de referencia H4.
+        relation_id: Identificador opcional de relacion H4.
+        chunk_id: Chunk opcional asociado a la evidencia.
+    """
+
+    source: str
+    detail: str
+    reference_id: str | None = None
+    relation_id: str | None = None
+    chunk_id: str | None = None
+
+    def __post_init__(self) -> None:
+        """Valida origen, detalle e identificadores opcionales."""
+        _require_non_empty(self.source, "source")
+        _require_non_empty(self.detail, "detail")
+        if self.reference_id is not None:
+            _require_sha256(self.reference_id, "reference_id")
+        if self.relation_id is not None:
+            _require_sha256(self.relation_id, "relation_id")
+        if self.chunk_id is not None:
+            _require_non_empty(self.chunk_id, "chunk_id")
+
+
+@dataclass(frozen=True, slots=True)
+class H4ComponentDescription:
+    """DTO determinista producido por el servicio `describe`.
+
+    Incluye resolucion del objeto, relaciones relevantes, evidencia,
+    limitaciones y una sintesis opcional. Cuando `no_llm` es verdadero, la
+    sintesis proviene solo de datos estructurados.
+    """
+
+    resolution: H4ObjectResolution
+    outgoing: H4DependencyWalk | None = None
+    incoming: H4DependencyWalk | None = None
+    responsibilities: tuple[str, ...] = ()
+    evidence: tuple[H4EvidenceItem, ...] = ()
+    inferences: tuple[str, ...] = ()
+    to_confirm: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+    rag_sources: tuple[str, ...] = ()
+    summary: str = ""
+    no_llm: bool = True
+
+    def __post_init__(self) -> None:
+        """Valida que la sintesis no quede vacia."""
+        _require_non_empty(self.summary, "summary")
+
+
+@dataclass(frozen=True, slots=True)
+class H4ImpactAnalysis:
+    """DTO determinista producido por el servicio `impact`.
+
+    El impacto se deriva de recorridos de dependencias, no de similitud
+    semantica. RAG y LLM pueden aportar evidencia o sintesis, pero no cambian
+    los nodos ni aristas seleccionados.
+    """
+
+    resolution: H4ObjectResolution
+    walk: H4DependencyWalk | None = None
+    consumers: tuple[H4DependencyEdge, ...] = ()
+    dependencies: tuple[H4DependencyEdge, ...] = ()
+    indirect: tuple[H4DependencyEdge, ...] = ()
+    cross_technology: tuple[H4DependencyEdge, ...] = ()
+    risks: tuple[str, ...] = ()
+    to_confirm: tuple[str, ...] = ()
+    evidence: tuple[H4EvidenceItem, ...] = ()
+    limitations: tuple[str, ...] = ()
+    rag_sources: tuple[str, ...] = ()
+    summary: str = ""
+    no_llm: bool = True
+
+    def __post_init__(self) -> None:
+        """Valida que la sintesis de impacto no quede vacia."""
+        _require_non_empty(self.summary, "summary")
 
 
 def normalize_symbol_name(value: str) -> str:

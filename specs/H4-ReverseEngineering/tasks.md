@@ -136,13 +136,13 @@ Estados iniciales: `pendiente`.
 
 ### H4-T12 - Cierre tecnico, evaluacion y aceptacion H4
 
-**Estado:** completado y aceptado.  
+**Estado:** completado y aceptado.
 **Objetivo:** ejecutar suite completa, smoke, tres casos representativos, metricas, trazabilidad y evidencia final de aceptacion.  
 **Modulos estimados:** `tests/fixtures/`, `reports/h4/`, `specs/H4-ReverseEngineering/acceptance.md` durante la ejecucion de esta tarea, no antes.  
 **Requisitos:** H4-RF-012, H4-RNF-001, H4-RNF-002, H4-RNF-005, H4-RNF-008, H4-RNF-010, H4-RNF-011, H4-RNF-012.  
 **Dependencias:** H4-T01 a H4-T11.  
 **Pruebas exigidas:** suite completa, smoke instalado, casos Oracle, PowerBuilder y cruce PB-Oracle, benchmark de simbolos/relaciones, no regresion H1-H3, scan de datos sensibles.  
-**Condicion de finalizacion:** evidencia final registrada con comandos, metricas, limitaciones, falsos positivos/negativos conocidos y revision humana recibida.  
+**Condicion de finalizacion:** evidencia final registrada con comandos, metricas, limitaciones, falsos positivos/negativos conocidos y revision humana recibida.
 **Checkpoint:** `python -m pytest --basetemp .pytest-tmp/h4` y smoke CLI en venv editable.
 
 ## 3. Orden de implementacion

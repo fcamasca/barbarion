@@ -207,6 +207,37 @@ Respuesta basada en la evidencia recuperada. [F1]
 - ...
 ```
 
+### 12. Primer analisis reverse engineering
+
+```bash
+barbarion analyze --dry-run
+barbarion analyze
+```
+
+### 13. Inventario tecnico
+
+```bash
+barbarion inventory --format text
+```
+
+### 14. Ficha de componente
+
+```bash
+barbarion describe order_total --no-llm
+```
+
+### 15. Impacto tecnico
+
+```bash
+barbarion impact order_total --depth 2 --no-llm
+```
+
+### 16. Estadisticas locales
+
+```bash
+barbarion stats
+```
+
 ## Configuración
 
 El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles para la base local, la ingesta H2 y la configuración base H3. Para crear una configuración local:
@@ -250,39 +281,19 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion config show` | Valida y muestra la configuración efectiva | Ninguno |
 | `barbarion doctor` | Inicializa recursos y diagnostica el entorno | Crea directorios, SQLite y log si faltan |
 | `barbarion ingest` | Ejecuta ingesta incremental del corpus configurado | Lee corpus y escribe metadata/chunks en SQLite |
-| `barbarion ingest --full` | Reprocesa archivos compatibles sin truncar el corpus previo | Escribe metadata/chunks en SQLite |
-| `barbarion ingest --path RUTA` | Usa roots ad hoc; puede repetirse | Escribe metadata/chunks en SQLite |
-| `barbarion ingest --stats` | Muestra métricas e inventario persistidos | Ninguno |
-| `barbarion analyze` | Actualiza símbolos y relaciones de reverse engineering desde chunks vigentes | Escribe catálogo técnico y runs en SQLite |
-| `barbarion inventory --format text|json|markdown` | Consulta inventario técnico persistido | Ninguno |
-| `barbarion describe OBJETO --no-llm` | Genera ficha técnica determinista de un componente | Ninguno |
-| `barbarion impact OBJETO --depth 2 --no-llm` | Analiza impacto básico desde relaciones persistidas | Ninguno |
 | `barbarion index` | Indexa chunks vigentes para RAG con progreso por etapas | Escribe manifests, estados y vectores locales |
-| `barbarion index --dry-run` | Muestra alcance sin escribir ni llamar modelos | Ninguno |
-| `barbarion reindex --full` | Reindexa todos los chunks vigentes con progreso por etapas | Escribe estados y vectores locales |
+| `barbarion reindex` | Reconstruye total o parcialmente el indice RAG | Escribe estados y vectores locales |
 | `barbarion search "consulta"` | Recupera evidencia RAG | Registra métricas de consulta |
 | `barbarion ask "pregunta"` | Responde con evidencia y citas | Registra métricas de consulta/contexto |
-| `barbarion ask "pregunta" --no-llm` | Muestra contexto sin invocar LLM | Registra métricas de consulta/contexto |
 | `barbarion embeddings` | Muestra manifests, versiones y conteos | Ninguno |
-| `barbarion embeddings --errors` | Muestra errores de indexación persistidos en SQLite | Ninguno |
+| `barbarion analyze` | Actualiza simbolos y relaciones de reverse engineering desde chunks vigentes | Escribe catalogo tecnico y runs en SQLite |
+| `barbarion inventory` | Consulta inventario tecnico persistido | Ninguno |
+| `barbarion describe OBJETO` | Genera ficha tecnica de un componente | Ninguno |
+| `barbarion impact OBJETO` | Analiza impacto tecnico desde relaciones persistidas | Ninguno |
 | `barbarion stats` | Muestra estadísticas de ingesta + RAG + reverse engineering | Ninguno |
 | `barbarion generate-report` | Genera evidencia técnica RAG en `reports/rag` | Escribe reportes locales |
 
-`index`, `reindex` y `analyze` manejan Ctrl+C como cancelacion segura: cierran la corrida como `interrupted`, muestran procesados/pendientes y permiten continuar luego con la logica incremental existente.
-
-Los comandos `inventory`, `describe` e `impact` aceptan `--debug` para enviar métricas operativas a `stderr` sin contaminar salidas `json` o `markdown`. Estas métricas incluyen duración, estado de resolución, conteos de nodos/aristas, evidencia y limitaciones según corresponda.
-
-`doctor` comprueba, en orden:
-
-1. versión de Python;
-2. configuración;
-3. directorio de datos;
-4. directorio de salida;
-5. directorio de logs;
-6. SQLite;
-7. disponibilidad de Ollama mediante `GET /api/tags`.
-
-Los resultados usan `PASS`, `WARN` y `FAIL`. El detalle, los errores, la ayuda y los logs se presentan en español.
+La referencia completa de la CLI esta en [`docs/CLI.md`](docs/CLI.md).
 
 ## Directorios y archivos locales
 
@@ -297,17 +308,6 @@ logs/
 ```
 
 `data/`, `output/`, `logs/`, `barbarion.toml`, bases SQLite y `.venv/` están excluidos de Git.
-
-## Códigos de salida
-
-| Código | Significado |
-|---:|---|
-| `0` | Comando completado; todos los checks requeridos pasan. Puede haber advertencias opcionales |
-| `1` | `doctor` encontró un fallo requerido, una ingesta terminó con errores recuperables o ocurrió un error operativo |
-| `2` | Argumentos o configuración inválidos |
-| `130` | Operación interrumpida por el usuario |
-
-Los errores esperados no muestran traceback.
 
 ## Pruebas
 
@@ -355,8 +355,8 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 - [Roadmap del MVP](docs/ROADMAP.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Decisiones técnicas](docs/DECISIONS.md)
+- [Referencia CLI](docs/CLI.md)
 - [Operación de ingesta H2](docs/INGESTION.md)
-- [Operación RAG H3](docs/RAG.md)
 - [Aceptación H3](specs/H3-RAG/acceptance.md)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)

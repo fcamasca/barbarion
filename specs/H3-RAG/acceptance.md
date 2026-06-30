@@ -154,7 +154,7 @@ Este hardening conserva SQLite + sqlite-vec, el algoritmo RAG, los embeddings y 
 - H3-T01 a H3-T31: completados.
 - H3-REQ-001 a H3-REQ-023: cubiertos por implementacion, tests, dataset o reportes.
 - NFR locales: operacion on-premise, sin servicios cloud, sin telemetria remota y compatible con Windows/Linux a nivel de rutas y CLI.
-- Documentacion operativa: [`docs/RAG.md`](../../docs/RAG.md).
+- Documentacion operativa vigente: [`docs/CLI.md`](../../docs/CLI.md).
 - Reportes de cierre: [`reports/h3`](../../reports/h3).
 
 ## 10. Conclusion

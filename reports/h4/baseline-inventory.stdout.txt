@@ -1,0 +1,59 @@
+{
+  "template_version": "inventory.v1",
+  "filters": {
+    "technology": null,
+    "type": null,
+    "name": null,
+    "path": null,
+    "status": null,
+    "confidence": null
+  },
+  "summary": {
+    "files": 2,
+    "symbols": 2,
+    "references": 1,
+    "relations": 1
+  },
+  "items": [
+    {
+      "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+      "original_name": "caller",
+      "normalized_name": "caller",
+      "type": "procedure",
+      "technology": "oracle",
+      "status": "active",
+      "confidence": "high",
+      "file_id": 1,
+      "relative_path": "oracle/pkg_caller.pkb",
+      "chunk_id": "chunk-1",
+      "start_line": 1,
+      "end_line": 1,
+      "container_name": "pkg_caller",
+      "counts": {
+        "references": 1,
+        "outgoing_relations": 1,
+        "incoming_relations": 0
+      }
+    },
+    {
+      "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+      "original_name": "procesar",
+      "normalized_name": "procesar",
+      "type": "procedure",
+      "technology": "oracle",
+      "status": "active",
+      "confidence": "high",
+      "file_id": 2,
+      "relative_path": "oracle/pkg_target.pkb",
+      "chunk_id": "chunk-2",
+      "start_line": 1,
+      "end_line": 1,
+      "container_name": "pkg_target",
+      "counts": {
+        "references": 0,
+        "outgoing_relations": 0,
+        "incoming_relations": 1
+      }
+    }
+  ]
+}

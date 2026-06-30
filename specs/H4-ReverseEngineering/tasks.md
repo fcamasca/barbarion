@@ -136,7 +136,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T12 - Cierre tecnico, evaluacion y aceptacion H4
 
-**Estado:** pendiente.  
+**Estado:** pendiente de feedback humano.  
 **Objetivo:** ejecutar suite completa, smoke, tres casos representativos, metricas, trazabilidad y evidencia final de aceptacion.  
 **Modulos estimados:** `tests/fixtures/`, `reports/h4/`, `specs/H4-ReverseEngineering/acceptance.md` durante la ejecucion de esta tarea, no antes.  
 **Requisitos:** H4-RF-012, H4-RNF-001, H4-RNF-002, H4-RNF-005, H4-RNF-008, H4-RNF-010, H4-RNF-011, H4-RNF-012.  

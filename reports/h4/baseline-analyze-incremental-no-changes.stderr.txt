@@ -1,0 +1,61 @@
+Barbarion Analyze
+Ctrl+C cancela de forma segura; puedes reanudar luego.
+
+Global  [######------------------]  25%
+
+Etapa   [########################] 100%
+Seleccionando chunks
+
+Procesados : 1 / 1
+
+Nuevos       : 0
+Actualizados : 0
+Sin cambios  : 0
+Eliminados   : 0
+Errores      : 0
+Barbarion Analyze
+Ctrl+C cancela de forma segura; puedes reanudar luego.
+
+Global  [############------------]  50%
+
+Etapa   [########################] 100%
+Extrayendo reverse engineering
+
+Procesados : 2 / 2
+
+Nuevos       : 2
+Actualizados : 1
+Sin cambios  : 0
+Eliminados   : 0
+Errores      : 0
+Barbarion Analyze
+Ctrl+C cancela de forma segura; puedes reanudar luego.
+
+Global  [##################------]  75%
+
+Etapa   [########################] 100%
+Persistiendo reverse engineering
+
+Procesados : 1 / 1
+
+Nuevos       : 2
+Actualizados : 1
+Sin cambios  : 0
+Eliminados   : 0
+Errores      : 0
+Barbarion Analyze
+Ctrl+C cancela de forma segura; puedes reanudar luego.
+
+Global  [########################] 100%
+
+Etapa   [########################] 100%
+Resolviendo relaciones
+
+Procesados : 1 / 1
+
+Nuevos       : 2
+Actualizados : 1
+Sin cambios  : 1
+Eliminados   : 0
+Errores      : 0
+Progreso finalizado: completed

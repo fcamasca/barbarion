@@ -1,0 +1,9 @@
+Observabilidad reverse engineering
+comando=inventory
+format=markdown
+duration_ms=16
+files=1
+symbols=4
+references=1
+relations=2
+items=4

@@ -1,0 +1,326 @@
+{
+  "template_version": "impact.v1",
+  "resolution": {
+    "query": "procesar",
+    "status": "resolved",
+    "symbol": {
+      "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+      "original_name": "procesar",
+      "normalized_name": "procesar",
+      "type": "procedure",
+      "technology": "oracle",
+      "status": "active",
+      "confidence": "high",
+      "file_id": 2,
+      "document_id": 2,
+      "chunk_id": "chunk-2",
+      "container_name": "pkg_target",
+      "start_line": 1,
+      "end_line": 1
+    },
+    "candidates": []
+  },
+  "summary": "Impacto basico de procesar: 2 nodos y 2 relaciones evaluadas hasta profundidad 2.",
+  "no_llm": true,
+  "walk": {
+    "seed_symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+    "direction": "both",
+    "max_depth": 2,
+    "node_limit": 500,
+    "limit_reached": false,
+    "nodes": [
+      {
+        "symbol": {
+          "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+          "original_name": "procesar",
+          "normalized_name": "procesar",
+          "type": "procedure",
+          "technology": "oracle",
+          "status": "active",
+          "confidence": "high",
+          "file_id": 2,
+          "document_id": 2,
+          "chunk_id": "chunk-2",
+          "container_name": "pkg_target",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "depth": 0
+      },
+      {
+        "symbol": {
+          "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+          "original_name": "caller",
+          "normalized_name": "caller",
+          "type": "procedure",
+          "technology": "oracle",
+          "status": "active",
+          "confidence": "high",
+          "file_id": 1,
+          "document_id": 1,
+          "chunk_id": "chunk-1",
+          "container_name": "pkg_caller",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "depth": 1
+      }
+    ],
+    "edges": [
+      {
+        "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+        "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+        "relation_type": "calls",
+        "classification": "detectado",
+        "resolution_status": "resolved",
+        "confidence": "high",
+        "direction": "incoming",
+        "depth": 1,
+        "source_symbol": {
+          "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+          "original_name": "caller",
+          "normalized_name": "caller",
+          "type": "procedure",
+          "technology": "oracle",
+          "status": "active",
+          "confidence": "high",
+          "file_id": 1,
+          "document_id": 1,
+          "chunk_id": "chunk-1",
+          "container_name": "pkg_caller",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "target_symbol": {
+          "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+          "original_name": "procesar",
+          "normalized_name": "procesar",
+          "type": "procedure",
+          "technology": "oracle",
+          "status": "active",
+          "confidence": "high",
+          "file_id": 2,
+          "document_id": 2,
+          "chunk_id": "chunk-2",
+          "container_name": "pkg_target",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "target_key": "procesar",
+        "candidate_symbol_ids": [],
+        "is_cycle": false
+      },
+      {
+        "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+        "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+        "relation_type": "calls",
+        "classification": "detectado",
+        "resolution_status": "resolved",
+        "confidence": "high",
+        "direction": "outgoing",
+        "depth": 2,
+        "source_symbol": {
+          "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+          "original_name": "caller",
+          "normalized_name": "caller",
+          "type": "procedure",
+          "technology": "oracle",
+          "status": "active",
+          "confidence": "high",
+          "file_id": 1,
+          "document_id": 1,
+          "chunk_id": "chunk-1",
+          "container_name": "pkg_caller",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "target_symbol": {
+          "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+          "original_name": "procesar",
+          "normalized_name": "procesar",
+          "type": "procedure",
+          "technology": "oracle",
+          "status": "active",
+          "confidence": "high",
+          "file_id": 2,
+          "document_id": 2,
+          "chunk_id": "chunk-2",
+          "container_name": "pkg_target",
+          "start_line": 1,
+          "end_line": 1
+        },
+        "target_key": "procesar",
+        "candidate_symbol_ids": [],
+        "is_cycle": true
+      }
+    ],
+    "cycles": [
+      [
+        "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+        "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+        "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6"
+      ]
+    ]
+  },
+  "consumers": [
+    {
+      "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+      "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+      "relation_type": "calls",
+      "classification": "detectado",
+      "resolution_status": "resolved",
+      "confidence": "high",
+      "direction": "incoming",
+      "depth": 1,
+      "source_symbol": {
+        "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+        "original_name": "caller",
+        "normalized_name": "caller",
+        "type": "procedure",
+        "technology": "oracle",
+        "status": "active",
+        "confidence": "high",
+        "file_id": 1,
+        "document_id": 1,
+        "chunk_id": "chunk-1",
+        "container_name": "pkg_caller",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "target_symbol": {
+        "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+        "original_name": "procesar",
+        "normalized_name": "procesar",
+        "type": "procedure",
+        "technology": "oracle",
+        "status": "active",
+        "confidence": "high",
+        "file_id": 2,
+        "document_id": 2,
+        "chunk_id": "chunk-2",
+        "container_name": "pkg_target",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "target_key": "procesar",
+      "candidate_symbol_ids": [],
+      "is_cycle": false
+    }
+  ],
+  "dependencies": [
+    {
+      "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+      "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+      "relation_type": "calls",
+      "classification": "detectado",
+      "resolution_status": "resolved",
+      "confidence": "high",
+      "direction": "outgoing",
+      "depth": 2,
+      "source_symbol": {
+        "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+        "original_name": "caller",
+        "normalized_name": "caller",
+        "type": "procedure",
+        "technology": "oracle",
+        "status": "active",
+        "confidence": "high",
+        "file_id": 1,
+        "document_id": 1,
+        "chunk_id": "chunk-1",
+        "container_name": "pkg_caller",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "target_symbol": {
+        "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+        "original_name": "procesar",
+        "normalized_name": "procesar",
+        "type": "procedure",
+        "technology": "oracle",
+        "status": "active",
+        "confidence": "high",
+        "file_id": 2,
+        "document_id": 2,
+        "chunk_id": "chunk-2",
+        "container_name": "pkg_target",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "target_key": "procesar",
+      "candidate_symbol_ids": [],
+      "is_cycle": true
+    }
+  ],
+  "indirect": [
+    {
+      "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+      "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+      "relation_type": "calls",
+      "classification": "detectado",
+      "resolution_status": "resolved",
+      "confidence": "high",
+      "direction": "outgoing",
+      "depth": 2,
+      "source_symbol": {
+        "symbol_id": "214aff47b05e46266b7f1232c3047939682051ce0b4ca77cdbd927f9ae4cefd1",
+        "original_name": "caller",
+        "normalized_name": "caller",
+        "type": "procedure",
+        "technology": "oracle",
+        "status": "active",
+        "confidence": "high",
+        "file_id": 1,
+        "document_id": 1,
+        "chunk_id": "chunk-1",
+        "container_name": "pkg_caller",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "target_symbol": {
+        "symbol_id": "164dcf69112ba91928b2e6958c0012da94444a8e4077d2a51838c6b2cc94b3e6",
+        "original_name": "procesar",
+        "normalized_name": "procesar",
+        "type": "procedure",
+        "technology": "oracle",
+        "status": "active",
+        "confidence": "high",
+        "file_id": 2,
+        "document_id": 2,
+        "chunk_id": "chunk-2",
+        "container_name": "pkg_target",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "target_key": "procesar",
+      "candidate_symbol_ids": [],
+      "is_cycle": true
+    }
+  ],
+  "cross_technology": [],
+  "risks": [
+    "hay consumidores que podrian requerir verificacion",
+    "hay ciclos de dependencia"
+  ],
+  "to_confirm": [],
+  "evidence": [
+    {
+      "source": "relation",
+      "detail": "calls resolved",
+      "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+      "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+      "chunk_id": "chunk-1"
+    },
+    {
+      "source": "relation",
+      "detail": "calls resolved",
+      "reference_id": "0846c6ca08635210af0f94ee12ed6db55cf776afabcf87cffde4229d53f1b184",
+      "relation_id": "417addf4d2f074abc412533237da15ec1927975ae20e30eb4e9ae2b9d778a231",
+      "chunk_id": "chunk-1"
+    }
+  ],
+  "limitations": [
+    "ciclos detectados: 1"
+  ],
+  "rag_sources": []
+}

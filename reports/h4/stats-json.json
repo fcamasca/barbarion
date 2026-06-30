@@ -1,0 +1,47 @@
+{
+  "ingestion": {
+    "latest_run_id": 1,
+    "latest_run_status": "completed",
+    "files_current": 1,
+    "documents_current": 0,
+    "chunks_current": 0,
+    "artifact_kinds": [
+      [
+        "oracle",
+        1
+      ]
+    ]
+  },
+  "rag": {
+    "manifests": 0,
+    "active_manifests": 0,
+    "indexed_chunks": 0,
+    "stale_chunks": 0,
+    "deleted_chunks": 0,
+    "error_chunks": 0,
+    "query_count": 0,
+    "latest_query_id": null,
+    "latest_query_status": null,
+    "avg_candidate_count": null
+  },
+  "reverse_engineering": {
+    "latest_run_id": 1,
+    "latest_run_status": "running",
+    "latest_run_duration_ms": null,
+    "symbols": {
+      "active": 5,
+      "stale": 0,
+      "deleted": 0,
+      "ambiguous": 0
+    },
+    "references_total": 2,
+    "relations": {
+      "active": 2,
+      "resolved": 2,
+      "ambiguous": 0,
+      "unresolved": 0,
+      "dynamic": 0,
+      "external": 0
+    }
+  }
+}

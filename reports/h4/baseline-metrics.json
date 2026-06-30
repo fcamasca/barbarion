@@ -1,0 +1,62 @@
+{
+  "sample": "tests.unit.test_inventory_cli synthetic Oracle chunks",
+  "commands": {
+    "analyze-full": {
+      "exit_code": 0,
+      "duration_ms": 183.477,
+      "stdout_file": "reports/h4/baseline-analyze-full.stdout.txt",
+      "stderr_file": "reports/h4/baseline-analyze-full.stderr.txt"
+    },
+    "analyze-incremental-no-changes": {
+      "exit_code": 0,
+      "duration_ms": 206.002,
+      "stdout_file": "reports/h4/baseline-analyze-incremental-no-changes.stdout.txt",
+      "stderr_file": "reports/h4/baseline-analyze-incremental-no-changes.stderr.txt"
+    },
+    "inventory": {
+      "exit_code": 0,
+      "duration_ms": 41.945,
+      "stdout_file": "reports/h4/baseline-inventory.stdout.txt",
+      "stderr_file": "reports/h4/baseline-inventory.stderr.txt"
+    },
+    "describe-no-llm": {
+      "exit_code": 0,
+      "duration_ms": 39.357,
+      "stdout_file": "reports/h4/baseline-describe-no-llm.stdout.txt",
+      "stderr_file": "reports/h4/baseline-describe-no-llm.stderr.txt"
+    },
+    "impact-depth-2-no-llm": {
+      "exit_code": 0,
+      "duration_ms": 40.951,
+      "stdout_file": "reports/h4/baseline-impact-depth-2-no-llm.stdout.txt",
+      "stderr_file": "reports/h4/baseline-impact-depth-2-no-llm.stderr.txt"
+    }
+  },
+  "analysis_runs": [
+    {
+      "id": 1,
+      "mode": "full",
+      "status": "completed",
+      "symbols_detected": 2,
+      "references_detected": 1,
+      "relations_resolved": 1,
+      "relations_unresolved": 0,
+      "relations_ambiguous": 0,
+      "duration_ms": 125
+    },
+    {
+      "id": 2,
+      "mode": "incremental",
+      "status": "completed",
+      "symbols_detected": 2,
+      "references_detected": 1,
+      "relations_resolved": 1,
+      "relations_unresolved": 0,
+      "relations_ambiguous": 0,
+      "duration_ms": 172
+    }
+  ],
+  "relations_by_status": {
+    "resolved": 1
+  }
+}

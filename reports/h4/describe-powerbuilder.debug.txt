@@ -1,0 +1,11 @@
+Observabilidad reverse engineering
+comando=describe
+format=markdown
+duration_ms=31
+resolution_status=resolved
+candidates=0
+outgoing_edges=1
+incoming_edges=0
+evidence=1
+limitations=0
+no_llm=True

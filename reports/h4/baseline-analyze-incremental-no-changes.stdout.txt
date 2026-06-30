@@ -1,0 +1,10 @@
+Analisis tecnico: completed
+Run: 2
+Archivos: 2
+Chunks: 2
+Simbolos: 2
+Referencias: 1
+Relaciones resueltas: 1
+Relaciones ambiguas: 0
+Relaciones no resueltas: 0
+Duracion: 172 ms

@@ -1,0 +1,16 @@
+Observabilidad reverse engineering
+comando=impact
+format=json
+duration_ms=30
+resolution_status=resolved
+direction=both
+depth=2
+nodes=2
+edges=2
+consumers=1
+dependencies=1
+cross_technology=0
+risks=2
+to_confirm=0
+limitations=1
+no_llm=True

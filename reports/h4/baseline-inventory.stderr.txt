@@ -1,0 +1,9 @@
+Observabilidad reverse engineering
+comando=inventory
+format=json
+duration_ms=16
+files=2
+symbols=2
+references=1
+relations=1
+items=2

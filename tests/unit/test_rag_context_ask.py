@@ -20,14 +20,15 @@ class FakeLlm:
     provider = "fake"
     model = "responder"
 
-    def __init__(self, answer: str) -> None:
-        self.answer = answer
+    def __init__(self, answer: str | tuple[str, ...]) -> None:
+        self.answers = [answer] if isinstance(answer, str) else list(answer)
         self.prompts: list[str] = []
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
         del timeout_seconds
         self.prompts.append(prompt)
-        return self.answer
+        index = min(len(self.prompts) - 1, len(self.answers) - 1)
+        return self.answers[index]
 
 
 def candidate(
@@ -143,7 +144,75 @@ def test_citation_validator_rejects_answer_without_inline_citation() -> None:
     assert validation.cited_source_ids == ()
 
 
-def ask_service(tmp_path, answer: str) -> tuple[AskService, FakeLlm]:
+def test_citation_validator_accepts_insufficient_evidence_when_context_does_not_answer() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9, content="select order_total from dual;"),))
+
+    validation = CitationValidator().validate(
+        "Evidencia insuficiente: falta customer_tax en la fuente recuperada [F1].",
+        context,
+        question="customer_tax",
+    )
+
+    assert validation.valid is True
+
+
+def test_citation_validator_rejects_valid_citation_with_unsupported_content() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9, content="select order_total from dual;"),))
+
+    validation = CitationValidator().validate(
+        "customer_tax se calcula con una regla externa [F1].",
+        context,
+        question="order_total",
+    )
+
+    assert validation.valid is False
+    assert validation.unsupported_claims
+    assert "no respaldadas" in validation.reason
+
+
+def test_citation_validator_rejects_answer_contradicted_by_context() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9, content="estado es activo"),))
+
+    validation = CitationValidator().validate(
+        "estado no es activo [F1].",
+        context,
+        question="estado",
+    )
+
+    assert validation.valid is False
+    assert validation.contradiction_claims
+    assert "contradice" in validation.reason
+
+
+def test_prompt_builder_lists_allowed_sources_and_inline_citation_rule() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9),))
+
+    prompt = PromptBuilder().build(question="Como se calcula?", context=context)
+
+    assert "Usa solo estos IDs de fuente existentes: [F1]." in prompt
+    assert "Cada parrafo o bullet" in prompt
+    assert "Evidencia insuficiente" in prompt
+    assert "No infieras" in prompt
+    assert "## Conclusion\n... [F1]" in prompt
+
+
+def ask_service(tmp_path, answer: str | tuple[str, ...]) -> tuple[AskService, FakeLlm]:
     search_service = service_for(tmp_path)
     fake_llm = FakeLlm(answer)
     service = AskService(
@@ -206,6 +275,7 @@ def test_ask_rejects_llm_answer_with_invalid_citation(tmp_path) -> None:
     assert result.citations_valid is False
     assert result.missing_citations == ("F9",)
     assert "citas inexistentes" in result.answer.lower()
+    assert "- [F1] pkg/demo.sql" in result.answer
 
 
 def test_ask_rejects_llm_answer_without_inline_citation(tmp_path) -> None:
@@ -223,10 +293,93 @@ def test_ask_rejects_llm_answer_without_inline_citation(tmp_path) -> None:
     assert result.citations_valid is False
     assert result.missing_citations == ()
     assert "no incluyo citas validas" in result.answer
+    assert "- [F1] pkg/demo.sql" in result.answer
+
+
+def test_ask_repairs_llm_answer_without_inline_citation(tmp_path) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        ("Conclusion sin cita.", "order_total se selecciona desde dual [F1]."),
+    )
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.citations_valid is True
+    assert result.status == RagQueryStatus.COMPLETED
+    assert result.answer == "order_total se selecciona desde dual [F1]."
+    assert len(fake_llm.prompts) == 2
+    assert "Respuesta candidata rechazada:\nConclusion sin cita." in fake_llm.prompts[1]
+    assert "Usa solo estos IDs de fuente existentes: [F1]." in fake_llm.prompts[1]
+    assert result.debug["citation_repair_attempted"] is True
+    assert result.debug["citation_repair_valid"] is True
+
+
+def test_ask_falls_back_when_citation_repair_is_still_invalid(tmp_path) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        ("Conclusion sin cita.", "Conclusion todavia sin cita."),
+    )
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.citations_valid is False
+    assert result.status == RagQueryStatus.ERROR
+    assert len(fake_llm.prompts) == 2
+    assert "no pudo ser reparada automaticamente" in result.answer
+    assert "Ejecute el mismo comando con `--debug`" in result.answer
+    assert "- [F1] pkg/demo.sql" in result.answer
+    assert result.debug["citation_repair_attempted"] is True
+    assert result.debug["citation_repair_valid"] is False
+
+
+def test_ask_repairs_valid_citation_with_unsupported_content_to_insufficient_evidence(
+    tmp_path,
+) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        (
+            "customer_tax se calcula con una regla externa [F1].",
+            "Evidencia insuficiente: falta customer_tax en la evidencia recuperada [F1].",
+        ),
+    )
+
+    result = service.ask(
+        "customer_tax",
+        mode=RetrievalMode.HYBRID,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.citations_valid is True
+    assert result.status == RagQueryStatus.COMPLETED
+    assert "Evidencia insuficiente" in result.answer
+    assert len(fake_llm.prompts) == 2
+    assert result.debug["validation"]["result"] == "FAIL"
+    assert result.debug["citation_repair_attempted"] is True
+    assert result.debug["citation_repair_valid"] is True
 
 
 def test_ask_accepts_llm_answer_with_valid_inline_citation(tmp_path) -> None:
-    service, _fake_llm = ask_service(tmp_path, "Conclusion con soporte [F1].")
+    service, _fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1].",
+    )
 
     result = service.ask(
         "order_total",
@@ -238,11 +391,14 @@ def test_ask_accepts_llm_answer_with_valid_inline_citation(tmp_path) -> None:
 
     assert result.citations_valid is True
     assert result.status == RagQueryStatus.COMPLETED
-    assert result.answer == "Conclusion con soporte [F1]."
+    assert result.answer == "order_total se selecciona desde dual [F1]."
 
 
 def test_ask_debug_reports_size_metrics_without_context_dump(tmp_path) -> None:
-    service, _fake_llm = ask_service(tmp_path, "Conclusion con soporte [F1].")
+    service, _fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1].",
+    )
 
     result = service.ask(
         "order_total",
@@ -260,6 +416,28 @@ def test_ask_debug_reports_size_metrics_without_context_dump(tmp_path) -> None:
     assert result.debug["llm_timeout_seconds"] > 0
     assert result.debug["truncated_sources"] == 0
     assert "order_total :=" not in str(dict(result.debug))
+
+
+def test_ask_debug_does_not_persist_prompts_or_responses(tmp_path) -> None:
+    service, _fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1] secret=visible",
+    )
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert "secret=visible" in result.debug["llm_response"]
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        dump = "\n".join(connection.iterdump())
+    assert "secret=visible" not in dump
+    assert "Respuesta candidata rechazada" not in dump
 
 
 def test_ask_insufficient_evidence_does_not_call_llm(tmp_path) -> None:

@@ -3,11 +3,11 @@
 import sqlite3
 from pathlib import Path
 
-from barbarion.application.reverse_engineering import SymbolCatalogService
+from barbarion.application.reverse_engineering import SymbolCatalogService, symbol_from_source
 from barbarion.config import load_settings
 from barbarion.database import initialize_database
 from barbarion.domain.reverse_engineering import AnalysisRunStatus
-from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
+from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository, SymbolSource
 from tests.unit.test_rag_index_service import SHA_CHUNK_1, SHA_DOC, SHA_SOURCE, seed_chunks
 
 
@@ -97,6 +97,35 @@ def test_h4_symbol_catalog_builds_active_symbols_without_duplicates(
             "pb-window",
         ),
     ]
+
+
+def test_h4_symbol_from_source_uses_breadcrumb_container() -> None:
+    symbol = symbol_from_source(
+        SymbolSource(
+            file_id=1,
+            document_id=1,
+            chunk_id="chunk-proc",
+            relative_path="oracle/pkg_demo.sql",
+            extension=".sql",
+            artifact_kind="oracle",
+            chunk_type="procedure",
+            content="procedure run_demo is begin null; end;",
+            object_type="procedure",
+            object_name="run_demo",
+            start_line=10,
+            end_line=20,
+            metadata={
+                "format": "oracle",
+                "object_type": "procedure",
+                "object_name": "run_demo",
+                "breadcrumb": ["pkg_demo", "run_demo"],
+            },
+        )
+    )
+
+    assert symbol.normalized_name == "run_demo"
+    assert symbol.symbol_type == "procedure"
+    assert symbol.container_name == "pkg_demo"
 
 
 def _seed_h4_symbol_sources(path: Path) -> None:

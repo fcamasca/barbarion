@@ -201,6 +201,8 @@ Cambiar proveedor, modelo, dimension, distancia o normalizacion de embeddings pr
 
 Barbarion no envia corpus a servicios cloud. Los prompts completos no se almacenan por defecto. `rag_queries` guarda hash de la consulta, modo, filtros, conteos y latencias. En RAG, `--debug` puede mostrar scores, filtros, fuentes y snippets; debe usarse con la misma cautela que cualquier salida que pueda incluir fragmentos de codigo.
 
+Con `--debug`, ask escribe en stderr un diagnostico del flujo RAG: consulta, modelos usados, retrieval, chunks, prompt truncado, respuesta del LLM, validacion de citas, reparacion y resumen final. stdout conserva la salida normal, por lo que JSON y Markdown siguen siendo parseables.
+
 Errores operativos frecuentes:
 
 - Base ausente: ejecuta `barbarion doctor` e ingesta antes de RAG.

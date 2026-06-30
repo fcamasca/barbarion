@@ -57,5 +57,5 @@ include_snippets = true
 [llm]
 provider = "ollama"
 model = "llama3.1:8b"
-timeout_seconds = 120.0
+timeout_seconds = 600.0
 temperature = 0.1

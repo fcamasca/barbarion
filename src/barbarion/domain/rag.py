@@ -426,6 +426,9 @@ class CitationValidation:
     valid: bool
     missing_source_ids: tuple[str, ...] = ()
     cited_source_ids: tuple[str, ...] = ()
+    unsupported_claims: tuple[str, ...] = ()
+    contradiction_claims: tuple[str, ...] = ()
+    reason: str = "ok"
 
 
 @dataclass(frozen=True, slots=True)

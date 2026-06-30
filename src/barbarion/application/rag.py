@@ -824,34 +824,122 @@ class PromptBuilder:
     """Construye prompts controlados en espanol."""
 
     def build(self, *, question: str, context: ContextBuildResult) -> str:
+        source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
         return (
             "Responde en espanol usando solo la evidencia provista.\n"
-            "Toda afirmacion factual debe citar una fuente como [F1].\n"
-            "Si la evidencia no alcanza, declara evidencia insuficiente.\n\n"
+            "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
+            "Usa solo estos IDs de fuente existentes: "
+            f"{source_ids}.\n"
+            "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
+            "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n"
+            "Si la evidencia no responde directamente la pregunta, responde "
+            "\"Evidencia insuficiente\".\n"
+            "No infieras, no completes con conocimiento general y no inventes "
+            "conclusiones.\n"
+            "Cuando declares evidencia insuficiente, indica que evidencia falto "
+            "y cita las fuentes que demuestran el limite.\n\n"
             f"Pregunta:\n{question}\n\n"
             f"Contexto:\n{context.rendered_context}\n\n"
             "Formato requerido:\n"
             "## Conclusion\n"
-            "...\n\n"
+            "... [F1]\n\n"
             "## Evidencia\n"
-            "- [F1] ...\n\n"
+            "- ... [F1]\n\n"
             "## Supuestos y limites\n"
-            "- ...\n"
+            "- ... [F1]\n"
+        )
+
+    def repair(
+        self,
+        *,
+        question: str,
+        context: ContextBuildResult,
+        answer: str,
+    ) -> str:
+        """Construye un prompt para reparar citas sin agregar contenido nuevo.
+
+        Args:
+            question: Pregunta original del usuario.
+            context: Contexto recuperado con las fuentes permitidas.
+            answer: Respuesta candidata rechazada por el validador.
+
+        Returns:
+            Prompt de reescritura con reglas estrictas de citacion inline.
+        """
+        source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
+        return (
+            "Reescribe la respuesta candidata en espanol usando solo la evidencia provista.\n"
+            "No agregues informacion nueva ni inventes fuentes.\n"
+            "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
+            f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
+            "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
+            "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n\n"
+            "Si la evidencia no responde directamente la pregunta, responde "
+            "\"Evidencia insuficiente\", indica que evidencia falto y cita las "
+            "fuentes que demuestran el limite.\n\n"
+            f"Pregunta:\n{question}\n\n"
+            f"Contexto:\n{context.rendered_context}\n\n"
+            f"Respuesta candidata rechazada:\n{answer}\n\n"
+            "Respuesta corregida:"
         )
 
 
 @dataclass(frozen=True, slots=True)
 class CitationValidator:
-    """Valida que las citas mencionadas existan en el contexto."""
+    """Valida citas y soporte basico contra el contexto recuperado."""
 
-    def validate(self, answer: str, context: ContextBuildResult) -> CitationValidation:
+    def validate(
+        self,
+        answer: str,
+        context: ContextBuildResult,
+        *,
+        question: str = "",
+    ) -> CitationValidation:
         allowed = {source.source_id for source in context.sources}
         cited = set(re.findall(r"\[(F\d+)\]", answer))
         missing = tuple(sorted(cited - allowed))
         valid_cited = tuple(sorted(cited & allowed))
+        if missing:
+            return CitationValidation(
+                valid=False,
+                missing_source_ids=missing,
+                cited_source_ids=valid_cited,
+                reason=f"citas inexistentes: {', '.join(missing)}",
+            )
+        if not valid_cited:
+            return CitationValidation(
+                valid=False,
+                missing_source_ids=missing,
+                cited_source_ids=valid_cited,
+                reason="la respuesta no incluyo citas validas",
+            )
+        if not _context_answers_question(question, context):
+            if _is_insufficient_evidence_answer(answer):
+                return CitationValidation(
+                    valid=True,
+                    cited_source_ids=valid_cited,
+                )
+            return CitationValidation(
+                valid=False,
+                cited_source_ids=valid_cited,
+                unsupported_claims=("la evidencia recuperada no responde la pregunta",),
+                reason="la evidencia recuperada no responde directamente la pregunta",
+            )
+        unsupported = _unsupported_claims(answer, context)
+        contradictions = _contradiction_claims(answer, context)
+        if unsupported or contradictions:
+            reason = "la respuesta contiene afirmaciones no respaldadas"
+            if contradictions:
+                reason = "la respuesta contradice el contexto citado"
+            return CitationValidation(
+                valid=False,
+                cited_source_ids=valid_cited,
+                unsupported_claims=unsupported,
+                contradiction_claims=contradictions,
+                reason=reason,
+            )
         return CitationValidation(
-            valid=bool(valid_cited) and not missing,
-            missing_source_ids=missing,
+            valid=True,
             cited_source_ids=valid_cited,
         )
 
@@ -896,6 +984,17 @@ class AskService:
         context_started = time.monotonic()
         context = self.context_builder.build(search.candidates, debug=debug)
         context_ms = _duration_ms(context_started)
+        base_debug_payload = (
+            _ask_debug_payload(
+                started=started,
+                search=search,
+                context=context,
+                prompt="",
+                timeout_seconds=self.settings.llm.timeout_seconds,
+            )
+            if debug
+            else {}
+        )
         if not context.sources:
             answer = _insufficient_evidence_answer()
             self.search_service.repository.update_rag_query_metrics(
@@ -912,7 +1011,7 @@ class AskService:
                 context=context,
                 status=RagQueryStatus.INSUFFICIENT_EVIDENCE,
                 no_llm=True,
-                debug={"duration_ms": _duration_ms(started)} if debug else {},
+                debug=base_debug_payload if debug else {},
             )
         if no_llm:
             answer = _no_llm_answer(context)
@@ -930,33 +1029,74 @@ class AskService:
                 context=context,
                 status=RagQueryStatus.COMPLETED,
                 no_llm=True,
-                debug=_ask_debug_payload(
-                    started=started,
-                    context=context,
-                    prompt="",
-                    timeout_seconds=self.settings.llm.timeout_seconds,
-                )
-                if debug
-                else {},
+                debug=base_debug_payload if debug else {},
             )
         prompt = self.prompt_builder.build(question=question, context=context)
-        debug_payload = {}
+        debug_payload = dict(base_debug_payload)
         if debug:
-            debug_payload = _ask_debug_payload(
-                started=started,
-                context=context,
-                prompt=prompt,
-                timeout_seconds=self.settings.llm.timeout_seconds,
-            )
+            debug_payload["prompt"] = prompt
+            debug_payload["prompt_chars"] = len(prompt)
+            debug_payload["prompt_tokens_est"] = _estimate_tokens(prompt)
         llm_started = time.monotonic()
         answer = self.llm_provider.generate(
             prompt=prompt,
             timeout_seconds=self.settings.llm.timeout_seconds,
         )
-        llm_ms = _duration_ms(llm_started)
-        validation = self.citation_validator.validate(answer, context)
+        validation = self.citation_validator.validate(
+            answer,
+            context,
+            question=question,
+        )
+        if debug:
+            debug_payload["llm_response"] = answer
+            debug_payload["validation"] = _citation_validation_debug(
+                answer=answer,
+                context=context,
+                validation=validation,
+            )
+        repair_attempted = False
+        repair_valid = None
         if not validation.valid:
-            answer = _invalid_citations_answer(validation)
+            repair_attempted = True
+            repair_prompt = self.prompt_builder.repair(
+                question=question,
+                context=context,
+                answer=answer,
+            )
+            repaired_answer = self.llm_provider.generate(
+                prompt=repair_prompt,
+                timeout_seconds=self.settings.llm.timeout_seconds,
+            )
+            validation = self.citation_validator.validate(
+                repaired_answer,
+                context,
+                question=question,
+            )
+            repair_valid = validation.valid
+            if debug:
+                debug_payload["repair_prompt"] = repair_prompt
+                debug_payload["repair_response"] = repaired_answer
+                debug_payload["repair_validation"] = _citation_validation_debug(
+                    answer=repaired_answer,
+                    context=context,
+                    validation=validation,
+                )
+            if validation.valid:
+                answer = repaired_answer
+            else:
+                answer = _invalid_citations_answer(
+                    validation,
+                    context,
+                    repair_attempted=True,
+                )
+        llm_ms = _duration_ms(llm_started)
+        if debug:
+            debug_payload["citation_repair_attempted"] = repair_attempted
+            debug_payload["citation_repair_valid"] = repair_valid
+            if not repair_attempted:
+                debug_payload["repair_prompt"] = None
+                debug_payload["repair_response"] = None
+                debug_payload["repair_validation"] = None
         self.search_service.repository.update_rag_query_metrics(
             query_id=search.query_id,
             context_sources=len(context.sources),
@@ -1044,22 +1184,236 @@ def _render_source_context(source: ContextSource) -> str:
 def _ask_debug_payload(
     *,
     started: float,
+    search: SearchResponse,
     context: ContextBuildResult,
     prompt: str,
     timeout_seconds: float,
 ) -> dict[str, object]:
+    retrieved_chunks = int(search.debug.get("vector_candidates") or 0) + int(
+        search.debug.get("keyword_candidates") or 0
+    )
     return {
         "duration_ms": _duration_ms(started),
         "sources": len(context.sources),
+        "retrieved_chunks": retrieved_chunks,
+        "reranked_chunks": len(search.candidates),
         "context_chars": len(context.rendered_context),
         "context_tokens_est": context.token_estimate,
         "prompt_chars": len(prompt),
+        "prompt_tokens_est": _estimate_tokens(prompt) if prompt else 0,
         "llm_timeout_seconds": timeout_seconds,
         "truncated_sources": sum(
             1 for source in context.sources if source.content_truncated
         ),
         "context_builder": dict(context.debug),
+        "search": dict(search.debug),
     }
+
+
+def _citation_validation_debug(
+    *,
+    answer: str,
+    context: ContextBuildResult,
+    validation: CitationValidation,
+) -> dict[str, object]:
+    """Describe la validacion de citas para diagnostico efimero.
+
+    Args:
+        answer: Respuesta del modelo que se valido.
+        context: Fuentes permitidas para la respuesta.
+        validation: Resultado del validador de citas.
+
+    Returns:
+        Diccionario serializable para diagnostico en memoria.
+    """
+    expected = tuple(source.source_id for source in context.sources)
+    found = tuple(sorted(set(re.findall(r"\[(F\d+)\]", answer))))
+    valid = tuple(sorted(set(found) & set(expected)))
+    invalid = tuple(sorted(set(found) - set(expected)))
+    missing = tuple(source_id for source_id in expected if source_id not in found)
+    reason = "ok"
+    if invalid:
+        reason = f"citas inexistentes: {', '.join(invalid)}"
+    elif validation.reason != "ok":
+        reason = validation.reason
+    elif not valid:
+        reason = "la respuesta no incluyo citas validas"
+    return {
+        "expected_citations": expected,
+        "found_citations": found,
+        "valid_citations": valid,
+        "missing_citations": missing,
+        "invalid_citations": invalid,
+        "unsupported_claims": validation.unsupported_claims,
+        "contradiction_claims": validation.contradiction_claims,
+        "result": "PASS" if validation.valid else "FAIL",
+        "reason": reason,
+    }
+
+
+_STOPWORDS = frozenset(
+    {
+        "como",
+        "para",
+        "por",
+        "con",
+        "que",
+        "del",
+        "las",
+        "los",
+        "una",
+        "uno",
+        "este",
+        "esta",
+        "esto",
+        "desde",
+        "sobre",
+        "segun",
+        "respuesta",
+        "conclusion",
+        "evidencia",
+        "supuestos",
+        "limites",
+        "fuente",
+        "fuentes",
+        "calcula",
+        "calculo",
+        "calcular",
+        "usando",
+        "flujo",
+        "explica",
+        "indica",
+        "valor",
+        "valores",
+    }
+)
+
+
+def _context_answers_question(question: str, context: ContextBuildResult) -> bool:
+    if not question:
+        return True
+    question_tokens = _important_tokens(question)
+    if not question_tokens:
+        return True
+    context_tokens = _important_tokens(context.rendered_context)
+    overlap = question_tokens & context_tokens
+    required = 1 if len(question_tokens) <= 2 else 2
+    return len(overlap) >= required
+
+
+def _is_insufficient_evidence_answer(answer: str) -> bool:
+    return "evidencia insuficiente" in _normalize_text(answer)
+
+
+def _unsupported_claims(
+    answer: str,
+    context: ContextBuildResult,
+) -> tuple[str, ...]:
+    source_tokens = {
+        source.source_id: _important_tokens(source.content)
+        for source in context.sources
+    }
+    unsupported: list[str] = []
+    for claim, source_ids in _cited_claims(answer):
+        if _is_insufficient_evidence_answer(claim):
+            continue
+        claim_tokens = _important_tokens(_strip_citations(claim))
+        if not claim_tokens:
+            continue
+        cited_tokens = set().union(
+            *(source_tokens.get(source_id, set()) for source_id in source_ids)
+        )
+        if not _claim_supported(claim_tokens, cited_tokens):
+            unsupported.append(_compact_claim(claim))
+    return tuple(unsupported)
+
+
+def _contradiction_claims(
+    answer: str,
+    context: ContextBuildResult,
+) -> tuple[str, ...]:
+    normalized_context = _normalize_text(context.rendered_context)
+    contradictions: list[str] = []
+    for claim, _source_ids in _cited_claims(answer):
+        normalized_claim = _normalize_text(_strip_citations(claim))
+        for pattern in (
+            r"\bno\s+es\s+([a-z0-9_]+)",
+            r"\bno\s+usa\s+([a-z0-9_]+)",
+            r"\bno\s+utiliza\s+([a-z0-9_]+)",
+        ):
+            for match in re.finditer(pattern, normalized_claim):
+                token = match.group(1)
+                if re.search(
+                    rf"\b(es|usa|utiliza)\s+{re.escape(token)}\b",
+                    normalized_context,
+                ):
+                    contradictions.append(_compact_claim(claim))
+    return tuple(contradictions)
+
+
+def _cited_claims(answer: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    claims: list[tuple[str, tuple[str, ...]]] = []
+    for raw_claim in re.split(r"(?<=[.!?])\s+|\n+", answer):
+        claim = raw_claim.strip(" -\t")
+        if not claim:
+            continue
+        source_ids = tuple(sorted(set(re.findall(r"\[(F\d+)\]", claim))))
+        if source_ids:
+            claims.append((claim, source_ids))
+    return tuple(claims)
+
+
+def _claim_supported(claim_tokens: set[str], source_tokens: set[str]) -> bool:
+    if not source_tokens:
+        return False
+    unique_terms = {
+        token
+        for token in claim_tokens
+        if "_" in token or token.startswith(("p_", "f_")) or len(token) >= 6
+    }
+    if unique_terms:
+        return bool(unique_terms & source_tokens)
+    overlap = claim_tokens & source_tokens
+    return len(overlap) >= min(2, len(claim_tokens))
+
+
+def _important_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9_]+", _normalize_text(text))
+        if (len(token) >= 4 or "_" in token)
+        and token not in _STOPWORDS
+        and not re.fullmatch(r"f\d+", token)
+    }
+
+
+def _normalize_text(text: str) -> str:
+    replacements = str.maketrans(
+        {
+            "á": "a",
+            "é": "e",
+            "í": "i",
+            "ó": "o",
+            "ú": "u",
+            "ñ": "n",
+            "Á": "a",
+            "É": "e",
+            "Í": "i",
+            "Ó": "o",
+            "Ú": "u",
+            "Ñ": "n",
+        }
+    )
+    return text.translate(replacements).lower()
+
+
+def _strip_citations(text: str) -> str:
+    return re.sub(r"\[(F\d+)\]", "", text)
+
+
+def _compact_claim(text: str) -> str:
+    compact = " ".join(text.split())
+    return compact[:180]
 
 
 def _no_llm_answer(context: ContextBuildResult) -> str:
@@ -1087,18 +1441,60 @@ def _insufficient_evidence_answer() -> str:
     )
 
 
-def _invalid_citations_answer(validation: CitationValidation) -> str:
+def _invalid_citations_answer(
+    validation: CitationValidation,
+    context: ContextBuildResult,
+    *,
+    repair_attempted: bool = False,
+) -> str:
     if validation.missing_source_ids:
         detail = f"Citas inexistentes: {', '.join(validation.missing_source_ids)}."
-        conclusion = "La respuesta candidata fue rechazada porque contiene citas invalidas."
+        conclusion = (
+            "La respuesta reparada fue rechazada porque contiene citas invalidas."
+            if repair_attempted
+            else "La respuesta candidata fue rechazada porque contiene citas invalidas."
+        )
     else:
-        detail = "La respuesta generada no incluyo citas validas."
-        conclusion = "La respuesta generada no incluyo citas validas."
+        detail = (
+            f"{validation.reason}. La respuesta generada no pudo ser "
+            "reparada automaticamente."
+            if repair_attempted
+            else validation.reason
+        )
+        conclusion = detail
+    debug_hint = (
+        "\n\n"
+        "Ejecute el mismo comando con `--debug` para inspeccionar:\n\n"
+        "- evidencia recuperada;\n"
+        "- resultados del retrieval;\n"
+        "- prompt enviado al modelo;\n"
+        "- respuesta original del LLM;\n"
+        "- validacion de citas;\n"
+        "- intento de reparacion;\n"
+        "- resultado final de la validacion."
+        if repair_attempted
+        else ""
+    )
     return (
         "## Conclusion\n"
-        f"{conclusion}\n\n"
+        f"{conclusion}{debug_hint}\n\n"
         "## Evidencia\n"
-        f"- {detail}\n\n"
+        f"- {detail}\n"
+        + "\n".join(
+            f"- [{source.source_id}] {source.candidate.source.get('relative_path')} "
+            f"lineas={_line_range(source)} "
+            f"chunk={source.candidate.chunk_id}"
+            for source in context.sources
+        )
+        + "\n\n"
         "## Supuestos y limites\n"
         '- Prueba: barbarion ask "..." --no-llm'
     )
+
+
+def _line_range(source: ContextSource) -> str:
+    start = source.candidate.source.get("start_line")
+    end = source.candidate.source.get("end_line")
+    if start is None or end is None:
+        return "n/a"
+    return f"{start}-{end}" if start != end else str(start)

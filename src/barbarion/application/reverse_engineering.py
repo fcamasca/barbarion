@@ -332,6 +332,20 @@ class AnalyzeService:
                 references,
                 symbols,
             )
+            counters = replace(
+                counters,
+                relations_resolved=resolved,
+                relations_ambiguous=ambiguous,
+                relations_unresolved=unresolved,
+            )
+            _report(
+                progress,
+                "resolve",
+                stages,
+                len(references),
+                len(references),
+                counters,
+            )
             summary = AnalyzeSummary(
                 run_id=None,
                 status=AnalysisRunStatus.COMPLETED,
@@ -1723,10 +1737,17 @@ def _technology(artifact_kind: str, metadata: dict[str, Any]) -> str:
 
 def _container_name(original_name: str, metadata: dict[str, Any]) -> str | None:
     """Obtiene el contenedor logico desde metadatos o nombres calificados."""
+    breadcrumb = metadata.get("breadcrumb")
+    breadcrumb_container = (
+        str(breadcrumb[0])
+        if isinstance(breadcrumb, (list, tuple)) and len(breadcrumb) > 1
+        else None
+    )
     explicit = _first_text(
         metadata.get("parent_name"),
         metadata.get("package_name"),
         metadata.get("class_name"),
+        breadcrumb_container,
     )
     if explicit is not None:
         return explicit

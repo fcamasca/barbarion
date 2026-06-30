@@ -82,6 +82,18 @@ def parse(tmp_path: Path, filename: str, content: str):
             "vw_demo",
         ),
         (
+            "table.sql",
+            "CREATE TABLE tab_demo (\nid NUMBER\n);",
+            "table",
+            "tab_demo",
+        ),
+        (
+            "sequence.sql",
+            "CREATE SEQUENCE seq_demo\nSTART WITH 1;",
+            "sequence",
+            "seq_demo",
+        ),
+        (
             "type.tps",
             "CREATE TYPE typ_demo AS OBJECT (\nvalue NUMBER\n);",
             "type_spec",
@@ -165,6 +177,128 @@ def test_oracle_parser_detects_package_subprograms_with_valid_ranges(
     assert result.units[2].metadata["breadcrumb"] == ("pkg_demo", "second_func")
 
 
+def test_oracle_parser_detects_combined_package_spec_and_body(
+    tmp_path: Path,
+) -> None:
+    content = "\n".join(
+        [
+            "CREATE OR REPLACE PACKAGE pkg_demo AS",
+            "  PROCEDURE public_proc;",
+            "END pkg_demo;",
+            "",
+            "CREATE OR REPLACE PACKAGE BODY pkg_demo AS",
+            "  PROCEDURE public_proc IS",
+            "  BEGIN",
+            "    NULL;",
+            "  END public_proc;",
+            "",
+            "  FUNCTION private_func RETURN NUMBER IS",
+            "  BEGIN",
+            "    RETURN 1;",
+            "  END private_func;",
+            "END pkg_demo;",
+        ]
+    )
+
+    result = parse(tmp_path, "pkg.sql", content)
+
+    assert [unit.unit_type for unit in result.units] == [
+        "package_spec",
+        "package_body",
+        "procedure",
+        "function",
+    ]
+    assert [unit.name for unit in result.units] == [
+        "pkg_demo",
+        "pkg_demo",
+        "public_proc",
+        "private_func",
+    ]
+    assert [(unit.start_line, unit.end_line) for unit in result.units] == [
+        (1, 3),
+        (5, 15),
+        (6, 9),
+        (11, 14),
+    ]
+    assert result.units[2].metadata["parent_name"] == "pkg_demo"
+    assert result.units[3].metadata["breadcrumb"] == ("pkg_demo", "private_func")
+
+
+def test_oracle_parser_detects_package_procedure_with_anonymous_end(
+    tmp_path: Path,
+) -> None:
+    content = "\n".join(
+        [
+            "CREATE OR REPLACE PACKAGE BODY pkg_demo AS",
+            "  PROCEDURE update_calc IS",
+            "  BEGIN",
+            "    NULL;",
+            "  END;",
+            "",
+            "  PROCEDURE next_proc IS",
+            "  BEGIN",
+            "    NULL;",
+            "  END next_proc;",
+            "END pkg_demo;",
+        ]
+    )
+
+    result = parse(tmp_path, "pkg.pkb", content)
+
+    assert [unit.unit_type for unit in result.units] == [
+        "package_body",
+        "procedure",
+        "procedure",
+    ]
+    assert [unit.name for unit in result.units] == [
+        "pkg_demo",
+        "update_calc",
+        "next_proc",
+    ]
+    assert [(unit.start_line, unit.end_line) for unit in result.units] == [
+        (1, 11),
+        (2, 6),
+        (7, 10),
+    ]
+
+
+def test_oracle_parser_keeps_outer_subprogram_with_nested_declarations(
+    tmp_path: Path,
+) -> None:
+    content = "\n".join(
+        [
+            "CREATE OR REPLACE PACKAGE BODY pkg_demo AS",
+            "  PROCEDURE iterative_calc IS",
+            "    FUNCTION local_value RETURN NUMBER IS",
+            "    BEGIN",
+            "      RETURN 1;",
+            "    END local_value;",
+            "  BEGIN",
+            "    NULL;",
+            "  END iterative_calc;",
+            "END pkg_demo;",
+        ]
+    )
+
+    result = parse(tmp_path, "pkg.pkb", content)
+
+    assert [unit.unit_type for unit in result.units] == [
+        "package_body",
+        "procedure",
+        "function",
+    ]
+    assert [unit.name for unit in result.units] == [
+        "pkg_demo",
+        "iterative_calc",
+        "local_value",
+    ]
+    assert [(unit.start_line, unit.end_line) for unit in result.units] == [
+        (1, 10),
+        (2, 9),
+        (3, 6),
+    ]
+
+
 def test_oracle_parser_ignores_comments_and_strings_when_detecting_units(
     tmp_path: Path,
 ) -> None:
@@ -189,7 +323,9 @@ def test_oracle_parser_ignores_comments_and_strings_when_detecting_units(
     assert result.units[1].end_line == 7
 
 
-def test_oracle_parser_skips_ambiguous_subprogram_ranges(tmp_path: Path) -> None:
+def test_oracle_parser_detects_final_anonymous_end_subprogram(
+    tmp_path: Path,
+) -> None:
     content = "\n".join(
         [
             "CREATE OR REPLACE PACKAGE BODY pkg_demo AS",
@@ -203,4 +339,12 @@ def test_oracle_parser_skips_ambiguous_subprogram_ranges(tmp_path: Path) -> None
 
     result = parse(tmp_path, "pkg.pkb", content)
 
-    assert [unit.unit_type for unit in result.units] == ["package_body"]
+    assert [unit.unit_type for unit in result.units] == [
+        "package_body",
+        "procedure",
+    ]
+    assert [unit.name for unit in result.units] == ["pkg_demo", "outer_proc"]
+    assert [(unit.start_line, unit.end_line) for unit in result.units] == [
+        (1, 6),
+        (2, 6),
+    ]

@@ -125,3 +125,70 @@ def test_h4_repository_inserts_and_reads_run_symbols_references_and_relations(
         symbol_id,
         direction=DependencyDirection.OUTGOING,
     ) == ()
+
+
+def test_h4_repository_active_references_ignore_orphan_chunks(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+    seed_chunks(path)
+    repository = SQLiteReverseEngineeringRepository(path)
+    run_id = repository.begin_analysis_run(
+        mode=AnalysisRunMode.FULL,
+        scope={"path_prefix": "pkg/"},
+    )
+    active_reference = _reference(
+        source_chunk_id="chunk-2",
+        raw_text="active_call();",
+        normalized_target="active_call",
+        start_line=6,
+    )
+    orphan_reference = _reference(
+        source_chunk_id="chunk-1",
+        raw_text="orphan_call();",
+        normalized_target="orphan_call",
+        start_line=9,
+    )
+
+    repository.upsert_reference(run_id=run_id, reference=active_reference)
+    repository.upsert_reference(run_id=run_id, reference=orphan_reference)
+    with repository._connect() as connection:
+        connection.execute("DELETE FROM chunks WHERE id = 'chunk-1'")
+        connection.commit()
+
+    stored_orphan = repository.get_reference(orphan_reference.reference_id)
+    assert stored_orphan is not None
+    assert stored_orphan.source_chunk_id is None
+    assert repository.active_references() == (active_reference,)
+
+
+def _reference(
+    *,
+    source_chunk_id: str,
+    raw_text: str,
+    normalized_target: str,
+    start_line: int,
+) -> TechnicalReference:
+    reference_id = technical_reference_id(
+        source_file_id=1,
+        raw_text=raw_text,
+        normalized_target=normalized_target,
+        reference_type="calls",
+        start_line=start_line,
+        end_line=start_line,
+    )
+    return TechnicalReference(
+        reference_id=reference_id,
+        source_file_id=1,
+        source_chunk_id=source_chunk_id,
+        raw_text=raw_text,
+        normalized_target=normalized_target,
+        reference_type="calls",
+        technology="oracle",
+        detection_method="parser",
+        confidence=Confidence.MEDIUM,
+        resolution_status=ResolutionStatus.UNRESOLVED,
+        start_line=start_line,
+        end_line=start_line,
+    )

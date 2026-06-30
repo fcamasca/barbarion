@@ -2512,12 +2512,31 @@ class SQLiteReverseEngineeringRepository:
         with self._connect_readonly() as connection:
             rows = connection.execute(
                 """
-                SELECT id, source_symbol_id, source_file_id, source_chunk_id,
-                       raw_text, normalized_target, reference_type, technology,
-                       start_line, end_line, detection_method, confidence,
-                       resolution_status, metadata_json
+                SELECT
+                    symbol_references.id AS id,
+                    symbol_references.source_symbol_id AS source_symbol_id,
+                    symbol_references.source_file_id AS source_file_id,
+                    symbol_references.source_chunk_id AS source_chunk_id,
+                    symbol_references.raw_text AS raw_text,
+                    symbol_references.normalized_target AS normalized_target,
+                    symbol_references.reference_type AS reference_type,
+                    symbol_references.technology AS technology,
+                    symbol_references.start_line AS start_line,
+                    symbol_references.end_line AS end_line,
+                    symbol_references.detection_method AS detection_method,
+                    symbol_references.confidence AS confidence,
+                    symbol_references.resolution_status AS resolution_status,
+                    symbol_references.metadata_json AS metadata_json
                 FROM symbol_references
-                ORDER BY source_file_id, start_line, id
+                JOIN chunks ON chunks.id = symbol_references.source_chunk_id
+                JOIN documents ON documents.id = chunks.document_id
+                JOIN files ON files.id = documents.file_id
+                WHERE files.status = 'processed'
+                  AND documents.source_sha256 = files.sha256
+                ORDER BY
+                    symbol_references.source_file_id,
+                    symbol_references.start_line,
+                    symbol_references.id
                 """
             ).fetchall()
         return tuple(_technical_reference_from_row(row) for row in rows)

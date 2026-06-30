@@ -524,6 +524,50 @@ def test_console_progress_reporter_points_to_embeddings_errors_command() -> None
     )
 
 
+def test_analyze_progress_reporter_renders_domain_counters() -> None:
+    stream = TtyBuffer()
+    reporter = cli.ConsoleProgressReporter(
+        stream,
+        min_interval_seconds=0.0,
+        title="Barbarion Analyze",
+        counter_labels={
+            "new": "Simbolos",
+            "update": "Referencias",
+            "unchanged": "Resueltas",
+            "delete": "Ambiguas",
+            "errores": "No resueltas",
+        },
+        error_detail_command=None,
+    )
+    reporter.start(())
+
+    reporter.stage(
+        ProgressSnapshot(
+            stage_key="resolve",
+            stage_label="Resolviendo relaciones",
+            current=5,
+            total=5,
+            global_current=5,
+            global_total=5,
+            counters={
+                "new": 1,
+                "update": 3,
+                "unchanged": 1,
+                "delete": 0,
+                "errores": 2,
+            },
+        )
+    )
+
+    assert "Barbarion Analyze" in stream.text
+    assert "Simbolos     : 1" in stream.text
+    assert "Referencias  : 3" in stream.text
+    assert "Resueltas    : 1" in stream.text
+    assert "Ambiguas     : 0" in stream.text
+    assert "No resueltas : 2" in stream.text
+    assert "barbarion embeddings --errors" not in stream.text
+
+
 def test_index_dry_run_uses_index_service(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -739,9 +783,19 @@ def test_search_json_invokes_service_with_filters(
 
 
 class FakeAskService:
-    def __init__(self, citations_valid: bool = True) -> None:
+    def __init__(
+        self,
+        citations_valid: bool = True,
+        *,
+        debug_payload: dict[str, object] | None = None,
+        answer: str = "## Conclusion\nRespuesta [F1]",
+        content: str = "contenido",
+    ) -> None:
         self.calls = []
         self.citations_valid = citations_valid
+        self.debug_payload = debug_payload or {}
+        self.answer = answer
+        self.content = content
 
     def ask(self, *args, **kwargs):
         self.calls.append((args, kwargs))
@@ -758,7 +812,7 @@ class FakeAskService:
         source = ContextSource(
             source_id="F1",
             candidate=candidate,
-            content="contenido",
+            content=self.content,
             token_estimate=2,
         )
         context = ContextBuildResult(
@@ -771,11 +825,12 @@ class FakeAskService:
         return AnswerResult(
             query_id=8,
             question=args[0],
-            answer="## Conclusion\nRespuesta [F1]",
+            answer=self.answer,
             context=context,
             status=RagQueryStatus.COMPLETED,
             no_llm=kwargs["no_llm"],
             citations_valid=self.citations_valid,
+            debug=self.debug_payload if kwargs["debug"] else {},
         )
 
 
@@ -817,6 +872,262 @@ def test_ask_no_llm_markdown_invokes_service(
     assert "## Conclusion" in captured.out
     assert "## Fuentes" in captured.out
     assert "lineas=10-12" in captured.out
+
+
+def _ask_debug_payload(
+    *,
+    valid: bool = False,
+    repair_attempted: bool = False,
+    repair_valid: bool | None = None,
+    prompt: str = "Prompt password=abc",
+    response: str = "Respuesta sin cita token=abc",
+) -> dict[str, object]:
+    validation = {
+        "expected_citations": ("F1",),
+        "found_citations": ("F1",) if valid else (),
+        "valid_citations": ("F1",) if valid else (),
+        "missing_citations": () if valid else ("F1",),
+        "invalid_citations": (),
+        "result": "PASS" if valid else "FAIL",
+        "reason": "ok" if valid else "la respuesta no incluyo citas validas",
+    }
+    payload: dict[str, object] = {
+        "retrieved_chunks": 3,
+        "reranked_chunks": 1,
+        "prompt_chars": len(prompt),
+        "prompt_tokens_est": 10,
+        "prompt": prompt,
+        "llm_response": response,
+        "validation": validation,
+        "citation_repair_attempted": repair_attempted,
+        "citation_repair_valid": repair_valid,
+        "repair_prompt": None,
+        "repair_response": None,
+        "repair_validation": None,
+    }
+    if repair_attempted:
+        repair_response = "Respuesta reparada [F1]" if repair_valid else "Sin cita"
+        repair_result = "PASS" if repair_valid else "FAIL"
+        payload.update(
+            {
+                "repair_prompt": "Repara api_key=abc",
+                "repair_response": repair_response,
+                "repair_validation": {
+                    "expected_citations": ("F1",),
+                    "found_citations": ("F1",) if repair_valid else (),
+                    "valid_citations": ("F1",) if repair_valid else (),
+                    "missing_citations": () if repair_valid else ("F1",),
+                    "invalid_citations": (),
+                    "result": repair_result,
+                    "reason": "ok"
+                    if repair_valid
+                    else "la respuesta no incluyo citas validas",
+                },
+            }
+        )
+    return payload
+
+
+def test_ask_debug_with_invalid_citations_writes_diagnostics_to_stderr(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(citations_valid=False, debug_payload=_ask_debug_payload())
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--debug"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "=== QUERY ===" in captured.err
+    assert "=== LLM RESPONSE ===" in captured.err
+    assert "=== VALIDATION ===" in captured.err
+    assert "result: FAIL" in captured.err
+    assert "final_result: REJECTED" in captured.err
+    assert "=== QUERY ===" not in captured.out
+
+
+def test_ask_debug_with_failed_repair_reports_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        citations_valid=False,
+        debug_payload=_ask_debug_payload(repair_attempted=True, repair_valid=False),
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--debug"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "=== REPAIR ATTEMPT ===" in captured.err
+    assert "=== REPAIR RESPONSE ===" in captured.err
+    assert "repair: FAIL" in captured.err
+    assert "la respuesta no incluyo citas validas" in captured.err
+
+
+def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        citations_valid=True,
+        debug_payload=_ask_debug_payload(valid=True, response="Respuesta [F1]"),
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--debug"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "llm_provider=ollama" in captured.err
+    assert "embedding_provider=ollama" in captured.err
+    assert "mode=hybrid" in captured.err
+    assert "retrieved_chunks=3" in captured.err
+    assert "[F1] score=0.800" in captured.err
+    assert "validation: PASS" in captured.err
+    assert "final_result: ACCEPTED" in captured.err
+
+
+def test_ask_debug_with_successful_repair_reports_acceptance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        citations_valid=True,
+        answer="## Conclusion\nRespuesta reparada [F1]",
+        debug_payload=_ask_debug_payload(repair_attempted=True, repair_valid=True),
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?", "--debug"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Respuesta reparada [F1]" in captured.err
+    assert "repair: PASS" in captured.err
+    assert "final_result: ACCEPTED" in captured.err
+
+
+def test_ask_debug_keeps_json_stdout_clean(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        citations_valid=True,
+        debug_payload=_ask_debug_payload(valid=True, response="Respuesta [F1]"),
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--debug", "--format", "json"]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["debug"] == {}
+    assert "=== QUERY ===" not in captured.out
+    assert "=== QUERY ===" in captured.err
+
+
+def test_ask_no_llm_debug_reports_not_executed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(debug_payload={"retrieved_chunks": 1, "reranked_chunks": 1})
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--no-llm", "--debug"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "=== LLM RESPONSE ===\nno ejecutada" in captured.err
+    assert "repair: NOT_EXECUTED" in captured.err
+    assert "modo --no-llm" in captured.err
+
+
+def test_ask_without_debug_keeps_normal_stdout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(debug_payload=_ask_debug_payload(valid=True))
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "=== QUERY ===" not in captured.err
+    assert "Debug:" not in captured.out
+    assert "## Conclusion" in captured.out
+
+
+def test_ask_debug_truncates_and_masks_sensitive_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    prompt = "inicio " + ("p" * 4100) + " secret=visible final"
+    response = "token=visible " + ("r" * 4100)
+    content = "api_key=visible " + ("c" * 600)
+    service = FakeAskService(
+        debug_payload=_ask_debug_payload(prompt=prompt, response=response),
+        content=content,
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?", "--debug"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "secret=********" in captured.err
+    assert "token=********" in captured.err
+    assert "api_key=********" in captured.err
+    assert "[TRUNCATED]" in captured.err
+    assert "secret=visible" not in captured.err
+    assert "token=visible" not in captured.err
+    assert "api_key=visible" not in captured.err
 
 
 def test_ask_llm_timeout_does_not_print_traceback(

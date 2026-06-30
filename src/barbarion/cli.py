@@ -3,11 +3,12 @@
 import argparse
 import json
 import logging
+import re
 import signal
 import shutil
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -299,9 +300,20 @@ class ConsoleProgressReporter:
         *,
         min_interval_seconds: float = 0.25,
         title: str = "Barbarion Index",
+        counter_labels: Mapping[str, str] | None = None,
+        error_detail_command: str | None = "barbarion embeddings --errors",
     ) -> None:
         self._stream = stream or sys.stderr
         self._title = title
+        self._counter_labels = {
+            "new": "Nuevos",
+            "update": "Actualizados",
+            "unchanged": "Sin cambios",
+            "delete": "Eliminados",
+            "errores": "Errores",
+            **(counter_labels or {}),
+        }
+        self._error_detail_command = error_detail_command
         self._started_at = time.monotonic()
         self._last_emit_at = 0.0
         self._min_interval_seconds = min_interval_seconds
@@ -342,11 +354,24 @@ class ConsoleProgressReporter:
                 f"{_progress_total(snapshot.total)}"
             ),
             "",
-            f"Nuevos       : {counters['new']}",
-            f"Actualizados : {counters['update']}",
-            f"Sin cambios  : {counters['unchanged']}",
-            f"Eliminados   : {counters['delete']}",
-            _progress_errors_line(counters["errores"]),
+            _progress_counter_line(self._counter_labels["new"], counters["new"]),
+            _progress_counter_line(
+                self._counter_labels["update"],
+                counters["update"],
+            ),
+            _progress_counter_line(
+                self._counter_labels["unchanged"],
+                counters["unchanged"],
+            ),
+            _progress_counter_line(
+                self._counter_labels["delete"],
+                counters["delete"],
+            ),
+            _progress_errors_line(
+                self._counter_labels["errores"],
+                counters["errores"],
+                detail_command=self._error_detail_command,
+            ),
         )
         self._write_block(tuple(_fit_progress_line(line) for line in block))
         self._last_stage = snapshot.stage_key
@@ -461,7 +486,17 @@ def _run_analyze(args: argparse.Namespace) -> int:
                 mode=mode,
                 scope=AnalyzeScope(path_prefix=path_prefix),
                 dry_run=args.dry_run,
-                progress=ConsoleProgressReporter(title="Barbarion Analyze"),
+                progress=ConsoleProgressReporter(
+                    title="Barbarion Analyze",
+                    counter_labels={
+                        "new": "Simbolos",
+                        "update": "Referencias",
+                        "unchanged": "Resueltas",
+                        "delete": "Ambiguas",
+                        "errores": "No resueltas",
+                    },
+                    error_detail_command=None,
+                ),
                 cancellation=cancellation,
             )
             summaries.append(summary)
@@ -684,6 +719,8 @@ def _run_search(args: argparse.Namespace) -> int:
 
 def _run_ask(args: argparse.Namespace) -> int:
     """Ejecuta pregunta RAG desde CLI."""
+    if args.debug:
+        _configure_stdio_encoding()
     settings = load_settings(args.config)
     if not settings.database_path.exists():
         print("No hay base SQLite de Barbarion. Ejecuta ingesta e indexacion.", file=sys.stderr)
@@ -710,7 +747,15 @@ def _run_ask(args: argparse.Namespace) -> int:
     except LlmProviderError as error:
         _print_llm_error(_llm_error_message(error))
         return 1
-    _render_answer_result(result, args.format)
+    output_result = result
+    if args.debug:
+        _render_ask_diagnostics(
+            result,
+            settings=settings,
+            mode=RetrievalMode(args.mode),
+        )
+        output_result = replace(result, debug={})
+    _render_answer_result(output_result, args.format)
     return 0 if result.citations_valid else 1
 
 
@@ -1222,6 +1267,260 @@ def _render_answer_debug(result: AnswerResult, *, markdown: bool) -> None:
     for key in keys:
         print(f"{key}={result.debug.get(key)}")
     print()
+
+
+def _render_ask_diagnostics(
+    result: AnswerResult,
+    *,
+    settings: Settings,
+    mode: RetrievalMode,
+) -> None:
+    """Muestra diagnostico detallado de `ask --debug` en stderr.
+
+    Args:
+        result: Resultado de `AskService.ask` con debug efimero.
+        settings: Configuracion efectiva usada por la ejecucion.
+        mode: Modo de retrieval solicitado por CLI.
+    """
+    debug = dict(result.debug)
+    print("=== QUERY ===", file=sys.stderr)
+    print(_mask_secrets(result.question), file=sys.stderr)
+    print("", file=sys.stderr)
+
+    print("=== MODEL ===", file=sys.stderr)
+    print(f"llm_provider={settings.llm.provider}", file=sys.stderr)
+    print(f"llm_model={settings.llm.model}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"embedding_provider={settings.embeddings.provider}", file=sys.stderr)
+    print(f"embedding_model={settings.embeddings.model}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    print("=== RETRIEVAL ===", file=sys.stderr)
+    print(f"mode={mode.value}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(
+        f"retrieved_chunks={debug.get('retrieved_chunks', len(result.context.sources))}",
+        file=sys.stderr,
+    )
+    print(
+        f"reranked_chunks={debug.get('reranked_chunks', len(result.context.sources))}",
+        file=sys.stderr,
+    )
+    print("", file=sys.stderr)
+    for source in result.context.sources:
+        print(
+            f"[{source.source_id}] score={source.candidate.combined_score:.3f}",
+            file=sys.stderr,
+        )
+    print("", file=sys.stderr)
+
+    print("=== CONTEXT STATS ===", file=sys.stderr)
+    print(f"retrieved_chunks={len(result.context.sources)}", file=sys.stderr)
+    print(f"prompt_chars={debug.get('prompt_chars', 0)}", file=sys.stderr)
+    print(f"prompt_tokens_est={debug.get('prompt_tokens_est', 0)}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+    print("=== CHUNKS ===", file=sys.stderr)
+    for source in result.context.sources:
+        _render_ask_debug_chunk(source)
+    if not result.context.sources:
+        print("no recuperados", file=sys.stderr)
+        print("", file=sys.stderr)
+
+    print("=== PROMPT ===", file=sys.stderr)
+    _render_debug_prompt(debug.get("prompt"))
+    print("", file=sys.stderr)
+
+    print("=== LLM RESPONSE ===", file=sys.stderr)
+    _render_debug_text(debug.get("llm_response"), max_chars=4000)
+    print("", file=sys.stderr)
+
+    print("=== VALIDATION ===", file=sys.stderr)
+    _render_validation_debug(debug.get("validation"))
+    print("", file=sys.stderr)
+
+    print("=== REPAIR ATTEMPT ===", file=sys.stderr)
+    _render_debug_text(debug.get("repair_prompt"), max_chars=4000)
+    print("", file=sys.stderr)
+
+    print("=== REPAIR RESPONSE ===", file=sys.stderr)
+    _render_debug_text(debug.get("repair_response"), max_chars=4000)
+    print("", file=sys.stderr)
+
+    print("=== REPAIR VALIDATION ===", file=sys.stderr)
+    _render_validation_debug(debug.get("repair_validation"))
+    print("", file=sys.stderr)
+
+    _render_ask_debug_summary(result, debug)
+
+
+def _render_ask_debug_chunk(source) -> None:
+    """Muestra una fuente recuperada con snippet truncado.
+
+    Args:
+        source: Fuente de contexto seleccionada para `ask`.
+    """
+    candidate = source.candidate
+    print(f"[{source.source_id}]", file=sys.stderr)
+    print(f"archivo={candidate.source.get('relative_path')}", file=sys.stderr)
+    print(f"lineas={_source_line_range(source)}", file=sys.stderr)
+    print(f"score={candidate.combined_score:.3f}", file=sys.stderr)
+    print(f"chunk_id={candidate.chunk_id}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(_truncate_debug_text(_mask_secrets(source.content), 500), file=sys.stderr)
+    print("", file=sys.stderr)
+
+
+def _render_debug_prompt(value: object) -> None:
+    """Muestra inicio y final de un prompt sin imprimirlo completo si es largo."""
+    if not isinstance(value, str) or not value:
+        print("no ejecutada", file=sys.stderr)
+        return
+    text = _mask_secrets(value)
+    if len(text) <= 4000:
+        print("----- BEGIN -----", file=sys.stderr)
+        print(text, file=sys.stderr)
+        print("----- END BEGIN -----", file=sys.stderr)
+        return
+    print("----- BEGIN -----", file=sys.stderr)
+    print(text[:2000], file=sys.stderr)
+    print("----- END BEGIN -----", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("[TRUNCATED]", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("----- FINAL -----", file=sys.stderr)
+    print(text[-2000:], file=sys.stderr)
+    print("----- END FINAL -----", file=sys.stderr)
+
+
+def _render_debug_text(value: object, *, max_chars: int) -> None:
+    """Muestra texto de debug truncado y enmascarado.
+
+    Args:
+        value: Valor a mostrar si es texto.
+        max_chars: Longitud maxima a imprimir.
+    """
+    if not isinstance(value, str) or not value:
+        print("no ejecutada", file=sys.stderr)
+        return
+    print(_truncate_debug_text(_mask_secrets(value), max_chars), file=sys.stderr)
+
+
+def _render_validation_debug(value: object) -> None:
+    """Muestra el resultado estructurado de una validacion de citas."""
+    if not isinstance(value, Mapping):
+        print("expected_citations: []", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("found_citations: []", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("valid_citations: []", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("missing_citations: []", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("invalid_citations: []", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("result: NOT_EXECUTED", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("reason:", file=sys.stderr)
+        print("no ejecutada", file=sys.stderr)
+        return
+    for key in (
+        "expected_citations",
+        "found_citations",
+        "valid_citations",
+        "missing_citations",
+        "invalid_citations",
+        "unsupported_claims",
+        "contradiction_claims",
+    ):
+        print(f"{key}: {_format_debug_list(value.get(key))}", file=sys.stderr)
+        print("", file=sys.stderr)
+    print(f"result: {value.get('result')}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("reason:", file=sys.stderr)
+    print(_mask_secrets(str(value.get("reason") or "")), file=sys.stderr)
+
+
+def _render_ask_debug_summary(result: AnswerResult, debug: Mapping[str, object]) -> None:
+    """Muestra el resumen final del diagnostico RAG."""
+    retrieval_pass = bool(result.context.sources)
+    generation_pass = result.no_llm or bool(debug.get("llm_response"))
+    validation_pass = result.citations_valid
+    repair_attempted = bool(debug.get("citation_repair_attempted"))
+    repair_value = "NOT_EXECUTED"
+    if repair_attempted:
+        repair_value = "PASS" if debug.get("citation_repair_valid") else "FAIL"
+    final_accepted = result.citations_valid
+    reason = _ask_debug_reason(
+        result,
+        retrieval_pass=retrieval_pass,
+        generation_pass=generation_pass,
+        repair_value=repair_value,
+        debug=debug,
+    )
+    print("=== SUMMARY ===", file=sys.stderr)
+    print(f"retrieval: {'PASS' if retrieval_pass else 'FAIL'}", file=sys.stderr)
+    print(f"generation: {'PASS' if generation_pass else 'FAIL'}", file=sys.stderr)
+    print(f"validation: {'PASS' if validation_pass else 'FAIL'}", file=sys.stderr)
+    print(f"repair: {repair_value}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(f"final_result: {'ACCEPTED' if final_accepted else 'REJECTED'}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("reason:", file=sys.stderr)
+    print(reason, file=sys.stderr)
+
+
+def _ask_debug_reason(
+    result: AnswerResult,
+    *,
+    retrieval_pass: bool,
+    generation_pass: bool,
+    repair_value: str,
+    debug: Mapping[str, object],
+) -> str:
+    """Calcula una causa principal compacta para el resumen de debug."""
+    if not retrieval_pass:
+        return "no se recupero evidencia sobre el umbral configurado"
+    if result.no_llm:
+        return "modo --no-llm; no se invoco el modelo generativo"
+    if not generation_pass:
+        return "no se obtuvo respuesta del LLM"
+    if result.citations_valid:
+        if repair_value == "PASS":
+            return "la respuesta original fallo la validacion y la reparacion fue aceptada"
+        return "la respuesta del LLM incluyo citas validas"
+    validation = debug.get("repair_validation") or debug.get("validation")
+    if isinstance(validation, Mapping) and validation.get("reason"):
+        return _mask_secrets(str(validation["reason"]))
+    return "la respuesta final no incluyo citas validas"
+
+
+def _format_debug_list(value: object) -> str:
+    if not isinstance(value, (list, tuple)):
+        return "[]"
+    return "[" + ", ".join(str(item) for item in value) + "]"
+
+
+def _truncate_debug_text(text: str, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars].rstrip() + "\n[TRUNCATED]"
+
+
+def _mask_secrets(text: str) -> str:
+    return re.sub(
+        r"(?i)\b(password|token|api_key|secret|authorization)\s*=\s*([^\s;,&]+)",
+        lambda match: f"{match.group(1)}=********",
+        text,
+    )
+
+
+def _source_line_range(source) -> str:
+    start = source.candidate.source.get("start_line")
+    end = source.candidate.source.get("end_line")
+    if start is None or end is None:
+        return "n/a"
+    return f"{start}-{end}" if start != end else str(start)
 
 
 def _search_response_json(response: SearchResponse) -> dict[str, object]:
@@ -1863,10 +2162,19 @@ def _progress_counter_values(counters: dict[str, int]) -> dict[str, int]:
     }
 
 
-def _progress_errors_line(errors: int) -> str:
-    line = f"Errores      : {errors}"
-    if errors > 0:
-        return f"{line}  Detalle disponible en: barbarion embeddings --errors"
+def _progress_counter_line(label: str, count: int) -> str:
+    return f"{label:<13}: {count}"
+
+
+def _progress_errors_line(
+    label: str,
+    errors: int,
+    *,
+    detail_command: str | None,
+) -> str:
+    line = _progress_counter_line(label, errors)
+    if errors > 0 and detail_command is not None:
+        return f"{line}  Detalle disponible en: {detail_command}"
     return line
 
 
@@ -2575,3 +2883,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("Operación interrumpida por el usuario.", file=sys.stderr)
         return 130
+
+
+def _configure_stdio_encoding() -> None:
+    """Configura UTF-8 para stdout/stderr cuando el runtime lo permite."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            continue

@@ -42,7 +42,7 @@ CREATE_RE = re.compile(
     \bCREATE\s+
     (?:OR\s+REPLACE\s+)?
     (?:(?:EDITIONABLE|NONEDITIONABLE)\s+)?
-    (?P<kind>PACKAGE\s+BODY|PACKAGE|TYPE\s+BODY|TYPE|VIEW|PROCEDURE|FUNCTION|TRIGGER)
+    (?P<kind>PACKAGE\s+BODY|PACKAGE|TYPE\s+BODY|TYPE|VIEW|PROCEDURE|FUNCTION|TRIGGER|TABLE|SEQUENCE)
     \s+(?P<name>{IDENTIFIER})
     """,
     re.IGNORECASE | re.VERBOSE,
@@ -92,6 +92,7 @@ class _OracleObject:
     unit_type: str
     name: str
     start_line: int
+    end_line: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,13 +101,14 @@ class _Subprogram:
     name: str
     start_line: int
     end_line: int
+    indent: int
 
 
 class OracleParser(BaseParser):
     """Extrae objetos Oracle principales y subprogramas confiables."""
 
     parser_id = "oracle"
-    parser_version = "1"
+    parser_version = "4"
     supported_extensions = ORACLE_EXTENSIONS
 
     def extract(
@@ -122,8 +124,8 @@ class OracleParser(BaseParser):
         lines = decoded.text.splitlines()
         line_count = max(1, len(lines))
         masked_lines = _mask_plsql(lines)
-        oracle_object = _detect_main_object(masked_lines)
-        if oracle_object is None:
+        oracle_objects = _detect_objects(masked_lines, line_count=line_count)
+        if not oracle_objects:
             units = (
                 LogicalUnit(
                     unit_type="file",
@@ -141,11 +143,10 @@ class OracleParser(BaseParser):
             warnings = (*decoded.warnings, "ORACLE_OBJECT_NOT_RECOGNIZED")
         else:
             units = _build_units(
-                oracle_object,
+                oracle_objects,
                 masked_lines=masked_lines,
-                line_count=line_count,
             )
-            title = oracle_object.name
+            title = oracle_objects[0].name
             warnings = decoded.warnings
 
         return ExtractionResult(
@@ -279,91 +280,128 @@ def extract_oracle_references(
     return tuple(references)
 
 
-def _detect_main_object(masked_lines: list[str]) -> _OracleObject | None:
+def _detect_objects(
+    masked_lines: list[str],
+    *,
+    line_count: int,
+) -> tuple[_OracleObject, ...]:
+    detections: list[tuple[str, str, int]] = []
     for index, line in enumerate(masked_lines):
         match = CREATE_RE.search(line)
         if match is None:
             continue
-        return _OracleObject(
-            unit_type=_unit_type(match.group("kind")),
-            name=_clean_identifier(match.group("name")),
-            start_line=index + 1,
-        )
-    return None
-
-
-def _build_units(
-    oracle_object: _OracleObject,
-    *,
-    masked_lines: list[str],
-    line_count: int,
-) -> tuple[LogicalUnit, ...]:
-    units: list[LogicalUnit] = [
-        LogicalUnit(
-            unit_type=oracle_object.unit_type,
-            name=oracle_object.name,
-            confidence=Confidence.HIGH,
-            start_line=oracle_object.start_line,
-            end_line=line_count,
-            metadata={
-                "format": "oracle",
-                "object_type": oracle_object.unit_type,
-                "object_name": oracle_object.name,
-                "breadcrumb": (oracle_object.name,),
-            },
-        )
-    ]
-    if oracle_object.unit_type != "package_body":
-        return tuple(units)
-
-    for subprogram in _detect_subprograms(masked_lines[oracle_object.start_line :]):
-        units.append(
-            LogicalUnit(
-                unit_type=subprogram.unit_type,
-                name=subprogram.name,
-                confidence=Confidence.HIGH,
-                start_line=subprogram.start_line + oracle_object.start_line,
-                end_line=subprogram.end_line + oracle_object.start_line,
-                metadata={
-                    "format": "oracle",
-                    "object_type": subprogram.unit_type,
-                    "object_name": subprogram.name,
-                    "parent_type": oracle_object.unit_type,
-                    "parent_name": oracle_object.name,
-                    "breadcrumb": (oracle_object.name, subprogram.name),
-                },
-            )
-        )
-    return tuple(units)
-
-
-def _detect_subprograms(masked_lines: list[str]) -> tuple[_Subprogram, ...]:
-    declarations: list[tuple[str, str, int]] = []
-    for index, line in enumerate(masked_lines):
-        match = SUBPROGRAM_RE.match(line)
-        if match is None:
-            continue
-        declarations.append(
+        detections.append(
             (
-                match.group("kind").lower(),
+                _unit_type(match.group("kind")),
                 _clean_identifier(match.group("name")),
                 index + 1,
             )
         )
 
+    objects: list[_OracleObject] = []
+    for index, (unit_type, name, start_line) in enumerate(detections):
+        next_start = (
+            detections[index + 1][2]
+            if index + 1 < len(detections)
+            else line_count + 1
+        )
+        end_line = _find_named_end(
+            masked_lines[: next_start - 1],
+            name=name,
+            start_line=start_line,
+        )
+        objects.append(
+            _OracleObject(
+                unit_type=unit_type,
+                name=name,
+                start_line=start_line,
+                end_line=end_line or next_start - 1,
+            )
+        )
+    return tuple(objects)
+
+
+def _build_units(
+    oracle_objects: tuple[_OracleObject, ...],
+    *,
+    masked_lines: list[str],
+) -> tuple[LogicalUnit, ...]:
+    units: list[LogicalUnit] = []
+    for oracle_object in oracle_objects:
+        units.append(
+            LogicalUnit(
+                unit_type=oracle_object.unit_type,
+                name=oracle_object.name,
+                confidence=Confidence.HIGH,
+                start_line=oracle_object.start_line,
+                end_line=oracle_object.end_line,
+                metadata={
+                    "format": "oracle",
+                    "object_type": oracle_object.unit_type,
+                    "object_name": oracle_object.name,
+                    "breadcrumb": (oracle_object.name,),
+                },
+            )
+        )
+        if oracle_object.unit_type != "package_body":
+            continue
+
+        package_body_lines = masked_lines[
+            oracle_object.start_line : oracle_object.end_line
+        ]
+        for subprogram in _detect_subprograms(package_body_lines):
+            units.append(
+                LogicalUnit(
+                    unit_type=subprogram.unit_type,
+                    name=subprogram.name,
+                    confidence=Confidence.HIGH,
+                    start_line=subprogram.start_line + oracle_object.start_line,
+                    end_line=subprogram.end_line + oracle_object.start_line,
+                    metadata={
+                        "format": "oracle",
+                        "object_type": subprogram.unit_type,
+                        "object_name": subprogram.name,
+                        "parent_type": oracle_object.unit_type,
+                        "parent_name": oracle_object.name,
+                        "breadcrumb": (oracle_object.name, subprogram.name),
+                    },
+                )
+            )
+    return tuple(units)
+
+
+def _detect_subprograms(masked_lines: list[str]) -> tuple[_Subprogram, ...]:
+    declarations: list[tuple[str, str, int, int]] = []
+    for index, line in enumerate(masked_lines):
+        match = SUBPROGRAM_RE.match(line)
+        if match is None:
+            continue
+        indent = len(line) - len(line.lstrip())
+        declarations.append(
+            (
+                match.group("kind").lower(),
+                _clean_identifier(match.group("name")),
+                index + 1,
+                indent,
+            )
+        )
+
     subprograms: list[_Subprogram] = []
-    for unit_type, name, start_line in declarations:
+    for index, (unit_type, name, start_line, indent) in enumerate(declarations):
         end_line = _find_named_end(masked_lines, name=name, start_line=start_line)
         if end_line is None:
-            continue
-        if _has_nested_declaration(masked_lines, start_line=start_line, end_line=end_line):
-            continue
+            end_line = _line_before_next_sibling(
+                declarations,
+                index=index,
+                fallback=len(masked_lines),
+            )
         subprograms.append(
             _Subprogram(
                 unit_type=unit_type,
                 name=name,
                 start_line=start_line,
                 end_line=end_line,
+                indent=indent,
             )
         )
     return tuple(subprograms)
@@ -383,16 +421,18 @@ def _find_named_end(
     return None
 
 
-def _has_nested_declaration(
-    masked_lines: list[str],
+def _line_before_next_sibling(
+    declarations: list[tuple[str, str, int, int]],
     *,
-    start_line: int,
-    end_line: int,
-) -> bool:
-    for index in range(start_line, end_line - 1):
-        if SUBPROGRAM_RE.match(masked_lines[index]):
-            return True
-    return False
+    index: int,
+    fallback: int,
+) -> int:
+    """Devuelve la linea previa al siguiente subprograma del mismo nivel."""
+    _, _, start_line, indent = declarations[index]
+    for _, _, next_start, next_indent in declarations[index + 1 :]:
+        if next_start > start_line and next_indent <= indent:
+            return max(start_line, next_start - 1)
+    return fallback
 
 
 def _unit_type(kind: str) -> str:
@@ -406,6 +446,8 @@ def _unit_type(kind: str) -> str:
         "procedure": "procedure",
         "function": "function",
         "trigger": "trigger",
+        "table": "table",
+        "sequence": "sequence",
     }[normalized]
 
 

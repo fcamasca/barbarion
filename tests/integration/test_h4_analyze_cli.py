@@ -28,6 +28,9 @@ def test_h4_analyze_dry_run_does_not_mutate_sqlite(
 
     assert exit_code == 0, captured.err
     assert "Dry-run de analisis tecnico: completed" in captured.out
+    assert "Resolviendo relaciones" in captured.err
+    assert "No resueltas : 1" in captured.err
+    assert "barbarion embeddings --errors" not in captured.err
     assert _scalar(db_path, "SELECT COUNT(*) FROM analysis_runs") == 0
     assert _scalar(db_path, "SELECT COUNT(*) FROM symbols") == 0
     assert _scalar(db_path, 'SELECT COUNT(*) FROM symbol_references') == 0

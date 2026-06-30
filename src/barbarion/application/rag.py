@@ -1,4 +1,4 @@
-"""Casos de uso RAG para indexacion RAG."""
+"""Servicios de aplicacion para indexacion, busqueda y respuesta RAG."""
 
 from __future__ import annotations
 
@@ -43,7 +43,14 @@ from barbarion.infrastructure.sqlite import SQLiteRagRepository
 
 @dataclass(frozen=True, slots=True)
 class IndexService:
-    """Orquesta indexacion incremental RAG."""
+    """Orquesta la indexacion local de chunks RAG.
+
+    Attributes:
+        settings: Configuracion efectiva de Barbarion.
+        repository: Repositorio SQLite para metadata RAG.
+        embedding_provider: Proveedor local de embeddings.
+        vector_store: Almacen vectorial local.
+    """
 
     settings: Settings
     repository: SQLiteRagRepository
@@ -60,7 +67,20 @@ class IndexService:
         progress: ProgressReporterPort | None = None,
         cancellation: CancellationTokenPort | None = None,
     ) -> IndexRunSummary:
-        """Ejecuta una corrida de indexacion o calcula un dry-run."""
+        """Ejecuta una corrida de indexacion o calcula un plan dry-run.
+
+        Args:
+            mode: Modo de indexacion solicitado.
+            scope: Alcance opcional para indexacion parcial.
+            dry_run: Si es `True`, calcula el plan sin persistir cambios.
+            delete_obsolete: Si es `True`, marca chunks obsoletos fuera de
+                ejecuciones parciales.
+            progress: Reporter opcional para progreso cooperativo.
+            cancellation: Token opcional para interrupcion cooperativa.
+
+        Returns:
+            Resumen persistible de la corrida de indexacion.
+        """
         started = time.monotonic()
         tracker = _IndexProgressTracker(progress)
         counters = _IndexCounters()
@@ -521,7 +541,14 @@ def _duration_ms(started: float) -> int:
 
 @dataclass(frozen=True, slots=True)
 class SearchService:
-    """Orquesta recuperacion semantic, keyword e hybrid para RAG."""
+    """Orquesta recuperacion semantic, keyword e hybrid para RAG.
+
+    Attributes:
+        settings: Configuracion efectiva de Barbarion.
+        repository: Repositorio SQLite para consultas y chunks.
+        embedding_provider: Proveedor local usado para consultas semanticas.
+        vector_store: Almacen vectorial local.
+    """
 
     settings: Settings
     repository: SQLiteRagRepository
@@ -529,7 +556,14 @@ class SearchService:
     vector_store: VectorStorePort
 
     def search(self, request: SearchRequest) -> SearchResponse:
-        """Ejecuta busqueda RAG y registra observabilidad local."""
+        """Ejecuta busqueda RAG y registra observabilidad local.
+
+        Args:
+            request: Parametros de consulta, filtros, modo y limites.
+
+        Returns:
+            Respuesta con candidatos enriquecidos, timings y debug opcional.
+        """
         manifest_row = self.repository.find_active_manifest(
             provider=self.embedding_provider.provider,
             model=self.embedding_provider.model,
@@ -693,7 +727,14 @@ def _with_mode(candidate, mode: RetrievalMode):
 
 @dataclass(frozen=True, slots=True)
 class ContextBuilder:
-    """Construye contexto final con deduplicacion antes del presupuesto."""
+    """Construye el contexto final que recibira el LLM.
+
+    Attributes:
+        token_budget: Presupuesto maximo estimado del contexto renderizado.
+        max_chunk_tokens: Limite estimado por chunk individual.
+        dedupe_min_hash_prefix: Longitud de prefijo para deduplicar contenido.
+        threshold: Score minimo aceptado antes de construir contexto.
+    """
 
     token_budget: int
     max_chunk_tokens: int
@@ -706,7 +747,15 @@ class ContextBuilder:
         *,
         debug: bool = False,
     ) -> ContextBuildResult:
-        """Aplica threshold, dedupe, agrupacion, orden y presupuesto."""
+        """Aplica threshold, dedupe, orden estable y presupuesto de contexto.
+
+        Args:
+            candidates: Candidatos recuperados por `SearchService`.
+            debug: Si es `True`, incluye metricas efimeras del armado.
+
+        Returns:
+            Contexto renderizado con fuentes numeradas y metricas de calidad.
+        """
         thresholded, score_omitted = self._threshold(candidates)
         deduped, duplicate_omitted = self._dedupe(thresholded)
         ordered = self._stable_document_order(deduped)
@@ -821,9 +870,18 @@ class ContextBuilder:
 
 @dataclass(frozen=True, slots=True)
 class PromptBuilder:
-    """Construye prompts controlados en espanol."""
+    """Construye prompts controlados para respuestas citadas en espanol."""
 
     def build(self, *, question: str, context: ContextBuildResult) -> str:
+        """Construye el prompt inicial de generacion.
+
+        Args:
+            question: Pregunta original del usuario.
+            context: Contexto recuperado con fuentes permitidas.
+
+        Returns:
+            Prompt que restringe la respuesta a la evidencia recuperada.
+        """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
         return (
             "Responde en espanol usando solo la evidencia provista.\n"
@@ -895,6 +953,18 @@ class CitationValidator:
         *,
         question: str = "",
     ) -> CitationValidation:
+        """Valida una respuesta generada contra las fuentes disponibles.
+
+        Args:
+            answer: Respuesta generada por el LLM.
+            context: Contexto con fuentes permitidas para citar.
+            question: Pregunta original; se usa para detectar evidencia
+                insuficiente cuando el contexto no cubre la consulta.
+
+        Returns:
+            Resultado de validacion con citas, claims no soportados,
+            contradicciones y razon principal.
+        """
         allowed = {source.source_id for source in context.sources}
         cited = set(re.findall(r"\[(F\d+)\]", answer))
         missing = tuple(sorted(cited - allowed))
@@ -946,7 +1016,16 @@ class CitationValidator:
 
 @dataclass(frozen=True, slots=True)
 class AskService:
-    """Orquesta search, contexto, prompt, LLM y validacion de citas."""
+    """Orquesta busqueda, contexto, prompt, LLM y validacion de `ask`.
+
+    Attributes:
+        search_service: Servicio de recuperacion de evidencia.
+        context_builder: Constructor del contexto numerado.
+        prompt_builder: Constructor de prompts de generacion y reparacion.
+        citation_validator: Validador de citas y soporte.
+        llm_provider: Proveedor local de generacion.
+        settings: Configuracion efectiva de Barbarion.
+    """
 
     search_service: SearchService
     context_builder: ContextBuilder
@@ -967,6 +1046,21 @@ class AskService:
         no_llm: bool = False,
         debug: bool = False,
     ) -> AnswerResult:
+        """Responde una pregunta RAG con validacion estricta de evidencia.
+
+        Args:
+            question: Pregunta original del usuario.
+            mode: Modo de recuperacion RAG.
+            filters: Filtros opcionales de recuperacion.
+            top_k: Cantidad maxima de fuentes finales.
+            candidate_k: Cantidad inicial de candidatos a evaluar.
+            threshold: Score minimo aceptado.
+            no_llm: Si es `True`, devuelve solo contexto recuperado.
+            debug: Si es `True`, incluye diagnostico efimero para CLI.
+
+        Returns:
+            Resultado con respuesta, fuentes, estado y debug opcional.
+        """
         started = time.monotonic()
         search = self.search_service.search(
             SearchRequest(
@@ -1189,6 +1283,18 @@ def _ask_debug_payload(
     prompt: str,
     timeout_seconds: float,
 ) -> dict[str, object]:
+    """Construye metricas efimeras para diagnostico de `ask --debug`.
+
+    Args:
+        started: Marca temporal de inicio del flujo `ask`.
+        search: Resultado de recuperacion usado para construir el contexto.
+        context: Contexto final que recibira el LLM.
+        prompt: Prompt enviado al LLM, si ya fue construido.
+        timeout_seconds: Timeout configurado para el LLM.
+
+    Returns:
+        Diccionario de metricas en memoria, no persistido en SQLite.
+    """
     retrieved_chunks = int(search.debug.get("vector_candidates") or 0) + int(
         search.debug.get("keyword_candidates") or 0
     )
@@ -1290,6 +1396,15 @@ _STOPWORDS = frozenset(
 
 
 def _context_answers_question(question: str, context: ContextBuildResult) -> bool:
+    """Estima si el contexto contiene terminos relevantes de la pregunta.
+
+    Args:
+        question: Pregunta original del usuario.
+        context: Contexto recuperado que se evaluara.
+
+    Returns:
+        `True` si el solapamiento minimo sugiere evidencia directa.
+    """
     if not question:
         return True
     question_tokens = _important_tokens(question)
@@ -1302,6 +1417,14 @@ def _context_answers_question(question: str, context: ContextBuildResult) -> boo
 
 
 def _is_insufficient_evidence_answer(answer: str) -> bool:
+    """Detecta respuestas que declaran evidencia insuficiente.
+
+    Args:
+        answer: Respuesta generada o reparada.
+
+    Returns:
+        `True` si la respuesta declara evidencia insuficiente.
+    """
     return "evidencia insuficiente" in _normalize_text(answer)
 
 
@@ -1309,6 +1432,15 @@ def _unsupported_claims(
     answer: str,
     context: ContextBuildResult,
 ) -> tuple[str, ...]:
+    """Identifica afirmaciones citadas sin soporte lexical suficiente.
+
+    Args:
+        answer: Respuesta generada o reparada.
+        context: Contexto con el contenido de cada fuente citada.
+
+    Returns:
+        Afirmaciones compactadas que no se sostienen en sus fuentes citadas.
+    """
     source_tokens = {
         source.source_id: _important_tokens(source.content)
         for source in context.sources
@@ -1332,6 +1464,15 @@ def _contradiction_claims(
     answer: str,
     context: ContextBuildResult,
 ) -> tuple[str, ...]:
+    """Detecta contradicciones negativas simples contra el contexto.
+
+    Args:
+        answer: Respuesta generada o reparada.
+        context: Contexto recuperado completo.
+
+    Returns:
+        Afirmaciones compactadas que contradicen patrones explicitos.
+    """
     normalized_context = _normalize_text(context.rendered_context)
     contradictions: list[str] = []
     for claim, _source_ids in _cited_claims(answer):
@@ -1352,6 +1493,14 @@ def _contradiction_claims(
 
 
 def _cited_claims(answer: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Extrae afirmaciones que contienen citas inline.
+
+    Args:
+        answer: Respuesta generada o reparada.
+
+    Returns:
+        Tuplas con el texto de la afirmacion y los IDs de fuente citados.
+    """
     claims: list[tuple[str, tuple[str, ...]]] = []
     for raw_claim in re.split(r"(?<=[.!?])\s+|\n+", answer):
         claim = raw_claim.strip(" -\t")
@@ -1364,6 +1513,15 @@ def _cited_claims(answer: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
 
 
 def _claim_supported(claim_tokens: set[str], source_tokens: set[str]) -> bool:
+    """Evalua soporte lexical minimo entre una afirmacion y sus fuentes.
+
+    Args:
+        claim_tokens: Terminos relevantes de la afirmacion.
+        source_tokens: Terminos relevantes de las fuentes citadas.
+
+    Returns:
+        `True` si hay solapamiento suficiente para aceptar soporte basico.
+    """
     if not source_tokens:
         return False
     unique_terms = {
@@ -1378,6 +1536,14 @@ def _claim_supported(claim_tokens: set[str], source_tokens: set[str]) -> bool:
 
 
 def _important_tokens(text: str) -> set[str]:
+    """Normaliza y filtra terminos utiles para validacion lexical.
+
+    Args:
+        text: Texto a tokenizar.
+
+    Returns:
+        Conjunto de tokens relevantes sin stopwords operativas.
+    """
     return {
         token
         for token in re.findall(r"[a-z0-9_]+", _normalize_text(text))
@@ -1388,6 +1554,14 @@ def _important_tokens(text: str) -> set[str]:
 
 
 def _normalize_text(text: str) -> str:
+    """Normaliza texto para comparaciones case-insensitive y sin tildes.
+
+    Args:
+        text: Texto original.
+
+    Returns:
+        Texto en minusculas con vocales acentuadas normalizadas.
+    """
     replacements = str.maketrans(
         {
             "á": "a",
@@ -1408,15 +1582,39 @@ def _normalize_text(text: str) -> str:
 
 
 def _strip_citations(text: str) -> str:
+    """Elimina marcadores de cita del texto.
+
+    Args:
+        text: Texto con posibles citas inline.
+
+    Returns:
+        Texto sin marcadores `[F#]`.
+    """
     return re.sub(r"\[(F\d+)\]", "", text)
 
 
 def _compact_claim(text: str) -> str:
+    """Compacta una afirmacion para reportarla en debug.
+
+    Args:
+        text: Afirmacion original.
+
+    Returns:
+        Afirmacion de una linea truncada a longitud razonable.
+    """
     compact = " ".join(text.split())
     return compact[:180]
 
 
 def _no_llm_answer(context: ContextBuildResult) -> str:
+    """Construye la respuesta de inspeccion para `ask --no-llm`.
+
+    Args:
+        context: Contexto recuperado que se mostrara al usuario.
+
+    Returns:
+        Respuesta textual con fuentes recuperadas sin llamar al LLM.
+    """
     return (
         "## Conclusion\n"
         "Modo sin LLM: se muestra el contexto recuperado para inspeccion.\n\n"
@@ -1431,6 +1629,11 @@ def _no_llm_answer(context: ContextBuildResult) -> str:
 
 
 def _insufficient_evidence_answer() -> str:
+    """Construye la respuesta estandar cuando no hay fuentes recuperadas.
+
+    Returns:
+        Mensaje de evidencia insuficiente sin invocar el LLM.
+    """
     return (
         "## Conclusion\n"
         "Evidencia insuficiente para responder con seguridad.\n\n"
@@ -1447,6 +1650,16 @@ def _invalid_citations_answer(
     *,
     repair_attempted: bool = False,
 ) -> str:
+    """Construye la respuesta de rechazo para validaciones fallidas.
+
+    Args:
+        validation: Resultado de validacion fallida.
+        context: Contexto recuperado para listar fuentes disponibles.
+        repair_attempted: Indica si ya se ejecuto un intento de reparacion.
+
+    Returns:
+        Respuesta textual que explica el rechazo y conserva evidencia util.
+    """
     if validation.missing_source_ids:
         detail = f"Citas inexistentes: {', '.join(validation.missing_source_ids)}."
         conclusion = (
@@ -1493,6 +1706,14 @@ def _invalid_citations_answer(
 
 
 def _line_range(source: ContextSource) -> str:
+    """Renderiza el rango de lineas de una fuente de contexto.
+
+    Args:
+        source: Fuente numerada del contexto.
+
+    Returns:
+        Rango `inicio-fin`, linea unica o `n/a` si no hay metadata.
+    """
     start = source.candidate.source.get("start_line")
     end = source.candidate.source.get("end_line")
     if start is None or end is None:

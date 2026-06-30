@@ -13,7 +13,8 @@ H4 no se declara aceptado en este documento. La aceptacion queda bloqueada hasta
 | Fecha | 2026-06-30 |
 | Branch | `feature/H4-ReverseEngineering` |
 | Commit evaluado | `0cd50cd` |
-| Version Barbarion | `barbarion 0.3.0` |
+| Version Barbarion evaluada en T12 | `barbarion 0.3.0` |
+| Version Barbarion candidata post-correccion | `barbarion 0.4.0` |
 | Python | `3.12.13` |
 | Sistema | Windows |
 | Operacion | Local/on-premise; sin servicios cloud |
@@ -187,7 +188,7 @@ Resultado:
 - Nombres no calificados pueden producir ambiguedad; H4 debe mostrar candidatos y no resolver silenciosamente.
 - El parser es heuristico; no garantiza cobertura completa de PLSQL ni PowerBuilder.
 - La muestra de calidad es sintetica y pequena; no se declara porcentaje objetivo de precision.
-- Smoke instalado esta desactualizado en version esperada y migraciones esperadas.
+- Smoke instalado estaba desactualizado en version esperada y migraciones esperadas durante T12; se corrige posteriormente como contrato de pruebas.
 - No se ejecuto validacion con corpus privado/productivo, por privacidad y alcance.
 - No se midio memoria; se registraron duraciones y conteos disponibles por CLI/SQLite.
 
@@ -210,4 +211,29 @@ Condiciones pendientes antes de declarar aceptacion:
 3. Revisar `reports/h4/describe-powerbuilder.md`.
 4. Revisar `reports/h4/impact-cross-stack.md`.
 5. Confirmar o corregir falsos positivos y falsos negativos.
-6. Decidir si las fallas de smoke instalado son aceptadas como deuda de pruebas o deben corregirse antes de aceptar H4.
+6. Revisar el addendum post-T12 de version candidata y smoke corregido.
+
+## Addendum post-T12: version candidata 0.4.0
+
+Despues de T12 se realizo una correccion puntual de metadata y contratos de smoke:
+
+- version del paquete: `0.3.0` -> `0.4.0`;
+- contrato smoke de `barbarion --version`: `barbarion 0.4.0`;
+- contrato smoke de migraciones esperadas: `[(1,), (2,), (3,), (4,)]`.
+
+Validacion posterior:
+
+```bash
+.pytest-tmp\h4-venv\Scripts\python.exe -m pip install -e . --no-deps --no-build-isolation
+.pytest-tmp\h4-venv\Scripts\barbarion.exe --version
+.pytest-tmp\h4-venv\Scripts\python.exe -m pytest --basetemp .pytest-tmp\version-smoke-reinstalled tests\smoke
+```
+
+Resultado:
+
+- paquete editable construido e instalado como `barbarion-0.4.0`;
+- CLI instalada reporta `barbarion 0.4.0`;
+- `10 passed`
+- `1 warning` de cache pytest por permisos sobre `.pytest_cache` en Windows.
+
+Esta correccion no declara H4 aceptado. La aceptacion sigue pendiente de feedback humano.

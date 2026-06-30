@@ -140,7 +140,7 @@ def test_version_from_installed_cli_has_no_side_effects(tmp_path: Path) -> None:
     result = run_barbarion("--version", cwd=tmp_path)
 
     assert result.returncode == 0
-    assert result.stdout.strip() == "barbarion 0.2.0"
+    assert result.stdout.strip() == "barbarion 0.4.0"
     assert list(tmp_path.iterdir()) == []
 
 
@@ -208,7 +208,7 @@ def test_repeated_doctor_is_idempotent(
         rows = connection.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
-    assert rows == [(1,), (2,)]
+    assert rows == [(1,), (2,), (3,), (4,)]
     log_content = (tmp_path / "logs" / "barbarion.log").read_text(
         encoding="utf-8"
     )

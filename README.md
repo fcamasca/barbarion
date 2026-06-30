@@ -10,7 +10,10 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 
 `H1-Foundation` está completado y aceptado en la versión `0.1.0`.
 `H2-Ingestion` está completado y aceptado en la versión `0.2.0`.
-`H3-RAG` está completado y aceptado en la versión `0.3.0`:
+`H3-RAG` está completado y aceptado en la versión `0.3.0`.
+`H4-ReverseEngineering` está implementado como candidato de revisión en la versión `0.4.0`; queda pendiente de aceptación humana.
+
+H3 incluye:
 
 - paquete Python instalable;
 - CLI local en español;

@@ -99,22 +99,77 @@ Pregunta que responde:
 
 Construye:
 
--   símbolos
--   referencias
--   relaciones
--   dependencias
--   impacto
--   descripciones técnicas
+- símbolos
+- referencias
+- relaciones
+- dependencias
+- impacto
+- descripciones técnicas
+
+Alcance actual:
+
+La primera versión de H4 reconstruye relaciones a partir del código fuente
+y de sus artefactos estructurales (packages, procedures, funciones,
+tablas, vistas, secuencias, etc.).
+
+La reconstrucción de aplicaciones data-driven, donde parte importante de
+la lógica reside en configuraciones persistidas en base de datos
+(plantillas, reglas, parámetros, workflows, mappings u otros metadatos),
+forma parte de la evolución futura de la ingeniería inversa.
 
 Resultado:
 
-Barbarion entiende la estructura del sistema.
+Barbarion entiende la estructura del sistema implementada en código y la
+utiliza para análisis técnico e impacto.
 
 ------------------------------------------------------------------------
 
 # Evolución futura
 
-## H4.1 -- Patrones técnicos
+------------------------------------------------------------------------
+
+## H4.1 -- Configuraciones Data-Driven
+
+Pregunta que responde:
+
+**¿Dónde vive realmente la lógica del negocio cuando no está escrita directamente en el código?**
+
+Construye:
+
+- entidades de configuración
+- reglas configuradas
+- expresiones y fórmulas
+- relaciones entre configuraciones
+- dependencias hacia componentes de ejecución
+- grafo de configuraciones
+
+Detecta de forma genérica aplicaciones cuyo comportamiento está definido por configuración persistida, por ejemplo:
+
+- plantillas
+- reglas
+- parámetros
+- workflows
+- mappings
+- metadata de negocio
+- SQL dinámico
+- expresiones ejecutables
+
+Relaciona dichas configuraciones con:
+
+- procedimientos
+- funciones
+- packages
+- tablas
+- vistas
+- otros componentes técnicos
+
+Resultado:
+
+Barbarion incorpora al grafo de conocimiento la lógica definida en configuraciones, permitiendo comprender arquitecturas data-driven sin depender de implementaciones específicas del dominio.
+
+------------------------------------------------------------------------
+
+## H4.2 -- Patrones técnicos
 
 Detectar:
 
@@ -127,7 +182,7 @@ Detectar:
 
 ------------------------------------------------------------------------
 
-## H4.2 -- Flujos
+## H4.3 -- Flujos
 
 Reconstruir procesos completos.
 
@@ -161,7 +216,7 @@ Correo
 
 ------------------------------------------------------------------------
 
-## H4.3 -- Contexto funcional
+## H4.4 -- Contexto funcional
 
 Agrupar componentes por dominio.
 
@@ -175,7 +230,7 @@ Ejemplo:
 
 ------------------------------------------------------------------------
 
-## H4.4 -- Reasoning Package
+## H4.5 -- Reasoning Package
 
 Construir un paquete estructurado para cualquier LLM.
 
@@ -192,7 +247,7 @@ Debe incluir:
 
 ------------------------------------------------------------------------
 
-## H4.5 -- Multi LLM
+## H4.6 -- Multi LLM
 
 El mismo Reasoning Package puede enviarse a:
 

@@ -103,25 +103,25 @@ Estados iniciales: `pendiente`.
 
 ### H4-T09 - Integrar `describe` CLI y ficha Markdown
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** exponer `barbarion describe` con formatos, opciones y Markdown estable.  
 **Modulos estimados:** `cli.py`, `application/reverse_engineering.py`, `infrastructure/markdown.py`.  
 **Requisitos:** H4-RF-007, H4-RF-009, H4-RNF-002, H4-RNF-007.  
 **Dependencias:** H4-T07, H4-T08.  
 **Pruebas exigidas:** help, argumentos validos/invalidos, candidatos multiples, `--no-llm`, LLM fake, output seguro, golden Markdown.  
 **Condicion de finalizacion:** `describe` produce ficha trazable y no sobrescribe archivos sin `--overwrite`.  
-**Checkpoint:** `python -m pytest tests/integration/test_h4_describe_cli.py tests/golden/test_h4_component_markdown.py`.
+**Checkpoint:** `python -m pytest tests/integration/test_describe_cli.py tests/golden/test_component_markdown.py`.
 
 ### H4-T10 - Integrar `impact` CLI y Markdown de impacto
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** exponer `barbarion impact` con recorridos, filtros, salida y Markdown estable.  
 **Modulos estimados:** `cli.py`, `application/reverse_engineering.py`, `infrastructure/markdown.py`.  
 **Requisitos:** H4-RF-008, H4-RF-009, H4-RNF-002, H4-RNF-007.  
 **Dependencias:** H4-T07, H4-T08.  
 **Pruebas exigidas:** incoming/outgoing/both, depth, cruces Oracle-PowerBuilder, unresolved, ciclos, output seguro, golden Markdown.  
 **Condicion de finalizacion:** `impact` genera analisis basico con detectado/inferido/por_confirmar.  
-**Checkpoint:** `python -m pytest tests/integration/test_h4_impact_cli.py tests/golden/test_h4_impact_markdown.py`.
+**Checkpoint:** `python -m pytest tests/integration/test_impact_cli.py tests/golden/test_impact_markdown.py`.
 
 ### H4-T11 - Completar observabilidad, errores y documentacion operativa
 

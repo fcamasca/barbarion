@@ -560,9 +560,9 @@ sequenceDiagram
 
 Plantillas H4:
 
-- `inventory` version `h4.inventory.v1`;
-- `component` version `h4.component.v1`;
-- `impact` version `h4.impact.v1`.
+- `inventory` version `inventory.v1`;
+- `component` version `component.v1`;
+- `impact` version `impact.v1`.
 
 Estructura comun:
 

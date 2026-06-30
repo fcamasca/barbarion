@@ -26,8 +26,14 @@ from barbarion.application.reverse_engineering import (
     AnalyzeScope,
     AnalyzeService,
     AnalyzeSummary,
+    DependencyWalkService,
+    DescribeRequest,
+    DescribeService,
+    ImpactRequest,
+    ImpactService,
     InventoryRequest,
     InventoryService,
+    ObjectRequest,
 )
 from barbarion.application.reporting import generate_rag_report
 from barbarion.bootstrap import DirectoryResult, initialize_directories
@@ -54,10 +60,17 @@ from barbarion.domain.rag import (
 from barbarion.domain.reverse_engineering import (
     AnalysisRunMode,
     AnalysisRunStatus,
+    ComponentDescription,
+    DependencyDirection,
+    DependencyEdge,
+    DependencyFilters,
+    ImpactAnalysis,
     Inventory,
     InventoryFilters,
     InventoryItem,
+    ResolutionStatus,
     SymbolStatus,
+    TechnicalSymbol,
 )
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
@@ -77,7 +90,11 @@ from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.infrastructure.markdown import (
+    render_component_markdown,
+    render_impact_markdown,
     render_inventory_markdown,
+    safe_component_filename,
+    safe_impact_filename,
     safe_inventory_filename,
     write_text_artifact,
 )
@@ -115,6 +132,27 @@ def _add_help_option(parser: argparse.ArgumentParser) -> None:
         action="help",
         help="muestra esta ayuda y finaliza",
     )
+
+
+def _positive_int(value: str) -> int:
+    """Valida enteros positivos para opciones CLI.
+
+    Args:
+        value: Valor textual recibido por `argparse`.
+
+    Returns:
+        Entero positivo validado.
+
+    Raises:
+        argparse.ArgumentTypeError: Si el valor no es un entero positivo.
+    """
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("debe ser un entero positivo") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("debe ser un entero positivo")
+    return parsed
 
 
 def _show_config(args: argparse.Namespace) -> int:
@@ -475,6 +513,99 @@ def _run_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_describe(args: argparse.Namespace) -> int:
+    """Describe un componente reverse engineering y renderiza la salida solicitada.
+
+    Args:
+        args: Argumentos parseados por `argparse` para el comando `describe`.
+
+    Returns:
+        Codigo de salida CLI: 0 si se genera la salida, 1 ante errores
+        operativos esperados.
+    """
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' e "
+            "ingesta el corpus antes de describir componentes.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_describe_service(settings, with_llm=args.with_llm)
+    request = DescribeRequest(
+        target=_object_request(args),
+        depth=args.depth,
+        no_llm=not args.with_llm or args.no_llm,
+        include_rag=args.include_rag,
+    )
+    description = service.describe(request)
+    content = _render_description(description, args.format)
+    if args.output is not None:
+        output_path = _description_output_path(settings, args.output, description)
+        try:
+            written = write_text_artifact(
+                output_path,
+                content,
+                overwrite=args.overwrite,
+            )
+        except FileExistsError as error:
+            print(f"Error operativo: {error}", file=sys.stderr)
+            return 1
+        print(f"Ficha escrita: {written}")
+        return 0
+    print(content)
+    return 0
+
+
+def _run_impact(args: argparse.Namespace) -> int:
+    """Analiza impacto reverse engineering y renderiza la salida solicitada.
+
+    Args:
+        args: Argumentos parseados por `argparse` para el comando `impact`.
+
+    Returns:
+        Codigo de salida CLI: 0 si se genera la salida, 1 ante errores
+        operativos esperados.
+    """
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' e "
+            "ingesta el corpus antes de analizar impacto.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_impact_service(settings, with_llm=args.with_llm)
+    request = ImpactRequest(
+        target=_object_request(args),
+        direction=DependencyDirection(args.direction),
+        depth=args.depth,
+        node_limit=args.node_limit,
+        no_llm=not args.with_llm or args.no_llm,
+        include_rag=args.include_rag,
+        filters=_dependency_filters(args),
+    )
+    impact = service.analyze(request)
+    content = _render_impact(impact, args.format)
+    if args.output is not None:
+        output_path = _impact_output_path(settings, args.output, impact)
+        try:
+            written = write_text_artifact(
+                output_path,
+                content,
+                overwrite=args.overwrite,
+            )
+        except FileExistsError as error:
+            print(f"Error operativo: {error}", file=sys.stderr)
+            return 1
+        print(f"Impacto escrito: {written}")
+        return 0
+    print(content)
+    return 0
+
+
 def _run_search(args: argparse.Namespace) -> int:
     """Ejecuta busqueda RAG desde CLI."""
     settings = load_settings(args.config)
@@ -786,6 +917,66 @@ def _build_inventory_service(settings: Settings) -> InventoryService:
     )
 
 
+def _build_describe_service(
+    settings: Settings,
+    *,
+    with_llm: bool = False,
+) -> DescribeService:
+    """Construye el servicio de descripcion sobre SQLite.
+
+    Args:
+        settings: Configuracion efectiva de Barbarion.
+        with_llm: Indica si se debe cablear un proveedor LLM local.
+
+    Returns:
+        Servicio `describe` conectado a repositorios locales.
+    """
+    repository = SQLiteReverseEngineeringRepository(settings.database_path)
+    return DescribeService(
+        repository=repository,
+        dependency_walk_service=DependencyWalkService(repository),
+        search_service=_build_search_service(settings),
+        context_builder=ContextBuilder(
+            token_budget=settings.rag.context_token_budget,
+            max_chunk_tokens=settings.rag.max_chunk_tokens,
+            dedupe_min_hash_prefix=settings.rag.dedupe_min_hash_prefix,
+            threshold=settings.retrieval.similarity_threshold,
+        ),
+        llm_provider=_build_llm_provider(settings) if with_llm else None,
+        llm_timeout_seconds=settings.llm.timeout_seconds,
+    )
+
+
+def _build_impact_service(
+    settings: Settings,
+    *,
+    with_llm: bool = False,
+) -> ImpactService:
+    """Construye el servicio de impacto sobre SQLite.
+
+    Args:
+        settings: Configuracion efectiva de Barbarion.
+        with_llm: Indica si se debe cablear un proveedor LLM local.
+
+    Returns:
+        Servicio `impact` conectado a repositorios locales.
+    """
+    repository = SQLiteReverseEngineeringRepository(settings.database_path)
+    return ImpactService(
+        repository=repository,
+        dependency_walk_service=DependencyWalkService(repository),
+        search_service=_build_search_service(settings),
+        context_builder=ContextBuilder(
+            token_budget=settings.rag.context_token_budget,
+            max_chunk_tokens=settings.rag.max_chunk_tokens,
+            dedupe_min_hash_prefix=settings.rag.dedupe_min_hash_prefix,
+            threshold=settings.retrieval.similarity_threshold,
+        ),
+        llm_provider=_build_llm_provider(settings) if with_llm else None,
+        llm_timeout_seconds=settings.llm.timeout_seconds,
+    )
+
+
 def _build_search_service(settings: Settings) -> SearchService:
     vector_table = f"{settings.vector_store.table_prefix}_vectors"
     return SearchService(
@@ -807,6 +998,22 @@ def _build_search_service(settings: Settings) -> SearchService:
     )
 
 
+def _build_llm_provider(settings: Settings) -> OllamaLlmProvider:
+    """Construye el proveedor LLM local configurado.
+
+    Args:
+        settings: Configuracion efectiva de Barbarion.
+
+    Returns:
+        Proveedor Ollama local.
+    """
+    return OllamaLlmProvider(
+        base_url=settings.ollama_url,
+        model=settings.llm.model,
+        temperature=settings.llm.temperature,
+    )
+
+
 def _build_ask_service(settings: Settings) -> AskService:
     return AskService(
         search_service=_build_search_service(settings),
@@ -818,11 +1025,7 @@ def _build_ask_service(settings: Settings) -> AskService:
         ),
         prompt_builder=PromptBuilder(),
         citation_validator=CitationValidator(),
-        llm_provider=OllamaLlmProvider(
-            base_url=settings.ollama_url,
-            model=settings.llm.model,
-            temperature=settings.llm.temperature,
-        ),
+        llm_provider=_build_llm_provider(settings),
         settings=settings,
     )
 
@@ -1205,6 +1408,294 @@ def _inventory_line_range(start_line: int | None, end_line: int | None) -> str:
     if start_line == end_line:
         return str(start_line)
     return f"{start_line}-{end_line}"
+
+
+def _object_request(args: argparse.Namespace) -> ObjectRequest:
+    """Construye una solicitud comun de objeto desde argumentos CLI.
+
+    Args:
+        args: Argumentos parseados para `describe` o `impact`.
+
+    Returns:
+        Solicitud normalizada de resolucion de objeto.
+    """
+    return ObjectRequest(
+        query=args.object,
+        symbol_id=args.symbol_id,
+        symbol_type=args.symbol_type,
+    )
+
+
+def _dependency_filters(args: argparse.Namespace) -> DependencyFilters:
+    """Construye filtros de dependencia desde argumentos CLI.
+
+    Args:
+        args: Argumentos parseados para `impact`.
+
+    Returns:
+        Filtros estructurados para el recorrido de dependencias.
+    """
+    return DependencyFilters(
+        technology=args.technology,
+        relation_type=args.relation_type,
+        resolution_status=(
+            ResolutionStatus(args.resolution_status)
+            if args.resolution_status
+            else None
+        ),
+        min_confidence=(
+            Confidence(args.min_confidence)
+            if args.min_confidence
+            else None
+        ),
+    )
+
+
+def _render_description(
+    description: ComponentDescription,
+    output_format: str,
+) -> str:
+    """Renderiza una descripcion en text, JSON o Markdown.
+
+    Args:
+        description: DTO producido por `DescribeService`.
+        output_format: Formato solicitado por CLI.
+
+    Returns:
+        Contenido listo para stdout o escritura a archivo.
+    """
+    if output_format == "json":
+        return json.dumps(_description_json(description), ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        return render_component_markdown(description)
+    lines = [
+        "Ficha de componente",
+        f"estado = {description.resolution.status}",
+        f"resumen = {description.summary}",
+    ]
+    symbol = description.resolution.symbol
+    if symbol is not None:
+        lines.extend(
+            [
+                f"nombre = {symbol.normalized_name}",
+                f"tipo = {symbol.symbol_type}",
+                f"tecnologia = {symbol.technology}",
+                f"confianza = {symbol.confidence.value}",
+            ]
+        )
+    if description.resolution.candidates:
+        lines.append("candidatos:")
+        lines.extend(
+            f"- {candidate.normalized_name} tipo={candidate.symbol_type} "
+            f"tecnologia={candidate.technology} id={candidate.symbol_id}"
+            for candidate in description.resolution.candidates
+        )
+    lines.append(f"responsabilidades = {len(description.responsibilities)}")
+    lines.append(f"evidencia = {len(description.evidence)}")
+    lines.extend(f"- {value}" for value in description.to_confirm)
+    return "\n".join(lines)
+
+
+def _render_impact(impact: ImpactAnalysis, output_format: str) -> str:
+    """Renderiza un impacto en text, JSON o Markdown.
+
+    Args:
+        impact: DTO producido por `ImpactService`.
+        output_format: Formato solicitado por CLI.
+
+    Returns:
+        Contenido listo para stdout o escritura a archivo.
+    """
+    if output_format == "json":
+        return json.dumps(_impact_json(impact), ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        return render_impact_markdown(impact)
+    walk = impact.walk
+    lines = [
+        "Analisis de impacto",
+        f"estado = {impact.resolution.status}",
+        f"resumen = {impact.summary}",
+        f"direccion = {walk.direction.value if walk else 'n/a'}",
+        f"profundidad = {walk.max_depth if walk else 'n/a'}",
+        f"consumidores = {len(impact.consumers)}",
+        f"dependencias = {len(impact.dependencies)}",
+        f"indirectos = {len(impact.indirect)}",
+        f"cruces_tecnologia = {len(impact.cross_technology)}",
+    ]
+    if impact.risks:
+        lines.append("riesgos:")
+        lines.extend(f"- {risk}" for risk in impact.risks)
+    if impact.to_confirm:
+        lines.append("por_confirmar:")
+        lines.extend(f"- {value}" for value in impact.to_confirm)
+    return "\n".join(lines)
+
+
+def _description_output_path(
+    settings: Settings,
+    requested_output: str,
+    description: ComponentDescription,
+) -> Path:
+    """Resuelve una ruta de salida de ficha de componente.
+
+    Args:
+        settings: Configuracion efectiva con `output_dir`.
+        requested_output: Ruta o directorio solicitado por el usuario.
+        description: DTO usado para nombre seguro cuando se pasa un directorio.
+
+    Returns:
+        Ruta absoluta o relativa a `output_dir` lista para escritura.
+    """
+    requested = Path(requested_output)
+    if requested_output.endswith(("/", "\\")) or requested.suffix == "":
+        requested = requested / safe_component_filename(description)
+    if requested.is_absolute():
+        return requested
+    return settings.output_dir / requested
+
+
+def _impact_output_path(
+    settings: Settings,
+    requested_output: str,
+    impact: ImpactAnalysis,
+) -> Path:
+    """Resuelve una ruta de salida de analisis de impacto.
+
+    Args:
+        settings: Configuracion efectiva con `output_dir`.
+        requested_output: Ruta o directorio solicitado por el usuario.
+        impact: DTO usado para nombre seguro cuando se pasa un directorio.
+
+    Returns:
+        Ruta absoluta o relativa a `output_dir` lista para escritura.
+    """
+    requested = Path(requested_output)
+    if requested_output.endswith(("/", "\\")) or requested.suffix == "":
+        requested = requested / safe_impact_filename(impact)
+    if requested.is_absolute():
+        return requested
+    return settings.output_dir / requested
+
+
+def _description_json(description: ComponentDescription) -> dict[str, object]:
+    return {
+        "template_version": "component.v1",
+        "resolution": _resolution_json(description.resolution),
+        "summary": description.summary,
+        "no_llm": description.no_llm,
+        "responsibilities": list(description.responsibilities),
+        "outgoing": _walk_json(description.outgoing),
+        "incoming": _walk_json(description.incoming),
+        "evidence": [_evidence_json(item) for item in description.evidence],
+        "inferences": list(description.inferences),
+        "to_confirm": list(description.to_confirm),
+        "limitations": list(description.limitations),
+        "rag_sources": list(description.rag_sources),
+    }
+
+
+def _impact_json(impact: ImpactAnalysis) -> dict[str, object]:
+    return {
+        "template_version": "impact.v1",
+        "resolution": _resolution_json(impact.resolution),
+        "summary": impact.summary,
+        "no_llm": impact.no_llm,
+        "walk": _walk_json(impact.walk),
+        "consumers": [_edge_json(edge) for edge in impact.consumers],
+        "dependencies": [_edge_json(edge) for edge in impact.dependencies],
+        "indirect": [_edge_json(edge) for edge in impact.indirect],
+        "cross_technology": [_edge_json(edge) for edge in impact.cross_technology],
+        "risks": list(impact.risks),
+        "to_confirm": list(impact.to_confirm),
+        "evidence": [_evidence_json(item) for item in impact.evidence],
+        "limitations": list(impact.limitations),
+        "rag_sources": list(impact.rag_sources),
+    }
+
+
+def _resolution_json(resolution) -> dict[str, object]:
+    return {
+        "query": resolution.query,
+        "status": resolution.status,
+        "symbol": (
+            _symbol_json(resolution.symbol)
+            if resolution.symbol is not None
+            else None
+        ),
+        "candidates": [_symbol_json(symbol) for symbol in resolution.candidates],
+    }
+
+
+def _walk_json(walk) -> dict[str, object] | None:
+    if walk is None:
+        return None
+    return {
+        "seed_symbol_id": walk.seed_symbol_id,
+        "direction": walk.direction.value,
+        "max_depth": walk.max_depth,
+        "node_limit": walk.node_limit,
+        "limit_reached": walk.limit_reached,
+        "nodes": [
+            {"symbol": _symbol_json(node.symbol), "depth": node.depth}
+            for node in walk.nodes
+        ],
+        "edges": [_edge_json(edge) for edge in walk.edges],
+        "cycles": [list(cycle) for cycle in walk.cycles],
+    }
+
+
+def _edge_json(edge: DependencyEdge) -> dict[str, object]:
+    return {
+        "relation_id": edge.relation.relation_id,
+        "reference_id": edge.relation.reference_id,
+        "relation_type": edge.relation.relation_type,
+        "classification": edge.relation.classification.value,
+        "resolution_status": edge.relation.resolution_status.value,
+        "confidence": edge.relation.confidence.value,
+        "direction": edge.direction.value,
+        "depth": edge.depth,
+        "source_symbol": (
+            _symbol_json(edge.source_symbol)
+            if edge.source_symbol is not None
+            else None
+        ),
+        "target_symbol": (
+            _symbol_json(edge.target_symbol)
+            if edge.target_symbol is not None
+            else None
+        ),
+        "target_key": edge.target_key,
+        "candidate_symbol_ids": list(edge.candidate_symbol_ids),
+        "is_cycle": edge.is_cycle,
+    }
+
+
+def _symbol_json(symbol: TechnicalSymbol) -> dict[str, object]:
+    return {
+        "symbol_id": symbol.symbol_id,
+        "original_name": symbol.original_name,
+        "normalized_name": symbol.normalized_name,
+        "type": symbol.symbol_type,
+        "technology": symbol.technology,
+        "status": symbol.status.value,
+        "confidence": symbol.confidence.value,
+        "file_id": symbol.file_id,
+        "document_id": symbol.document_id,
+        "chunk_id": symbol.chunk_id,
+        "container_name": symbol.container_name,
+        "start_line": symbol.start_line,
+        "end_line": symbol.end_line,
+    }
+
+
+def _evidence_json(item) -> dict[str, object]:
+    return {
+        "source": item.source,
+        "detail": item.detail,
+        "reference_id": item.reference_id,
+        "relation_id": item.relation_id,
+        "chunk_id": item.chunk_id,
+    }
 
 
 def _progress_percent(current: int, total: int | None) -> str:
@@ -1635,6 +2126,161 @@ def build_parser() -> argparse.ArgumentParser:
         help="permite sobrescribir el archivo de salida",
     )
     inventory_parser.set_defaults(handler=_run_inventory)
+
+    describe_parser = commands.add_parser(
+        "describe",
+        help="describe un componente tecnico",
+        description="Describe un componente desde simbolos y relaciones persistidas.",
+        add_help=False,
+    )
+    _add_help_option(describe_parser)
+    describe_parser.add_argument("object", metavar="OBJETO", help="objeto tecnico")
+    describe_parser.add_argument(
+        "--type",
+        dest="symbol_type",
+        metavar="TIPO",
+        help="tipo tecnico usado para desambiguar",
+    )
+    describe_parser.add_argument(
+        "--id",
+        dest="symbol_id",
+        metavar="SYMBOL_ID",
+        help="identificador exacto de simbolo",
+    )
+    describe_parser.add_argument(
+        "--depth",
+        type=int,
+        choices=range(0, 6),
+        default=1,
+        metavar="N",
+        help="profundidad de dependencias 0..5",
+    )
+    describe_parser.add_argument(
+        "--include-rag",
+        action="store_true",
+        help="incluye fuentes RAG complementarias",
+    )
+    describe_parser.add_argument(
+        "--with-llm",
+        action="store_true",
+        help="intenta sintetizar con LLM local",
+    )
+    describe_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="fuerza salida deterministica sin LLM",
+    )
+    describe_parser.add_argument(
+        "--format",
+        choices=("text", "json", "markdown"),
+        default="text",
+        help="formato de salida",
+    )
+    describe_parser.add_argument(
+        "--output",
+        metavar="RUTA",
+        help="escribe la salida en un archivo",
+    )
+    describe_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="permite sobrescribir el archivo de salida",
+    )
+    describe_parser.set_defaults(handler=_run_describe)
+
+    impact_parser = commands.add_parser(
+        "impact",
+        help="analiza impacto tecnico",
+        description="Analiza impacto desde relaciones persistidas.",
+        add_help=False,
+    )
+    _add_help_option(impact_parser)
+    impact_parser.add_argument("object", metavar="OBJETO", help="objeto tecnico")
+    impact_parser.add_argument(
+        "--type",
+        dest="symbol_type",
+        metavar="TIPO",
+        help="tipo tecnico usado para desambiguar",
+    )
+    impact_parser.add_argument(
+        "--id",
+        dest="symbol_id",
+        metavar="SYMBOL_ID",
+        help="identificador exacto de simbolo",
+    )
+    impact_parser.add_argument(
+        "--direction",
+        choices=tuple(direction.value for direction in DependencyDirection),
+        default=DependencyDirection.BOTH.value,
+        help="direccion del recorrido",
+    )
+    impact_parser.add_argument(
+        "--depth",
+        type=int,
+        choices=range(0, 6),
+        default=2,
+        metavar="N",
+        help="profundidad de dependencias 0..5",
+    )
+    impact_parser.add_argument(
+        "--node-limit",
+        type=_positive_int,
+        default=500,
+        metavar="N",
+        help="limite maximo de nodos visitados",
+    )
+    impact_parser.add_argument(
+        "--technology",
+        choices=("oracle", "powerbuilder", "document", "unknown"),
+        help="filtra relaciones por tecnologia participante",
+    )
+    impact_parser.add_argument(
+        "--relation-type",
+        metavar="TIPO",
+        help="filtra por tipo de relacion",
+    )
+    impact_parser.add_argument(
+        "--resolution-status",
+        choices=tuple(status.value for status in ResolutionStatus),
+        help="filtra por estado de resolucion",
+    )
+    impact_parser.add_argument(
+        "--min-confidence",
+        choices=tuple(confidence.value for confidence in Confidence),
+        help="filtra por confianza minima",
+    )
+    impact_parser.add_argument(
+        "--include-rag",
+        action="store_true",
+        help="incluye fuentes RAG complementarias",
+    )
+    impact_parser.add_argument(
+        "--with-llm",
+        action="store_true",
+        help="intenta sintetizar con LLM local",
+    )
+    impact_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="fuerza salida deterministica sin LLM",
+    )
+    impact_parser.add_argument(
+        "--format",
+        choices=("text", "json", "markdown"),
+        default="text",
+        help="formato de salida",
+    )
+    impact_parser.add_argument(
+        "--output",
+        metavar="RUTA",
+        help="escribe la salida en un archivo",
+    )
+    impact_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="permite sobrescribir el archivo de salida",
+    )
+    impact_parser.set_defaults(handler=_run_impact)
 
     search_parser = commands.add_parser(
         "search",

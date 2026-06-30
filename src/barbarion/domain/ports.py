@@ -27,6 +27,14 @@ from barbarion.domain.rag import (
     RetrievalFilter,
     VectorMetadata,
 )
+from barbarion.domain.reverse_engineering import (
+    H4AnalysisRunMode,
+    H4AnalysisRunRecord,
+    H4AnalysisRunStatus,
+    H4Reference,
+    H4Relation,
+    H4Symbol,
+)
 from barbarion.domain.ingestion import PersistedFileState
 
 
@@ -202,3 +210,52 @@ class LlmProviderPort(Protocol):
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
         """Genera una respuesta desde un prompt controlado."""
+
+
+class ReverseEngineeringRepositoryPort(Protocol):
+    """Contrato minimo de persistencia para H4 Reverse Engineering."""
+
+    def begin_analysis_run(
+        self,
+        *,
+        mode: H4AnalysisRunMode,
+        scope: dict[str, object] | None = None,
+    ) -> int:
+        """Crea una corrida H4 y devuelve su identificador."""
+
+    def analysis_run(self, run_id: int) -> H4AnalysisRunRecord | None:
+        """Lee una corrida H4 persistida."""
+
+    def finish_analysis_run(
+        self,
+        *,
+        run_id: int,
+        status: H4AnalysisRunStatus,
+        symbols_detected: int = 0,
+        references_detected: int = 0,
+        relations_resolved: int = 0,
+        relations_unresolved: int = 0,
+        relations_ambiguous: int = 0,
+        warning_count: int = 0,
+        error_count: int = 0,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Cierra una corrida H4 con contadores consolidados."""
+
+    def upsert_symbol(self, *, run_id: int, symbol: H4Symbol) -> None:
+        """Inserta o actualiza el estado vigente de un simbolo."""
+
+    def get_symbol(self, symbol_id: str) -> H4Symbol | None:
+        """Lee un simbolo por ID determinista."""
+
+    def upsert_reference(self, *, run_id: int, reference: H4Reference) -> None:
+        """Inserta o actualiza una referencia vigente."""
+
+    def get_reference(self, reference_id: str) -> H4Reference | None:
+        """Lee una referencia por ID determinista."""
+
+    def upsert_relation(self, *, run_id: int, relation: H4Relation) -> None:
+        """Inserta o actualiza una relacion canonica."""
+
+    def get_relation(self, relation_id: str) -> H4Relation | None:
+        """Lee una relacion por ID determinista."""

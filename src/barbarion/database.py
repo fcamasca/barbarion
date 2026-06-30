@@ -8,6 +8,7 @@ from pathlib import Path
 from barbarion.infrastructure.sqlite import (
     INGESTION_SCHEMA_STATEMENTS,
     RAG_SCHEMA_STATEMENTS,
+    REVERSE_ENGINEERING_SCHEMA_STATEMENTS,
 )
 
 DATABASE_TIMEOUT_SECONDS = 5.0
@@ -59,6 +60,10 @@ _MIGRATIONS = (
     _Migration(
         version=3,
         statements=RAG_SCHEMA_STATEMENTS,
+    ),
+    _Migration(
+        version=4,
+        statements=REVERSE_ENGINEERING_SCHEMA_STATEMENTS,
     ),
 )
 

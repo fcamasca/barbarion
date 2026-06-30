@@ -21,6 +21,7 @@ from barbarion.domain.ingestion import (
 )
 from barbarion.domain.models import (
     ChunkCandidate,
+    Confidence,
     DiscoveredFile,
     ErrorStage,
     FileFingerprint,
@@ -49,6 +50,19 @@ from barbarion.domain.rag import (
     RetrievalMode,
     SearchTimings,
     VectorMetadata,
+)
+from barbarion.domain.reverse_engineering import (
+    H4AnalysisRunMode,
+    H4AnalysisRunRecord,
+    H4AnalysisRunStatus,
+    H4Classification,
+    H4Reference,
+    H4Relation,
+    H4RelationCandidate,
+    H4RelationStatus,
+    H4ResolutionStatus,
+    H4Symbol,
+    H4SymbolStatus,
 )
 
 
@@ -381,6 +395,207 @@ RAG_SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE INDEX IF NOT EXISTS idx_symbol_occurrences_symbol
     ON symbol_occurrences(symbol_name, symbol_kind)
+    """,
+)
+
+REVERSE_ENGINEERING_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS h4_analysis_runs (
+        id INTEGER PRIMARY KEY,
+        mode TEXT NOT NULL CHECK (mode IN ('incremental', 'full', 'partial')),
+        status TEXT NOT NULL CHECK (
+            status IN (
+                'running',
+                'completed',
+                'completed_with_errors',
+                'failed',
+                'interrupted'
+            )
+        ),
+        scope_json TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        symbols_detected INTEGER NOT NULL DEFAULT 0 CHECK (symbols_detected >= 0),
+        references_detected INTEGER NOT NULL DEFAULT 0 CHECK (references_detected >= 0),
+        relations_resolved INTEGER NOT NULL DEFAULT 0 CHECK (relations_resolved >= 0),
+        relations_unresolved INTEGER NOT NULL DEFAULT 0 CHECK (relations_unresolved >= 0),
+        relations_ambiguous INTEGER NOT NULL DEFAULT 0 CHECK (relations_ambiguous >= 0),
+        warning_count INTEGER NOT NULL DEFAULT 0 CHECK (warning_count >= 0),
+        error_count INTEGER NOT NULL DEFAULT 0 CHECK (error_count >= 0),
+        duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_analysis_runs_started_at
+    ON h4_analysis_runs(started_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_analysis_runs_status
+    ON h4_analysis_runs(status)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS h4_symbols (
+        id TEXT PRIMARY KEY,
+        last_run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id),
+        file_id INTEGER REFERENCES files(id) ON DELETE CASCADE,
+        document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+        chunk_id TEXT REFERENCES chunks(id) ON DELETE SET NULL,
+        original_name TEXT NOT NULL,
+        normalized_name TEXT NOT NULL,
+        symbol_type TEXT NOT NULL,
+        technology TEXT NOT NULL,
+        parent_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        container_name TEXT,
+        signature TEXT,
+        start_line INTEGER CHECK (start_line IS NULL OR start_line > 0),
+        end_line INTEGER CHECK (end_line IS NULL OR end_line > 0),
+        extraction_method TEXT NOT NULL,
+        confidence TEXT NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+        status TEXT NOT NULL CHECK (
+            status IN ('active', 'stale', 'deleted', 'ambiguous')
+        ),
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK ((start_line IS NULL AND end_line IS NULL) OR end_line >= start_line)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_symbols_normalized_type_status
+    ON h4_symbols(normalized_name, symbol_type, status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_symbols_container_name_status
+    ON h4_symbols(container_name, normalized_name, status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_symbols_file_status
+    ON h4_symbols(file_id, status)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS h4_references (
+        id TEXT PRIMARY KEY,
+        last_run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id),
+        source_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        source_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        source_chunk_id TEXT REFERENCES chunks(id) ON DELETE SET NULL,
+        raw_text TEXT NOT NULL,
+        normalized_target TEXT NOT NULL,
+        reference_type TEXT NOT NULL,
+        technology TEXT NOT NULL,
+        start_line INTEGER CHECK (start_line IS NULL OR start_line > 0),
+        end_line INTEGER CHECK (end_line IS NULL OR end_line > 0),
+        detection_method TEXT NOT NULL,
+        confidence TEXT NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+        resolution_status TEXT NOT NULL CHECK (
+            resolution_status IN (
+                'resolved',
+                'ambiguous',
+                'unresolved',
+                'external',
+                'dynamic'
+            )
+        ),
+        metadata_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK ((start_line IS NULL AND end_line IS NULL) OR end_line >= start_line)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_references_normalized_resolution
+    ON h4_references(normalized_target, resolution_status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_references_source_file_resolution
+    ON h4_references(source_file_id, resolution_status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_references_source_symbol
+    ON h4_references(source_symbol_id)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS h4_relations (
+        id TEXT PRIMARY KEY,
+        last_run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id),
+        reference_id TEXT NOT NULL REFERENCES h4_references(id) ON DELETE CASCADE,
+        source_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        target_symbol_id TEXT REFERENCES h4_symbols(id) ON DELETE SET NULL,
+        target_key TEXT,
+        relation_type TEXT NOT NULL,
+        classification TEXT NOT NULL CHECK (
+            classification IN ('detectado', 'inferido', 'por_confirmar')
+        ),
+        resolution_status TEXT NOT NULL CHECK (
+            resolution_status IN (
+                'resolved',
+                'ambiguous',
+                'unresolved',
+                'external',
+                'dynamic'
+            )
+        ),
+        confidence TEXT NOT NULL CHECK (confidence IN ('high', 'medium', 'low')),
+        evidence_file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        evidence_chunk_id TEXT REFERENCES chunks(id) ON DELETE SET NULL,
+        start_line INTEGER CHECK (start_line IS NULL OR start_line > 0),
+        end_line INTEGER CHECK (end_line IS NULL OR end_line > 0),
+        notes TEXT,
+        status TEXT NOT NULL CHECK (status IN ('active', 'stale', 'deleted')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK ((start_line IS NULL AND end_line IS NULL) OR end_line >= start_line),
+        CHECK (
+            resolution_status <> 'dynamic'
+            OR classification = 'por_confirmar'
+        )
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_relations_reference
+    ON h4_relations(reference_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_relations_source_status
+    ON h4_relations(source_symbol_id, status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_relations_target_status
+    ON h4_relations(target_symbol_id, status)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_relations_resolution_status
+    ON h4_relations(resolution_status, status)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS h4_relation_candidates (
+        id INTEGER PRIMARY KEY,
+        relation_id TEXT NOT NULL REFERENCES h4_relations(id) ON DELETE CASCADE,
+        candidate_symbol_id TEXT NOT NULL REFERENCES h4_symbols(id) ON DELETE CASCADE,
+        rank INTEGER NOT NULL CHECK (rank > 0),
+        reason TEXT NOT NULL,
+        UNIQUE(relation_id, candidate_symbol_id)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_relation_candidates_relation
+    ON h4_relation_candidates(relation_id, rank)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS h4_generated_artifacts (
+        id INTEGER PRIMARY KEY,
+        run_id INTEGER NOT NULL REFERENCES h4_analysis_runs(id) ON DELETE CASCADE,
+        artifact_type TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        content_sha256 TEXT NOT NULL,
+        generated_at TEXT NOT NULL,
+        metadata_json TEXT NOT NULL,
+        UNIQUE(run_id, artifact_type, relative_path)
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_h4_generated_artifacts_run
+    ON h4_generated_artifacts(run_id, artifact_type)
     """,
 )
 
@@ -1068,6 +1283,24 @@ class RagInventoryStats:
     latest_query_id: int | None
     latest_query_status: str | None
     avg_candidate_count: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class H4SymbolSource:
+    """Chunk H2 vigente con metadata suficiente para catalogar simbolos H4."""
+
+    file_id: int
+    document_id: int
+    chunk_id: str
+    artifact_kind: str
+    relative_path: str
+    extension: str
+    chunk_type: str
+    object_type: str | None
+    object_name: str | None
+    start_line: int | None
+    end_line: int | None
+    metadata: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1793,6 +2026,554 @@ class SQLiteRagRepository:
         return connection
 
 
+@dataclass(frozen=True, slots=True)
+class SQLiteReverseEngineeringRepository:
+    """Repositorio minimo H4 respaldado por SQLite local."""
+
+    database_path: Path
+
+    def symbol_sources(self, *, domain: str) -> tuple[H4SymbolSource, ...]:
+        """Lee chunks H2 vigentes que pueden alimentar el catalogo de simbolos."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    files.id AS file_id,
+                    files.relative_path AS relative_path,
+                    files.extension AS extension,
+                    files.artifact_kind AS artifact_kind,
+                    documents.id AS document_id,
+                    chunks.id AS chunk_id,
+                    chunks.chunk_type AS chunk_type,
+                    chunks.object_type AS object_type,
+                    chunks.object_name AS object_name,
+                    chunks.start_line AS start_line,
+                    chunks.end_line AS end_line,
+                    chunks.metadata_json AS metadata_json
+                FROM chunks
+                JOIN documents ON documents.id = chunks.document_id
+                JOIN files ON files.id = documents.file_id
+                WHERE files.domain = ?
+                  AND files.status = 'processed'
+                  AND documents.source_sha256 = files.sha256
+                ORDER BY files.relative_path, chunks.ordinal, chunks.id
+                """,
+                (domain,),
+            ).fetchall()
+        return tuple(_h4_symbol_source_from_row(row) for row in rows)
+
+    def begin_analysis_run(
+        self,
+        *,
+        mode: H4AnalysisRunMode,
+        scope: dict[str, object] | None = None,
+    ) -> int:
+        """Crea una corrida H4."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO h4_analysis_runs(mode, status, scope_json, started_at)
+                VALUES (?, 'running', ?, ?)
+                """,
+                (mode.value, _canonical_json(scope or {}), _utc_now()),
+            )
+            connection.commit()
+            return int(cursor.lastrowid)
+
+    def analysis_run(self, run_id: int) -> H4AnalysisRunRecord | None:
+        """Lee una corrida H4 por ID."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT id, mode, status, scope_json, symbols_detected,
+                       references_detected, relations_resolved,
+                       relations_unresolved, relations_ambiguous, warning_count,
+                       error_count, duration_ms
+                FROM h4_analysis_runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+        return None if row is None else _h4_run_from_row(row)
+
+    def finish_analysis_run(
+        self,
+        *,
+        run_id: int,
+        status: H4AnalysisRunStatus,
+        symbols_detected: int = 0,
+        references_detected: int = 0,
+        relations_resolved: int = 0,
+        relations_unresolved: int = 0,
+        relations_ambiguous: int = 0,
+        warning_count: int = 0,
+        error_count: int = 0,
+        duration_ms: int | None = None,
+    ) -> None:
+        """Cierra una corrida H4 con contadores."""
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE h4_analysis_runs
+                SET status = ?,
+                    finished_at = ?,
+                    symbols_detected = ?,
+                    references_detected = ?,
+                    relations_resolved = ?,
+                    relations_unresolved = ?,
+                    relations_ambiguous = ?,
+                    warning_count = ?,
+                    error_count = ?,
+                    duration_ms = ?
+                WHERE id = ?
+                """,
+                (
+                    status.value,
+                    _utc_now(),
+                    symbols_detected,
+                    references_detected,
+                    relations_resolved,
+                    relations_unresolved,
+                    relations_ambiguous,
+                    warning_count,
+                    error_count,
+                    duration_ms,
+                    run_id,
+                ),
+            )
+            connection.commit()
+
+    def upsert_symbol(self, *, run_id: int, symbol: H4Symbol) -> None:
+        """Inserta o actualiza el estado vigente de un simbolo H4."""
+        now = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO h4_symbols(
+                    id, last_run_id, file_id, document_id, chunk_id,
+                    original_name, normalized_name, symbol_type, technology,
+                    parent_symbol_id, container_name, signature, start_line,
+                    end_line, extraction_method, confidence, status,
+                    metadata_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    last_run_id = excluded.last_run_id,
+                    file_id = excluded.file_id,
+                    document_id = excluded.document_id,
+                    chunk_id = excluded.chunk_id,
+                    original_name = excluded.original_name,
+                    normalized_name = excluded.normalized_name,
+                    symbol_type = excluded.symbol_type,
+                    technology = excluded.technology,
+                    parent_symbol_id = excluded.parent_symbol_id,
+                    container_name = excluded.container_name,
+                    signature = excluded.signature,
+                    start_line = excluded.start_line,
+                    end_line = excluded.end_line,
+                    extraction_method = excluded.extraction_method,
+                    confidence = excluded.confidence,
+                    status = excluded.status,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    symbol.symbol_id,
+                    run_id,
+                    symbol.file_id,
+                    symbol.document_id,
+                    symbol.chunk_id,
+                    symbol.original_name,
+                    symbol.normalized_name,
+                    symbol.symbol_type,
+                    symbol.technology,
+                    symbol.parent_symbol_id,
+                    symbol.container_name,
+                    symbol.signature,
+                    symbol.start_line,
+                    symbol.end_line,
+                    symbol.extraction_method,
+                    symbol.confidence.value,
+                    symbol.status.value,
+                    _canonical_json(symbol.metadata),
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+
+    def get_symbol(self, symbol_id: str) -> H4Symbol | None:
+        """Lee un simbolo por ID."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT id, file_id, document_id, chunk_id, original_name,
+                       normalized_name, symbol_type, technology, parent_symbol_id,
+                       container_name, signature, start_line, end_line,
+                       extraction_method, confidence, status, metadata_json
+                FROM h4_symbols
+                WHERE id = ?
+                """,
+                (symbol_id,),
+            ).fetchone()
+        return None if row is None else _h4_symbol_from_row(row)
+
+    def active_symbols(self) -> tuple[H4Symbol, ...]:
+        """Lista simbolos activos para resolucion H4."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, file_id, document_id, chunk_id, original_name,
+                       normalized_name, symbol_type, technology, parent_symbol_id,
+                       container_name, signature, start_line, end_line,
+                       extraction_method, confidence, status, metadata_json
+                FROM h4_symbols
+                WHERE status = 'active'
+                ORDER BY technology, container_name, normalized_name, id
+                """
+            ).fetchall()
+        return tuple(_h4_symbol_from_row(row) for row in rows)
+
+    def upsert_reference(self, *, run_id: int, reference: H4Reference) -> None:
+        """Inserta o actualiza una referencia H4."""
+        now = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO h4_references(
+                    id, last_run_id, source_symbol_id, source_file_id,
+                    source_chunk_id, raw_text, normalized_target, reference_type,
+                    technology, start_line, end_line, detection_method,
+                    confidence, resolution_status, metadata_json, created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    last_run_id = excluded.last_run_id,
+                    source_symbol_id = excluded.source_symbol_id,
+                    source_file_id = excluded.source_file_id,
+                    source_chunk_id = excluded.source_chunk_id,
+                    raw_text = excluded.raw_text,
+                    normalized_target = excluded.normalized_target,
+                    reference_type = excluded.reference_type,
+                    technology = excluded.technology,
+                    start_line = excluded.start_line,
+                    end_line = excluded.end_line,
+                    detection_method = excluded.detection_method,
+                    confidence = excluded.confidence,
+                    resolution_status = excluded.resolution_status,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    reference.reference_id,
+                    run_id,
+                    reference.source_symbol_id,
+                    reference.source_file_id,
+                    reference.source_chunk_id,
+                    reference.raw_text,
+                    reference.normalized_target,
+                    reference.reference_type,
+                    reference.technology,
+                    reference.start_line,
+                    reference.end_line,
+                    reference.detection_method,
+                    reference.confidence.value,
+                    reference.resolution_status.value,
+                    _canonical_json(reference.metadata),
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+
+    def get_reference(self, reference_id: str) -> H4Reference | None:
+        """Lee una referencia por ID."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT id, source_symbol_id, source_file_id, source_chunk_id,
+                       raw_text, normalized_target, reference_type, technology,
+                       start_line, end_line, detection_method, confidence,
+                       resolution_status, metadata_json
+                FROM h4_references
+                WHERE id = ?
+                """,
+                (reference_id,),
+            ).fetchone()
+        return None if row is None else _h4_reference_from_row(row)
+
+    def active_references(self) -> tuple[H4Reference, ...]:
+        """Lista referencias vigentes pendientes de convertir en relaciones."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, source_symbol_id, source_file_id, source_chunk_id,
+                       raw_text, normalized_target, reference_type, technology,
+                       start_line, end_line, detection_method, confidence,
+                       resolution_status, metadata_json
+                FROM h4_references
+                ORDER BY source_file_id, start_line, id
+                """
+            ).fetchall()
+        return tuple(_h4_reference_from_row(row) for row in rows)
+
+    def upsert_relation(self, *, run_id: int, relation: H4Relation) -> None:
+        """Inserta o actualiza una relacion H4."""
+        now = _utc_now()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO h4_relations(
+                    id, last_run_id, reference_id, source_symbol_id,
+                    target_symbol_id, target_key, relation_type, classification,
+                    resolution_status, confidence, evidence_file_id,
+                    evidence_chunk_id, start_line, end_line, notes, status,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    last_run_id = excluded.last_run_id,
+                    reference_id = excluded.reference_id,
+                    source_symbol_id = excluded.source_symbol_id,
+                    target_symbol_id = excluded.target_symbol_id,
+                    target_key = excluded.target_key,
+                    relation_type = excluded.relation_type,
+                    classification = excluded.classification,
+                    resolution_status = excluded.resolution_status,
+                    confidence = excluded.confidence,
+                    evidence_file_id = excluded.evidence_file_id,
+                    evidence_chunk_id = excluded.evidence_chunk_id,
+                    start_line = excluded.start_line,
+                    end_line = excluded.end_line,
+                    notes = excluded.notes,
+                    status = excluded.status,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    relation.relation_id,
+                    run_id,
+                    relation.reference_id,
+                    relation.source_symbol_id,
+                    relation.target_symbol_id,
+                    relation.target_key,
+                    relation.relation_type,
+                    relation.classification.value,
+                    relation.resolution_status.value,
+                    relation.confidence.value,
+                    relation.evidence_file_id,
+                    relation.evidence_chunk_id,
+                    relation.start_line,
+                    relation.end_line,
+                    relation.notes,
+                    relation.status.value,
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+
+    def get_relation(self, relation_id: str) -> H4Relation | None:
+        """Lee una relacion por ID."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT id, reference_id, source_symbol_id, target_symbol_id,
+                       target_key, relation_type, classification, resolution_status,
+                       confidence, evidence_file_id, evidence_chunk_id, start_line,
+                       end_line, notes, status
+                FROM h4_relations
+                WHERE id = ?
+                """,
+                (relation_id,),
+            ).fetchone()
+        return None if row is None else _h4_relation_from_row(row)
+
+    def relations_for_reference(self, reference_id: str) -> tuple[H4Relation, ...]:
+        """Lista relaciones persistidas para una referencia."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, reference_id, source_symbol_id, target_symbol_id,
+                       target_key, relation_type, classification, resolution_status,
+                       confidence, evidence_file_id, evidence_chunk_id, start_line,
+                       end_line, notes, status
+                FROM h4_relations
+                WHERE reference_id = ?
+                ORDER BY id
+                """,
+                (reference_id,),
+            ).fetchall()
+        return tuple(_h4_relation_from_row(row) for row in rows)
+
+    def replace_relation_candidates(
+        self,
+        *,
+        relation_id: str,
+        candidates: tuple[H4RelationCandidate, ...],
+    ) -> None:
+        """Reemplaza candidatos ambiguos de una relacion."""
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM h4_relation_candidates WHERE relation_id = ?",
+                (relation_id,),
+            )
+            connection.executemany(
+                """
+                INSERT INTO h4_relation_candidates(
+                    relation_id, candidate_symbol_id, rank, reason
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    (
+                        candidate.relation_id,
+                        candidate.candidate_symbol_id,
+                        candidate.rank,
+                        candidate.reason,
+                    )
+                    for candidate in candidates
+                ),
+            )
+            connection.commit()
+
+    def relation_candidates(
+        self,
+        relation_id: str,
+    ) -> tuple[H4RelationCandidate, ...]:
+        """Lee candidatos de una relacion ambigua."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT relation_id, candidate_symbol_id, rank, reason
+                FROM h4_relation_candidates
+                WHERE relation_id = ?
+                ORDER BY rank, candidate_symbol_id
+                """,
+                (relation_id,),
+            ).fetchall()
+        return tuple(_h4_relation_candidate_from_row(row) for row in rows)
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.database_path, timeout=5.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+    def _connect_readonly(self) -> sqlite3.Connection:
+        uri = self.database_path.resolve(strict=False).as_uri() + "?mode=ro"
+        connection = sqlite3.connect(uri, uri=True, timeout=5.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        return connection
+
+
+def _h4_run_from_row(row: sqlite3.Row) -> H4AnalysisRunRecord:
+    return H4AnalysisRunRecord(
+        id=int(row["id"]),
+        mode=H4AnalysisRunMode(str(row["mode"])),
+        status=H4AnalysisRunStatus(str(row["status"])),
+        scope=_loads_json_object(str(row["scope_json"])),
+        symbols_detected=int(row["symbols_detected"]),
+        references_detected=int(row["references_detected"]),
+        relations_resolved=int(row["relations_resolved"]),
+        relations_unresolved=int(row["relations_unresolved"]),
+        relations_ambiguous=int(row["relations_ambiguous"]),
+        warning_count=int(row["warning_count"]),
+        error_count=int(row["error_count"]),
+        duration_ms=(
+            None if row["duration_ms"] is None else int(row["duration_ms"])
+        ),
+    )
+
+
+def _h4_symbol_from_row(row: sqlite3.Row) -> H4Symbol:
+    return H4Symbol(
+        symbol_id=str(row["id"]),
+        file_id=_optional_int(row["file_id"]),
+        document_id=_optional_int(row["document_id"]),
+        chunk_id=_optional_text(row["chunk_id"]),
+        original_name=str(row["original_name"]),
+        normalized_name=str(row["normalized_name"]),
+        symbol_type=str(row["symbol_type"]),
+        technology=str(row["technology"]),
+        parent_symbol_id=_optional_text(row["parent_symbol_id"]),
+        container_name=_optional_text(row["container_name"]),
+        signature=_optional_text(row["signature"]),
+        start_line=_optional_int(row["start_line"]),
+        end_line=_optional_int(row["end_line"]),
+        extraction_method=str(row["extraction_method"]),
+        confidence=Confidence(str(row["confidence"])),
+        status=H4SymbolStatus(str(row["status"])),
+        metadata=_loads_json_object(str(row["metadata_json"])),
+    )
+
+
+def _h4_reference_from_row(row: sqlite3.Row) -> H4Reference:
+    return H4Reference(
+        reference_id=str(row["id"]),
+        source_symbol_id=_optional_text(row["source_symbol_id"]),
+        source_file_id=int(row["source_file_id"]),
+        source_chunk_id=_optional_text(row["source_chunk_id"]),
+        raw_text=str(row["raw_text"]),
+        normalized_target=str(row["normalized_target"]),
+        reference_type=str(row["reference_type"]),
+        technology=str(row["technology"]),
+        start_line=_optional_int(row["start_line"]),
+        end_line=_optional_int(row["end_line"]),
+        detection_method=str(row["detection_method"]),
+        confidence=Confidence(str(row["confidence"])),
+        resolution_status=H4ResolutionStatus(str(row["resolution_status"])),
+        metadata=_loads_json_object(str(row["metadata_json"])),
+    )
+
+
+def _h4_relation_from_row(row: sqlite3.Row) -> H4Relation:
+    return H4Relation(
+        relation_id=str(row["id"]),
+        reference_id=str(row["reference_id"]),
+        source_symbol_id=_optional_text(row["source_symbol_id"]),
+        target_symbol_id=_optional_text(row["target_symbol_id"]),
+        target_key=_optional_text(row["target_key"]),
+        relation_type=str(row["relation_type"]),
+        classification=H4Classification(str(row["classification"])),
+        resolution_status=H4ResolutionStatus(str(row["resolution_status"])),
+        confidence=Confidence(str(row["confidence"])),
+        evidence_file_id=int(row["evidence_file_id"]),
+        evidence_chunk_id=_optional_text(row["evidence_chunk_id"]),
+        start_line=_optional_int(row["start_line"]),
+        end_line=_optional_int(row["end_line"]),
+        notes=_optional_text(row["notes"]),
+        status=H4RelationStatus(str(row["status"])),
+    )
+
+
+def _h4_relation_candidate_from_row(row: sqlite3.Row) -> H4RelationCandidate:
+    return H4RelationCandidate(
+        relation_id=str(row["relation_id"]),
+        candidate_symbol_id=str(row["candidate_symbol_id"]),
+        rank=int(row["rank"]),
+        reason=str(row["reason"]),
+    )
+
+
+def _h4_symbol_source_from_row(row: sqlite3.Row) -> H4SymbolSource:
+    return H4SymbolSource(
+        file_id=int(row["file_id"]),
+        document_id=int(row["document_id"]),
+        chunk_id=str(row["chunk_id"]),
+        artifact_kind=str(row["artifact_kind"]),
+        relative_path=str(row["relative_path"]),
+        extension=str(row["extension"]),
+        chunk_type=str(row["chunk_type"]),
+        object_type=_optional_text(row["object_type"]),
+        object_name=_optional_text(row["object_name"]),
+        start_line=_optional_int(row["start_line"]),
+        end_line=_optional_int(row["end_line"]),
+        metadata=_loads_json_object(str(row["metadata_json"])),
+    )
+
+
 def _manifest_from_row(row: sqlite3.Row) -> PersistedEmbeddingManifest:
     manifest = EmbeddingManifest(
         provider=str(row["provider"]),
@@ -1875,6 +2656,10 @@ def _loads_json_object(raw_json: str) -> dict[str, Any]:
 
 def _optional_text(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _optional_int(value: object) -> int | None:
+    return None if value is None else int(value)
 
 
 def _language_for_artifact(artifact_kind: str) -> str | None:

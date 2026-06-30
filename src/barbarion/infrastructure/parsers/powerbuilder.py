@@ -12,6 +12,12 @@ from barbarion.domain.models import (
     LogicalUnit,
     SourceFile,
 )
+from barbarion.domain.reverse_engineering import (
+    H4Reference,
+    H4ResolutionStatus,
+    h4_reference_id,
+    normalize_symbol_name,
+)
 from barbarion.infrastructure.parsers.base import BaseParser
 from barbarion.infrastructure.parsers.encoding import TextExtractionError, decode_text_source
 
@@ -40,6 +46,32 @@ FUNCTION_START_RE = re.compile(
 )
 FUNCTION_END_RE = re.compile(r"^\s*end\s+function\b", re.IGNORECASE)
 RETRIEVE_RE = re.compile(r"\bretrieve\s*=\s*(?P<sql>.+)", re.IGNORECASE)
+PB_IDENTIFIER = r"[A-Za-z_][\w]*"
+OPEN_RE = re.compile(
+    rf"\bopen\s*\(\s*(?P<target>{PB_IDENTIFIER})\b",
+    re.IGNORECASE,
+)
+QUALIFIED_CALL_RE = re.compile(
+    rf"\b(?P<target>{PB_IDENTIFIER}\s*\.\s*{PB_IDENTIFIER})\s*\(",
+    re.IGNORECASE,
+)
+TRIGGER_EVENT_RE = re.compile(
+    rf"\btrigger\s+event\s+(?P<target>{PB_IDENTIFIER})\b",
+    re.IGNORECASE,
+)
+DATAWINDOW_RE = re.compile(
+    rf"\b(?:dataobject|datawindow)\s*=\s*[\"'](?P<target>{PB_IDENTIFIER})[\"']",
+    re.IGNORECASE,
+)
+EMBEDDED_SQL_RE = re.compile(
+    rf"\b(?P<kind>FROM|JOIN|UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+(?P<target>{PB_IDENTIFIER})\b",
+    re.IGNORECASE,
+)
+STORED_PROCEDURE_RE = re.compile(
+    rf"\b(?:DECLARE\s+{PB_IDENTIFIER}\s+PROCEDURE\s+FOR|EXECUTE)\s+(?P<target>{PB_IDENTIFIER})\b",
+    re.IGNORECASE,
+)
+DYNAMIC_SQL_RE = re.compile(r"\bEXECUTE\s+IMMEDIATE\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +151,141 @@ class PowerBuilderParser(BaseParser):
             },
             warnings=warnings,
         )
+
+
+def extract_powerbuilder_references(
+    text: str,
+    *,
+    source_file_id: int,
+    source_chunk_id: str | None = None,
+    source_symbol_id: str | None = None,
+) -> tuple[H4Reference, ...]:
+    """Extrae referencias PowerBuilder crudas sin resolver destinos."""
+    lines = text.splitlines() or [text]
+    masked_lines = _mask_powerbuilder(lines)
+    references: list[H4Reference] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(masked_lines, start=1):
+        raw_line = lines[line_number - 1]
+        for match in DYNAMIC_SQL_RE.finditer(line):
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target="dynamic.sql",
+                reference_type="dynamic_sql",
+                start_line=line_number,
+                confidence=Confidence.LOW,
+                resolution_status=H4ResolutionStatus.DYNAMIC,
+                metadata={"pattern": "powerbuilder_dynamic_sql"},
+            )
+        for match in OPEN_RE.finditer(line):
+            target = match.group("target")
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="open",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "powerbuilder_open"},
+            )
+        for match in QUALIFIED_CALL_RE.finditer(line):
+            target = _clean_pb_identifier(match.group("target"))
+            if _is_powerbuilder_builtin(target):
+                continue
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="call",
+                start_line=line_number,
+                confidence=Confidence.MEDIUM,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "powerbuilder_qualified_call"},
+            )
+        for match in TRIGGER_EVENT_RE.finditer(line):
+            target = match.group("target")
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="event",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "powerbuilder_trigger_event"},
+            )
+        datawindow_source = raw_line if re.search(r"\b(?:dataobject|datawindow)\s*=", line, re.IGNORECASE) else ""
+        for match in DATAWINDOW_RE.finditer(datawindow_source):
+            target = match.group("target")
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="datawindow",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "powerbuilder_datawindow"},
+            )
+        for match in EMBEDDED_SQL_RE.finditer(line):
+            target = match.group("target")
+            if _is_sql_noise(target):
+                continue
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="table",
+                start_line=line_number,
+                confidence=Confidence.MEDIUM,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "powerbuilder_embedded_sql"},
+            )
+        for match in STORED_PROCEDURE_RE.finditer(line):
+            target = match.group("target")
+            if normalize_symbol_name(target) == "immediate":
+                continue
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="stored_procedure",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "powerbuilder_stored_procedure"},
+            )
+    return tuple(references)
 
 
 def _detect_object(lines: list[str], extension: str) -> _PbObject | None:
@@ -287,3 +454,107 @@ def _object_kind(kind: str | None, extension: str) -> str:
         ".srj": "project",
         ".srd": "datawindow",
     }.get(extension, "powerbuilder_object")
+
+
+def _append_reference(
+    references: list[H4Reference],
+    seen: set[str],
+    *,
+    source_file_id: int,
+    source_chunk_id: str | None,
+    source_symbol_id: str | None,
+    raw_text: str,
+    normalized_target: str,
+    reference_type: str,
+    start_line: int,
+    confidence: Confidence,
+    resolution_status: H4ResolutionStatus,
+    metadata: dict[str, str],
+) -> None:
+    normalized = normalize_symbol_name(normalized_target)
+    reference_id = h4_reference_id(
+        source_file_id=source_file_id,
+        raw_text=raw_text,
+        normalized_target=normalized,
+        reference_type=reference_type,
+        start_line=start_line,
+        end_line=start_line,
+    )
+    seen_key = f"{source_file_id}:{start_line}:{reference_type}:{normalized}"
+    if seen_key in seen:
+        return
+    seen.add(seen_key)
+    references.append(
+        H4Reference(
+            reference_id=reference_id,
+            source_file_id=source_file_id,
+            source_symbol_id=source_symbol_id,
+            source_chunk_id=source_chunk_id,
+            raw_text=raw_text,
+            normalized_target=normalized,
+            reference_type=reference_type,
+            technology="powerbuilder",
+            detection_method="regex",
+            confidence=confidence,
+            resolution_status=resolution_status,
+            start_line=start_line,
+            end_line=start_line,
+            metadata=metadata,
+        )
+    )
+
+
+def _mask_powerbuilder(lines: list[str]) -> list[str]:
+    masked_lines: list[str] = []
+    for line in lines:
+        masked = []
+        index = 0
+        in_string = False
+        quote = ""
+        while index < len(line):
+            current = line[index]
+            next_two = line[index : index + 2]
+            if in_string:
+                if current == quote:
+                    masked.append(" ")
+                    if index + 1 < len(line) and line[index + 1] == quote:
+                        masked.append(" ")
+                        index += 2
+                        continue
+                    in_string = False
+                    quote = ""
+                else:
+                    masked.append(" ")
+                index += 1
+                continue
+            if next_two == "//":
+                masked.extend(" " * (len(line) - index))
+                break
+            if current in {"'", '"'}:
+                quote = current
+                in_string = True
+                masked.append(" ")
+                index += 1
+                continue
+            masked.append(current)
+            index += 1
+        masked_lines.append("".join(masked))
+    return masked_lines
+
+
+def _evidence(raw_line: str, match: re.Match[str]) -> str:
+    evidence = raw_line[match.start() : match.end()].strip()
+    return " ".join(evidence.split())
+
+
+def _clean_pb_identifier(value: str) -> str:
+    return ".".join(part.strip() for part in value.split(".") if part.strip())
+
+
+def _is_powerbuilder_builtin(target: str) -> bool:
+    first = normalize_symbol_name(target).split(".")[0]
+    return first in {"messagebox", "string", "integer", "long"}
+
+
+def _is_sql_noise(target: str) -> bool:
+    return normalize_symbol_name(target) in {"dual"}

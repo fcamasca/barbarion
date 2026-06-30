@@ -15,7 +15,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T01 - Crear base de dominio y migracion SQLite v4
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** definir modelos H4, estados, IDs deterministas, migracion v4 y repositorio minimo.  
 **Modulos estimados:** `domain/reverse_engineering.py`, `domain/ports.py`, `database.py`, `infrastructure/sqlite.py`.  
 **Requisitos:** H4-RF-001, H4-RF-002, H4-RF-005, H4-RF-010, H4-RNF-003, H4-RNF-009.  
@@ -26,7 +26,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T02 - Implementar normalizacion y catalogo de simbolos
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** extraer y persistir simbolos desde metadata/chunks H2 existentes.  
 **Modulos estimados:** `domain/reverse_engineering.py`, `application/reverse_engineering.py`, `infrastructure/sqlite.py`.  
 **Requisitos:** H4-RF-002.  
@@ -37,7 +37,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T03 - Implementar extractores de referencias Oracle y PowerBuilder
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** detectar referencias comunes con evidencia y confianza sin resolverlas aun.  
 **Modulos estimados:** `domain/reverse_engineering.py`, `infrastructure/parsers/oracle.py`, `infrastructure/parsers/powerbuilder.py` o extractores bajo `infrastructure/`.  
 **Requisitos:** H4-RF-003.  
@@ -48,7 +48,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T04 - Resolver referencias y persistir relaciones
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** convertir referencias en relaciones resolved/ambiguous/unresolved/external/dynamic.  
 **Modulos estimados:** `domain/reverse_engineering.py`, `application/reverse_engineering.py`, `infrastructure/sqlite.py`.  
 **Requisitos:** H4-RF-002, H4-RF-003, H4-RF-004, H4-RF-005.  

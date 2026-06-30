@@ -21,6 +21,17 @@ from barbarion.domain.models import (
     PipelineError,
     SourceFile,
 )
+from barbarion.domain.reverse_engineering import (
+    H4Classification,
+    H4Reference,
+    H4Relation,
+    H4ResolutionStatus,
+    H4Symbol,
+    h4_reference_id,
+    h4_relation_id,
+    h4_symbol_id,
+    normalize_symbol_name,
+)
 
 
 VALID_SHA = "a" * 64
@@ -184,4 +195,151 @@ def test_failed_outcome_requires_typed_error() -> None:
         IngestionOutcome(
             status=IngestionRunStatus.FAILED,
             metrics=IngestionMetrics(),
+        )
+
+
+def test_h4_normalizes_symbol_names_for_cross_file_resolution() -> None:
+    assert normalize_symbol_name(' "PKG_CLIENTE" . Procesar ') == "pkg_cliente.procesar"
+
+
+def test_h4_symbol_ids_are_deterministic_and_logical() -> None:
+    first = h4_symbol_id(
+        normalized_name="PKG_CLIENTE.PROCESAR",
+        symbol_type="Procedure",
+        technology="Oracle",
+        container_name="PKG_CLIENTE",
+    )
+    second = h4_symbol_id(
+        normalized_name="pkg_cliente.procesar",
+        symbol_type="procedure",
+        technology="oracle",
+        container_name="pkg_cliente",
+    )
+    other_container = h4_symbol_id(
+        normalized_name="pkg_cliente.procesar",
+        symbol_type="procedure",
+        technology="oracle",
+        container_name="pkg_otro",
+    )
+
+    assert first == second
+    assert first != other_container
+
+
+def test_h4_models_validate_ranges_and_freeze_metadata() -> None:
+    symbol_id = h4_symbol_id(
+        normalized_name="pkg_cliente.procesar",
+        symbol_type="procedure",
+        technology="oracle",
+        container_name="pkg_cliente",
+    )
+    symbol = H4Symbol(
+        symbol_id=symbol_id,
+        original_name="PKG_CLIENTE.PROCESAR",
+        normalized_name="pkg_cliente.procesar",
+        symbol_type="procedure",
+        technology="oracle",
+        extraction_method="parser",
+        confidence=Confidence.HIGH,
+        file_id=10,
+        document_id=20,
+        chunk_id="chunk-1",
+        container_name="pkg_cliente",
+        start_line=3,
+        end_line=8,
+        metadata={"owner": "fixture"},
+    )
+
+    assert isinstance(symbol.metadata, MappingProxyType)
+    assert symbol.metadata["owner"] == "fixture"
+    with pytest.raises(ValueError, match="terminar despues"):
+        H4Symbol(
+            symbol_id=symbol_id,
+            original_name="PKG_CLIENTE.PROCESAR",
+            normalized_name="pkg_cliente.procesar",
+            symbol_type="procedure",
+            technology="oracle",
+            extraction_method="parser",
+            confidence=Confidence.HIGH,
+            start_line=8,
+            end_line=3,
+        )
+
+
+def test_h4_reference_and_relation_ids_are_deterministic() -> None:
+    target_id = h4_symbol_id(
+        normalized_name="pkg_cliente.procesar",
+        symbol_type="procedure",
+        technology="oracle",
+    )
+    reference_id = h4_reference_id(
+        source_file_id=10,
+        raw_text="PKG_CLIENTE.PROCESAR",
+        normalized_target="PKG_CLIENTE.PROCESAR",
+        reference_type="calls",
+        start_line=12,
+        end_line=12,
+    )
+    relation_id = h4_relation_id(
+        reference_id=reference_id,
+        relation_type="calls",
+        target_symbol_id=target_id,
+    )
+    repeated = h4_relation_id(
+        reference_id=reference_id,
+        relation_type="CALLS",
+        target_symbol_id=target_id,
+    )
+
+    reference = H4Reference(
+        reference_id=reference_id,
+        source_file_id=10,
+        raw_text="PKG_CLIENTE.PROCESAR",
+        normalized_target="pkg_cliente.procesar",
+        reference_type="calls",
+        technology="oracle",
+        detection_method="parser",
+        confidence=Confidence.MEDIUM,
+        resolution_status=H4ResolutionStatus.UNRESOLVED,
+        start_line=12,
+        end_line=12,
+    )
+
+    assert relation_id == repeated
+    assert reference.normalized_target == "pkg_cliente.procesar"
+
+
+def test_h4_dynamic_relations_require_to_confirm_classification() -> None:
+    reference_id = h4_reference_id(
+        source_file_id=10,
+        raw_text="execute immediate v_sql",
+        normalized_target="dynamic.sql",
+        reference_type="dynamic_call",
+    )
+    relation_id = h4_relation_id(
+        reference_id=reference_id,
+        relation_type="dynamic_call",
+        target_key="dynamic.sql",
+    )
+
+    relation = H4Relation(
+        relation_id=relation_id,
+        reference_id=reference_id,
+        relation_type="dynamic_call",
+        classification=H4Classification.TO_CONFIRM,
+        resolution_status=H4ResolutionStatus.DYNAMIC,
+        confidence=Confidence.LOW,
+        evidence_file_id=10,
+    )
+
+    assert relation.resolution_status == H4ResolutionStatus.DYNAMIC
+    with pytest.raises(ValueError, match="por_confirmar"):
+        H4Relation(
+            relation_id=relation_id,
+            reference_id=reference_id,
+            relation_type="dynamic_call",
+            classification=H4Classification.DETECTED,
+            resolution_status=H4ResolutionStatus.DYNAMIC,
+            confidence=Confidence.LOW,
+            evidence_file_id=10,
         )

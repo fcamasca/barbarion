@@ -12,6 +12,12 @@ from barbarion.domain.models import (
     LogicalUnit,
     SourceFile,
 )
+from barbarion.domain.reverse_engineering import (
+    H4Reference,
+    H4ResolutionStatus,
+    h4_reference_id,
+    normalize_symbol_name,
+)
 from barbarion.infrastructure.parsers.base import BaseParser
 from barbarion.infrastructure.parsers.encoding import decode_text_source
 
@@ -53,6 +59,30 @@ SUBPROGRAM_RE = re.compile(
 )
 END_RE = re.compile(
     rf"\bEND\s+(?P<name>{IDENTIFIER})\s*;",
+    re.IGNORECASE,
+)
+QUALIFIED_CALL_RE = re.compile(
+    rf"(?<!\.)\b(?P<target>{IDENTIFIER}\s*\.\s*(?P<member>\"[^\"]+\"|[A-Za-z][\w$#]*))\s*\(",
+    re.IGNORECASE,
+)
+CALL_STATEMENT_RE = re.compile(
+    rf"\bCALL\s+(?P<target>{IDENTIFIER})\s*(?:\(|;)",
+    re.IGNORECASE,
+)
+TABLE_REF_RE = re.compile(
+    rf"\b(?P<kind>FROM|JOIN|UPDATE|INSERT\s+INTO|MERGE\s+INTO|DELETE\s+FROM)\s+(?P<target>{IDENTIFIER})\b",
+    re.IGNORECASE,
+)
+SEQUENCE_RE = re.compile(
+    rf"\b(?P<target>{IDENTIFIER})\s*\.\s*(?:NEXTVAL|CURRVAL)\b",
+    re.IGNORECASE,
+)
+TRIGGER_ON_RE = re.compile(
+    rf"\bCREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+{IDENTIFIER}.*?\bON\s+(?P<target>{IDENTIFIER})\b",
+    re.IGNORECASE,
+)
+DYNAMIC_SQL_RE = re.compile(
+    r"\b(?:EXECUTE\s+IMMEDIATE|OPEN\s+\w+\s+FOR)\b",
     re.IGNORECASE,
 )
 
@@ -129,6 +159,124 @@ class OracleParser(BaseParser):
             },
             warnings=warnings,
         )
+
+
+def extract_oracle_references(
+    text: str,
+    *,
+    source_file_id: int,
+    source_chunk_id: str | None = None,
+    source_symbol_id: str | None = None,
+) -> tuple[H4Reference, ...]:
+    """Extrae referencias Oracle crudas sin resolver destinos."""
+    lines = text.splitlines() or [text]
+    masked_lines = _mask_plsql(lines)
+    references: list[H4Reference] = []
+    seen: set[str] = set()
+    for line_number, line in enumerate(masked_lines, start=1):
+        raw_line = lines[line_number - 1]
+        for match in DYNAMIC_SQL_RE.finditer(line):
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target="dynamic.sql",
+                reference_type="dynamic_sql",
+                start_line=line_number,
+                confidence=Confidence.LOW,
+                resolution_status=H4ResolutionStatus.DYNAMIC,
+                metadata={"pattern": "oracle_dynamic_sql"},
+            )
+        for match in SEQUENCE_RE.finditer(line):
+            target = _clean_identifier(match.group("target"))
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="sequence",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "oracle_sequence"},
+            )
+        for match in TRIGGER_ON_RE.finditer(line):
+            target = _clean_identifier(match.group("target"))
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="trigger_table",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "oracle_trigger_on"},
+            )
+        for match in TABLE_REF_RE.finditer(line):
+            target = _clean_identifier(match.group("target"))
+            if _is_sql_noise(target):
+                continue
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="table",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "oracle_sql_table"},
+            )
+        for match in CALL_STATEMENT_RE.finditer(line):
+            target = _clean_identifier(match.group("target"))
+            if _is_sql_noise(target):
+                continue
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="call",
+                start_line=line_number,
+                confidence=Confidence.HIGH,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "oracle_call_statement"},
+            )
+        for match in QUALIFIED_CALL_RE.finditer(line):
+            target = _clean_identifier(match.group("target"))
+            if _is_sql_noise(target):
+                continue
+            _append_reference(
+                references,
+                seen,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                source_symbol_id=source_symbol_id,
+                raw_text=_evidence(raw_line, match),
+                normalized_target=target,
+                reference_type="call",
+                start_line=line_number,
+                confidence=Confidence.MEDIUM,
+                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                metadata={"pattern": "oracle_qualified_call"},
+            )
+    return tuple(references)
 
 
 def _detect_main_object(masked_lines: list[str]) -> _OracleObject | None:
@@ -323,3 +471,72 @@ def _mask_plsql(lines: list[str]) -> list[str]:
             index += 1
         masked_lines.append("".join(masked))
     return masked_lines
+
+
+def _append_reference(
+    references: list[H4Reference],
+    seen: set[str],
+    *,
+    source_file_id: int,
+    source_chunk_id: str | None,
+    source_symbol_id: str | None,
+    raw_text: str,
+    normalized_target: str,
+    reference_type: str,
+    start_line: int,
+    confidence: Confidence,
+    resolution_status: H4ResolutionStatus,
+    metadata: dict[str, str],
+) -> None:
+    normalized = normalize_symbol_name(normalized_target)
+    reference_id = h4_reference_id(
+        source_file_id=source_file_id,
+        raw_text=raw_text,
+        normalized_target=normalized,
+        reference_type=reference_type,
+        start_line=start_line,
+        end_line=start_line,
+    )
+    seen_key = f"{source_file_id}:{start_line}:{reference_type}:{normalized}"
+    if seen_key in seen:
+        return
+    seen.add(seen_key)
+    references.append(
+        H4Reference(
+            reference_id=reference_id,
+            source_file_id=source_file_id,
+            source_symbol_id=source_symbol_id,
+            source_chunk_id=source_chunk_id,
+            raw_text=raw_text,
+            normalized_target=normalized,
+            reference_type=reference_type,
+            technology="oracle",
+            detection_method="regex",
+            confidence=confidence,
+            resolution_status=resolution_status,
+            start_line=start_line,
+            end_line=start_line,
+            metadata=metadata,
+        )
+    )
+
+
+def _evidence(raw_line: str, match: re.Match[str]) -> str:
+    evidence = raw_line[match.start() : match.end()].strip()
+    return " ".join(evidence.split())
+
+
+def _is_sql_noise(target: str) -> bool:
+    first = normalize_symbol_name(target).split(".")[0]
+    return first in {
+        "case",
+        "cursor",
+        "dbms_output",
+        "dual",
+        "if",
+        "loop",
+        "raise",
+        "return",
+        "select",
+        "sysdate",
+    }

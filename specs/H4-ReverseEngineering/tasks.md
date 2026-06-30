@@ -125,7 +125,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T11 - Completar observabilidad, errores y documentacion operativa
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** consolidar metricas H4, mensajes, codigos de salida, resumen de `analyze` y docs operativas.  
 **Modulos estimados:** `cli.py`, `application/reverse_engineering.py`, `infrastructure/sqlite.py`, `README.md`, `docs/`.  
 **Requisitos:** H4-RF-011.  

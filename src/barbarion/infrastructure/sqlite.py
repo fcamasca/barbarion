@@ -1290,6 +1290,26 @@ class RagInventoryStats:
 
 
 @dataclass(frozen=True, slots=True)
+class ReverseEngineeringStats:
+    """Metricas persistidas de reverse engineering para CLI stats."""
+
+    latest_run_id: int | None
+    latest_run_status: str | None
+    latest_run_duration_ms: int | None
+    symbols_active: int
+    symbols_stale: int
+    symbols_deleted: int
+    symbols_ambiguous: int
+    references_total: int
+    relations_active: int
+    relations_resolved: int
+    relations_ambiguous: int
+    relations_unresolved: int
+    relations_dynamic: int
+    relations_external: int
+
+
+@dataclass(frozen=True, slots=True)
 class SymbolSource:
     """Chunk vigente con metadata suficiente para catalogar simbolos de reverse engineering."""
 
@@ -2036,6 +2056,64 @@ class SQLiteReverseEngineeringRepository:
     """Repositorio minimo reverse engineering respaldado por SQLite local."""
 
     database_path: Path
+
+    def stats(self) -> ReverseEngineeringStats:
+        """Devuelve metricas reverse engineering sin mutar SQLite.
+
+        Returns:
+            Conteos persistidos de runs, simbolos, referencias y relaciones.
+        """
+        with self._connect_readonly() as connection:
+            latest_run = connection.execute(
+                """
+                SELECT id, status, duration_ms
+                FROM analysis_runs
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            symbol_rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM symbols
+                GROUP BY status
+                """
+            ).fetchall()
+            reference_total = connection.execute(
+                "SELECT COUNT(*) AS count FROM symbol_references"
+            ).fetchone()
+            relation_rows = connection.execute(
+                """
+                SELECT resolution_status, COUNT(*) AS count
+                FROM relations
+                WHERE status = 'active'
+                GROUP BY resolution_status
+                """
+            ).fetchall()
+        symbols = {str(row["status"]): int(row["count"]) for row in symbol_rows}
+        relations = {
+            str(row["resolution_status"]): int(row["count"])
+            for row in relation_rows
+        }
+        return ReverseEngineeringStats(
+            latest_run_id=None if latest_run is None else int(latest_run["id"]),
+            latest_run_status=None if latest_run is None else str(latest_run["status"]),
+            latest_run_duration_ms=(
+                None if latest_run is None or latest_run["duration_ms"] is None
+                else int(latest_run["duration_ms"])
+            ),
+            symbols_active=symbols.get(SymbolStatus.ACTIVE.value, 0),
+            symbols_stale=symbols.get(SymbolStatus.STALE.value, 0),
+            symbols_deleted=symbols.get(SymbolStatus.DELETED.value, 0),
+            symbols_ambiguous=symbols.get(SymbolStatus.AMBIGUOUS.value, 0),
+            references_total=int(reference_total["count"]),
+            relations_active=sum(relations.values()),
+            relations_resolved=relations.get(ResolutionStatus.RESOLVED.value, 0),
+            relations_ambiguous=relations.get(ResolutionStatus.AMBIGUOUS.value, 0),
+            relations_unresolved=relations.get(ResolutionStatus.UNRESOLVED.value, 0),
+            relations_dynamic=relations.get(ResolutionStatus.DYNAMIC.value, 0),
+            relations_external=relations.get(ResolutionStatus.EXTERNAL.value, 0),
+        )
 
     def symbol_sources(
         self,

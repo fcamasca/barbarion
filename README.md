@@ -253,6 +253,10 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion ingest --full` | Reprocesa archivos compatibles sin truncar el corpus previo | Escribe metadata/chunks en SQLite |
 | `barbarion ingest --path RUTA` | Usa roots ad hoc; puede repetirse | Escribe metadata/chunks en SQLite |
 | `barbarion ingest --stats` | Muestra métricas e inventario persistidos | Ninguno |
+| `barbarion analyze` | Actualiza símbolos y relaciones de reverse engineering desde chunks vigentes | Escribe catálogo técnico y runs en SQLite |
+| `barbarion inventory --format text|json|markdown` | Consulta inventario técnico persistido | Ninguno |
+| `barbarion describe OBJETO --no-llm` | Genera ficha técnica determinista de un componente | Ninguno |
+| `barbarion impact OBJETO --depth 2 --no-llm` | Analiza impacto básico desde relaciones persistidas | Ninguno |
 | `barbarion index` | Indexa chunks vigentes para RAG con progreso por etapas | Escribe manifests, estados y vectores locales |
 | `barbarion index --dry-run` | Muestra alcance sin escribir ni llamar modelos | Ninguno |
 | `barbarion reindex --full` | Reindexa todos los chunks vigentes con progreso por etapas | Escribe estados y vectores locales |
@@ -261,10 +265,12 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion ask "pregunta" --no-llm` | Muestra contexto sin invocar LLM | Registra métricas de consulta/contexto |
 | `barbarion embeddings` | Muestra manifests, versiones y conteos | Ninguno |
 | `barbarion embeddings --errors` | Muestra errores de indexación persistidos en SQLite | Ninguno |
-| `barbarion stats` | Muestra estadísticas de ingesta + RAG | Ninguno |
+| `barbarion stats` | Muestra estadísticas de ingesta + RAG + reverse engineering | Ninguno |
 | `barbarion generate-report` | Genera evidencia técnica RAG en `reports/rag` | Escribe reportes locales |
 
-`index` y `reindex` manejan Ctrl+C como cancelacion segura: cierran la corrida como `interrupted`, muestran procesados/pendientes y permiten continuar luego con la logica incremental existente.
+`index`, `reindex` y `analyze` manejan Ctrl+C como cancelacion segura: cierran la corrida como `interrupted`, muestran procesados/pendientes y permiten continuar luego con la logica incremental existente.
+
+Los comandos `inventory`, `describe` e `impact` aceptan `--debug` para enviar métricas operativas a `stderr` sin contaminar salidas `json` o `markdown`. Estas métricas incluyen duración, estado de resolución, conteos de nodos/aristas, evidencia y limitaciones según corresponda.
 
 `doctor` comprueba, en orden:
 

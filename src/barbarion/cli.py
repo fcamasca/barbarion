@@ -494,8 +494,23 @@ def _run_inventory(args: argparse.Namespace) -> int:
     initialize_database(settings.database_path)
     service = _build_inventory_service(settings)
     request = InventoryRequest(filters=_inventory_filters(args))
+    started = time.monotonic()
     inventory = service.inventory(request)
     content = _render_inventory(inventory, args.format)
+    duration_ms = int((time.monotonic() - started) * 1000)
+    if args.debug:
+        _render_operation_debug(
+            "inventory",
+            {
+                "format": args.format,
+                "duration_ms": duration_ms,
+                "files": inventory.summary.files,
+                "symbols": inventory.summary.symbols,
+                "references": inventory.summary.references,
+                "relations": inventory.summary.relations,
+                "items": len(inventory.items),
+            },
+        )
     if args.output is not None:
         output_path = _inventory_output_path(settings, args.output, inventory)
         try:
@@ -539,8 +554,33 @@ def _run_describe(args: argparse.Namespace) -> int:
         no_llm=not args.with_llm or args.no_llm,
         include_rag=args.include_rag,
     )
+    started = time.monotonic()
     description = service.describe(request)
     content = _render_description(description, args.format)
+    duration_ms = int((time.monotonic() - started) * 1000)
+    if args.debug:
+        _render_operation_debug(
+            "describe",
+            {
+                "format": args.format,
+                "duration_ms": duration_ms,
+                "resolution_status": description.resolution.status,
+                "candidates": len(description.resolution.candidates),
+                "outgoing_edges": (
+                    len(description.outgoing.edges)
+                    if description.outgoing is not None
+                    else 0
+                ),
+                "incoming_edges": (
+                    len(description.incoming.edges)
+                    if description.incoming is not None
+                    else 0
+                ),
+                "evidence": len(description.evidence),
+                "limitations": len(description.limitations),
+                "no_llm": description.no_llm,
+            },
+        )
     if args.output is not None:
         output_path = _description_output_path(settings, args.output, description)
         try:
@@ -587,8 +627,30 @@ def _run_impact(args: argparse.Namespace) -> int:
         include_rag=args.include_rag,
         filters=_dependency_filters(args),
     )
+    started = time.monotonic()
     impact = service.analyze(request)
     content = _render_impact(impact, args.format)
+    duration_ms = int((time.monotonic() - started) * 1000)
+    if args.debug:
+        _render_operation_debug(
+            "impact",
+            {
+                "format": args.format,
+                "duration_ms": duration_ms,
+                "resolution_status": impact.resolution.status,
+                "direction": args.direction,
+                "depth": args.depth,
+                "nodes": len(impact.walk.nodes) if impact.walk is not None else 0,
+                "edges": len(impact.walk.edges) if impact.walk is not None else 0,
+                "consumers": len(impact.consumers),
+                "dependencies": len(impact.dependencies),
+                "cross_technology": len(impact.cross_technology),
+                "risks": len(impact.risks),
+                "to_confirm": len(impact.to_confirm),
+                "limitations": len(impact.limitations),
+                "no_llm": impact.no_llm,
+            },
+        )
     if args.output is not None:
         output_path = _impact_output_path(settings, args.output, impact)
         try:
@@ -700,6 +762,7 @@ def _run_stats(args: argparse.Namespace) -> int:
         domain=settings.domain,
     ).inventory_stats()
     rag = SQLiteRagRepository(settings.database_path).rag_inventory_stats()
+    reverse_engineering = SQLiteReverseEngineeringRepository(settings.database_path).stats()
     if args.format == "json":
         print(
             json.dumps(
@@ -713,6 +776,9 @@ def _run_stats(args: argparse.Namespace) -> int:
                         "artifact_kinds": list(ingestion.artifact_kinds),
                     },
                     "rag": _rag_stats_json(rag),
+                    "reverse_engineering": _reverse_engineering_stats_json(
+                        reverse_engineering
+                    ),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -724,6 +790,9 @@ def _run_stats(args: argparse.Namespace) -> int:
     print()
     print("Estadisticas RAG")
     _render_rag_stats(rag)
+    print()
+    print("Estadisticas reverse engineering")
+    _render_reverse_engineering_stats(reverse_engineering)
     return 0
 
 
@@ -862,6 +931,50 @@ def _rag_stats_json(stats) -> dict[str, object]:
         "latest_query_status": stats.latest_query_status,
         "avg_candidate_count": stats.avg_candidate_count,
     }
+
+
+def _reverse_engineering_stats_json(stats) -> dict[str, object]:
+    return {
+        "latest_run_id": stats.latest_run_id,
+        "latest_run_status": stats.latest_run_status,
+        "latest_run_duration_ms": stats.latest_run_duration_ms,
+        "symbols": {
+            "active": stats.symbols_active,
+            "stale": stats.symbols_stale,
+            "deleted": stats.symbols_deleted,
+            "ambiguous": stats.symbols_ambiguous,
+        },
+        "references_total": stats.references_total,
+        "relations": {
+            "active": stats.relations_active,
+            "resolved": stats.relations_resolved,
+            "ambiguous": stats.relations_ambiguous,
+            "unresolved": stats.relations_unresolved,
+            "dynamic": stats.relations_dynamic,
+            "external": stats.relations_external,
+        },
+    }
+
+
+def _render_reverse_engineering_stats(stats) -> None:
+    latest = (
+        "ninguno"
+        if stats.latest_run_id is None
+        else f"{stats.latest_run_id} ({stats.latest_run_status})"
+    )
+    print(f"ultimo_run = {latest}")
+    print(f"duracion_ms = {stats.latest_run_duration_ms if stats.latest_run_duration_ms is not None else 'n/a'}")
+    print(f"simbolos_active = {stats.symbols_active}")
+    print(f"simbolos_stale = {stats.symbols_stale}")
+    print(f"simbolos_deleted = {stats.symbols_deleted}")
+    print(f"simbolos_ambiguous = {stats.symbols_ambiguous}")
+    print(f"referencias = {stats.references_total}")
+    print(f"relaciones_active = {stats.relations_active}")
+    print(f"relaciones_resolved = {stats.relations_resolved}")
+    print(f"relaciones_ambiguous = {stats.relations_ambiguous}")
+    print(f"relaciones_unresolved = {stats.relations_unresolved}")
+    print(f"relaciones_dynamic = {stats.relations_dynamic}")
+    print(f"relaciones_external = {stats.relations_external}")
 
 
 def _index_scope(args: argparse.Namespace) -> IndexScope | None:
@@ -1698,6 +1811,19 @@ def _evidence_json(item) -> dict[str, object]:
     }
 
 
+def _render_operation_debug(command: str, metrics: dict[str, object]) -> None:
+    """Muestra metricas operativas sin contaminar stdout estructurado.
+
+    Args:
+        command: Nombre del comando observado.
+        metrics: Pares clave-valor estables para diagnostico.
+    """
+    print("Observabilidad reverse engineering", file=sys.stderr)
+    print(f"comando={command}", file=sys.stderr)
+    for key, value in metrics.items():
+        print(f"{key}={value}", file=sys.stderr)
+
+
 def _progress_percent(current: int, total: int | None) -> str:
     if total is None or total <= 0:
         return "n/a"
@@ -2125,6 +2251,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="permite sobrescribir el archivo de salida",
     )
+    inventory_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="muestra metricas operativas en stderr",
+    )
     inventory_parser.set_defaults(handler=_run_inventory)
 
     describe_parser = commands.add_parser(
@@ -2185,6 +2316,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite",
         action="store_true",
         help="permite sobrescribir el archivo de salida",
+    )
+    describe_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="muestra metricas operativas en stderr",
     )
     describe_parser.set_defaults(handler=_run_describe)
 
@@ -2279,6 +2415,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--overwrite",
         action="store_true",
         help="permite sobrescribir el archivo de salida",
+    )
+    impact_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="muestra metricas operativas en stderr",
     )
     impact_parser.set_defaults(handler=_run_impact)
 

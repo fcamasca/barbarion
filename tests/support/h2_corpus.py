@@ -1,4 +1,4 @@
-"""Construccion de corpus sintetico para pruebas H2."""
+"""Construccion de corpus sintetico para pruebas ingesta."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def _write_error_samples(root: Path) -> None:
 
 
 def _write_cp1252_sample(root: Path) -> None:
-    content = "$PBExportHeader$uo_cp1252.sru\n" "global type uo_cp1252 from userobject\n" "end type\n" "public function string nombre();\n" 'return "Acento: ñ"\n' "end function\n"
+    content = "$PBExportHeader$uo_cp1252.sru\n" "global type uo_cp1252 from userobject\n" "end type\n" "public function string nombre();\n" 'return "Acento: Ã±"\n' "end function\n"
     (root / "powerbuilder" / "cp1252_export.sru").write_bytes(
         content.encode("cp1252")
     )

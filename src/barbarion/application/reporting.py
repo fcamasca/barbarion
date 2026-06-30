@@ -1,4 +1,4 @@
-"""Generacion de evidencia tecnica para cierre H3."""
+"""Generacion de evidencia tecnica para cierre RAG."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ from barbarion.domain.rag import RetrievalCandidate, RetrievalMode, SearchRespon
 
 
 @dataclass(frozen=True, slots=True)
-class H3ReportSummary:
-    """Resumen de artefactos generados para cierre H3."""
+class RagReportSummary:
+    """Resumen de artefactos generados para cierre RAG."""
 
     output_dir: Path
     metrics_path: Path
@@ -64,14 +64,14 @@ class ExpectedSourceSearchService:
         )
 
 
-def generate_h3_report(
+def generate_rag_report(
     *,
     dataset_path: Path,
     output_dir: Path,
     test_summary: str,
     smoke_summary: str,
     metadata: dict[str, object] | None = None,
-) -> H3ReportSummary:
+) -> RagReportSummary:
     """Genera metrics.json, topk-report.md, smoke-report.md y benchmark.md."""
     questions = load_evaluation_dataset(dataset_path)
     metadata = {} if metadata is None else dict(metadata)
@@ -119,7 +119,7 @@ def generate_h3_report(
         _smoke_markdown(test_summary=test_summary, smoke_summary=smoke_summary),
         encoding="utf-8",
     )
-    return H3ReportSummary(
+    return RagReportSummary(
         output_dir=output_dir,
         metrics_path=metrics_path,
         topk_report_path=topk_path,
@@ -144,7 +144,7 @@ def _benchmark_metrics(result: BenchmarkResult) -> dict[str, object]:
 
 def _topk_markdown(result: BenchmarkResult) -> str:
     lines = [
-        "# H3 Top-K Report",
+        "# RAG Top-K Report",
         "",
         "| Categoria | Pregunta | recall@5 | recall@10 | mrr | latencia_ms |",
         "|---|---|---:|---:|---:|---:|",
@@ -170,7 +170,7 @@ def _topk_markdown(result: BenchmarkResult) -> str:
 
 def _smoke_markdown(*, test_summary: str, smoke_summary: str) -> str:
     return (
-        "# H3 Smoke Report\n\n"
+        "# RAG Smoke Report\n\n"
         "## Suite\n\n"
         f"- {test_summary}\n\n"
         "## Smoke instalado\n\n"

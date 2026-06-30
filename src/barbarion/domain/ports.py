@@ -28,14 +28,14 @@ from barbarion.domain.rag import (
     VectorMetadata,
 )
 from barbarion.domain.reverse_engineering import (
-    H4AnalysisRunMode,
-    H4AnalysisRunRecord,
-    H4AnalysisRunStatus,
-    H4DependencyDirection,
-    H4Reference,
-    H4Relation,
-    H4RelationCandidate,
-    H4Symbol,
+    AnalysisRunMode,
+    AnalysisRunRecord,
+    AnalysisRunStatus,
+    DependencyDirection,
+    TechnicalReference,
+    TechnicalRelation,
+    RelationCandidate,
+    TechnicalSymbol,
 )
 from barbarion.domain.ingestion import PersistedFileState
 
@@ -215,24 +215,24 @@ class LlmProviderPort(Protocol):
 
 
 class ReverseEngineeringRepositoryPort(Protocol):
-    """Contrato minimo de persistencia para H4 Reverse Engineering."""
+    """Contrato minimo de persistencia para reverse engineering."""
 
     def begin_analysis_run(
         self,
         *,
-        mode: H4AnalysisRunMode,
+        mode: AnalysisRunMode,
         scope: dict[str, object] | None = None,
     ) -> int:
-        """Crea una corrida H4 y devuelve su identificador."""
+        """Crea una corrida de reverse engineering y devuelve su identificador."""
 
-    def analysis_run(self, run_id: int) -> H4AnalysisRunRecord | None:
-        """Lee una corrida H4 persistida."""
+    def analysis_run(self, run_id: int) -> AnalysisRunRecord | None:
+        """Lee una corrida de reverse engineering persistida."""
 
     def finish_analysis_run(
         self,
         *,
         run_id: int,
-        status: H4AnalysisRunStatus,
+        status: AnalysisRunStatus,
         symbols_detected: int = 0,
         references_detected: int = 0,
         relations_resolved: int = 0,
@@ -242,39 +242,39 @@ class ReverseEngineeringRepositoryPort(Protocol):
         error_count: int = 0,
         duration_ms: int | None = None,
     ) -> None:
-        """Cierra una corrida H4 con contadores consolidados."""
+        """Cierra una corrida de reverse engineering con contadores consolidados."""
 
-    def upsert_symbol(self, *, run_id: int, symbol: H4Symbol) -> None:
+    def upsert_symbol(self, *, run_id: int, symbol: TechnicalSymbol) -> None:
         """Inserta o actualiza el estado vigente de un simbolo."""
 
-    def get_symbol(self, symbol_id: str) -> H4Symbol | None:
+    def get_symbol(self, symbol_id: str) -> TechnicalSymbol | None:
         """Lee un simbolo por ID determinista."""
 
-    def active_symbols(self) -> tuple[H4Symbol, ...]:
-        """Lista simbolos activos del catalogo H4 vigente."""
+    def active_symbols(self) -> tuple[TechnicalSymbol, ...]:
+        """Lista simbolos activos del catalogo reverse engineering vigente."""
 
-    def upsert_reference(self, *, run_id: int, reference: H4Reference) -> None:
+    def upsert_reference(self, *, run_id: int, reference: TechnicalReference) -> None:
         """Inserta o actualiza una referencia vigente."""
 
-    def get_reference(self, reference_id: str) -> H4Reference | None:
+    def get_reference(self, reference_id: str) -> TechnicalReference | None:
         """Lee una referencia por ID determinista."""
 
-    def upsert_relation(self, *, run_id: int, relation: H4Relation) -> None:
+    def upsert_relation(self, *, run_id: int, relation: TechnicalRelation) -> None:
         """Inserta o actualiza una relacion canonica."""
 
-    def get_relation(self, relation_id: str) -> H4Relation | None:
+    def get_relation(self, relation_id: str) -> TechnicalRelation | None:
         """Lee una relacion por ID determinista."""
 
     def active_relations_for_symbol(
         self,
         symbol_id: str,
         *,
-        direction: H4DependencyDirection,
-    ) -> tuple[H4Relation, ...]:
+        direction: DependencyDirection,
+    ) -> tuple[TechnicalRelation, ...]:
         """Lista relaciones activas adyacentes a un simbolo."""
 
     def relation_candidates(
         self,
         relation_id: str,
-    ) -> tuple[H4RelationCandidate, ...]:
+    ) -> tuple[RelationCandidate, ...]:
         """Lee candidatos de una relacion ambigua."""

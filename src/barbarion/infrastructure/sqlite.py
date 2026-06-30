@@ -1,4 +1,4 @@
-"""SQL explicito de persistencia para la ingesta H2."""
+"""SQL explicito de persistencia para la ingesta ingesta."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from barbarion.domain.rag import (
     EmbeddingManifestStatus,
     EmbeddingRunMode,
     EmbeddingRunStatus,
-    H4SymbolMetadata,
+    SymbolMetadata,
     IndexScope,
     IndexableChunk,
     RagQueryStatus,
@@ -52,18 +52,21 @@ from barbarion.domain.rag import (
     VectorMetadata,
 )
 from barbarion.domain.reverse_engineering import (
-    H4AnalysisRunMode,
-    H4AnalysisRunRecord,
-    H4AnalysisRunStatus,
-    H4Classification,
-    H4DependencyDirection,
-    H4Reference,
-    H4Relation,
-    H4RelationCandidate,
-    H4RelationStatus,
-    H4ResolutionStatus,
-    H4Symbol,
-    H4SymbolStatus,
+    AnalysisRunMode,
+    AnalysisRunRecord,
+    AnalysisRunStatus,
+    EvidenceClassification,
+    DependencyDirection,
+    InventoryFilters,
+    InventoryItem,
+    InventorySummary,
+    TechnicalReference,
+    TechnicalRelation,
+    RelationCandidate,
+    RelationStatus,
+    ResolutionStatus,
+    TechnicalSymbol,
+    SymbolStatus,
 )
 
 
@@ -619,7 +622,7 @@ class InventoryStats:
 
 @dataclass(frozen=True, slots=True)
 class SQLiteIngestionRepository:
-    """Repositorio H2 respaldado por SQLite local."""
+    """Repositorio ingesta respaldado por SQLite local."""
 
     database_path: Path
     domain: str = "default"
@@ -1287,8 +1290,8 @@ class RagInventoryStats:
 
 
 @dataclass(frozen=True, slots=True)
-class H4SymbolSource:
-    """Chunk H2 vigente con metadata suficiente para catalogar simbolos H4."""
+class SymbolSource:
+    """Chunk vigente con metadata suficiente para catalogar simbolos de reverse engineering."""
 
     file_id: int
     document_id: int
@@ -1307,7 +1310,7 @@ class H4SymbolSource:
 
 @dataclass(frozen=True, slots=True)
 class SQLiteRagRepository:
-    """Repositorio minimo H3 respaldado por SQLite local."""
+    """Repositorio minimo RAG respaldado por SQLite local."""
 
     database_path: Path
     vector_provider: str = "sqlite_vec"
@@ -1582,7 +1585,7 @@ class SQLiteRagRepository:
         domain: str,
         scope: IndexScope | None = None,
     ) -> tuple[IndexableChunk, ...]:
-        """Devuelve chunks vigentes de H2 con metadata filtrable."""
+        """Devuelve chunks vigentes de ingesta con metadata filtrable."""
         clauses = [
             "files.status = 'processed'",
             "files.domain = ?",
@@ -1665,7 +1668,7 @@ class SQLiteRagRepository:
         mode: EmbeddingRunMode,
         scope: IndexScope | None,
     ) -> int:
-        """Crea una corrida de indexacion H3."""
+        """Crea una corrida de indexacion RAG."""
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -1811,7 +1814,7 @@ class SQLiteRagRepository:
         failed_chunks: int,
         duration_ms: int,
     ) -> None:
-        """Cierra una corrida de indexacion H3 con metricas."""
+        """Cierra una corrida de indexacion RAG con metricas."""
         with self._connect() as connection:
             connection.execute(
                 """
@@ -2030,7 +2033,7 @@ class SQLiteRagRepository:
 
 @dataclass(frozen=True, slots=True)
 class SQLiteReverseEngineeringRepository:
-    """Repositorio minimo H4 respaldado por SQLite local."""
+    """Repositorio minimo reverse engineering respaldado por SQLite local."""
 
     database_path: Path
 
@@ -2039,8 +2042,8 @@ class SQLiteReverseEngineeringRepository:
         *,
         domain: str,
         path_prefix: str | None = None,
-    ) -> tuple[H4SymbolSource, ...]:
-        """Lee chunks H2 vigentes que pueden alimentar el catalogo de simbolos."""
+    ) -> tuple[SymbolSource, ...]:
+        """Lee chunks vigentes que pueden alimentar el catalogo de simbolos."""
         clauses = [
             "files.domain = ?",
             "files.status = 'processed'",
@@ -2076,15 +2079,15 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 tuple(parameters),
             ).fetchall()
-        return tuple(_h4_symbol_source_from_row(row) for row in rows)
+        return tuple(_symbol_source_from_row(row) for row in rows)
 
     def begin_analysis_run(
         self,
         *,
-        mode: H4AnalysisRunMode,
+        mode: AnalysisRunMode,
         scope: dict[str, object] | None = None,
     ) -> int:
-        """Crea una corrida H4."""
+        """Crea una corrida de reverse engineering."""
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -2096,8 +2099,8 @@ class SQLiteReverseEngineeringRepository:
             connection.commit()
             return int(cursor.lastrowid)
 
-    def analysis_run(self, run_id: int) -> H4AnalysisRunRecord | None:
-        """Lee una corrida H4 por ID."""
+    def analysis_run(self, run_id: int) -> AnalysisRunRecord | None:
+        """Lee una corrida de reverse engineering por ID."""
         with self._connect_readonly() as connection:
             row = connection.execute(
                 """
@@ -2110,13 +2113,13 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 (run_id,),
             ).fetchone()
-        return None if row is None else _h4_run_from_row(row)
+        return None if row is None else _analysis_run_from_row(row)
 
     def finish_analysis_run(
         self,
         *,
         run_id: int,
-        status: H4AnalysisRunStatus,
+        status: AnalysisRunStatus,
         symbols_detected: int = 0,
         references_detected: int = 0,
         relations_resolved: int = 0,
@@ -2126,7 +2129,7 @@ class SQLiteReverseEngineeringRepository:
         error_count: int = 0,
         duration_ms: int | None = None,
     ) -> None:
-        """Cierra una corrida H4 con contadores."""
+        """Cierra una corrida de reverse engineering con contadores."""
         with self._connect() as connection:
             connection.execute(
                 """
@@ -2159,8 +2162,8 @@ class SQLiteReverseEngineeringRepository:
             )
             connection.commit()
 
-    def upsert_symbol(self, *, run_id: int, symbol: H4Symbol) -> None:
-        """Inserta o actualiza el estado vigente de un simbolo H4."""
+    def upsert_symbol(self, *, run_id: int, symbol: TechnicalSymbol) -> None:
+        """Inserta o actualiza el estado vigente de un simbolo reverse engineering."""
         now = _utc_now()
         with self._connect() as connection:
             connection.execute(
@@ -2218,7 +2221,7 @@ class SQLiteReverseEngineeringRepository:
             )
             connection.commit()
 
-    def get_symbol(self, symbol_id: str) -> H4Symbol | None:
+    def get_symbol(self, symbol_id: str) -> TechnicalSymbol | None:
         """Lee un simbolo por ID."""
         with self._connect_readonly() as connection:
             row = connection.execute(
@@ -2232,10 +2235,10 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 (symbol_id,),
             ).fetchone()
-        return None if row is None else _h4_symbol_from_row(row)
+        return None if row is None else _technical_symbol_from_row(row)
 
-    def active_symbols(self) -> tuple[H4Symbol, ...]:
-        """Lista simbolos activos para resolucion H4."""
+    def active_symbols(self) -> tuple[TechnicalSymbol, ...]:
+        """Lista simbolos activos para resolucion reverse engineering."""
         with self._connect_readonly() as connection:
             rows = connection.execute(
                 """
@@ -2248,10 +2251,117 @@ class SQLiteReverseEngineeringRepository:
                 ORDER BY technology, container_name, normalized_name, id
                 """
             ).fetchall()
-        return tuple(_h4_symbol_from_row(row) for row in rows)
+        return tuple(_technical_symbol_from_row(row) for row in rows)
 
-    def upsert_reference(self, *, run_id: int, reference: H4Reference) -> None:
-        """Inserta o actualiza una referencia H4."""
+    def inventory_items(
+        self,
+        filters: InventoryFilters,
+    ) -> tuple[InventoryItem, ...]:
+        """Consulta filas del inventario reverse engineering solo desde SQLite.
+
+        Args:
+            filters: Filtros exactos o parciales aplicados sobre simbolos y
+                rutas persistidas.
+
+        Returns:
+            Filas de inventario ordenadas de forma canonica y sin acceder al
+            filesystem ni ejecutar parsers.
+        """
+        where, parameters = _inventory_where(filters)
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    symbols.id,
+                    symbols.file_id,
+                    symbols.document_id,
+                    symbols.chunk_id,
+                    symbols.original_name,
+                    symbols.normalized_name,
+                    symbols.symbol_type,
+                    symbols.technology,
+                    symbols.parent_symbol_id,
+                    symbols.container_name,
+                    symbols.signature,
+                    symbols.start_line,
+                    symbols.end_line,
+                    symbols.extraction_method,
+                    symbols.confidence,
+                    symbols.status,
+                    symbols.metadata_json,
+                    files.relative_path,
+                    COUNT(DISTINCT outgoing.id) AS outgoing_relations,
+                    COUNT(DISTINCT incoming.id) AS incoming_relations,
+                    COUNT(DISTINCT symbol_references.id) AS reference_count
+                FROM symbols
+                LEFT JOIN files ON files.id = symbols.file_id
+                LEFT JOIN relations AS outgoing
+                  ON outgoing.source_symbol_id = symbols.id
+                 AND outgoing.status = 'active'
+                LEFT JOIN relations AS incoming
+                  ON incoming.target_symbol_id = symbols.id
+                 AND incoming.status = 'active'
+                LEFT JOIN symbol_references
+                  ON symbol_references.source_symbol_id = symbols.id
+                WHERE {where}
+                GROUP BY symbols.id
+                ORDER BY
+                    symbols.technology,
+                    symbols.symbol_type,
+                    symbols.container_name,
+                    symbols.normalized_name,
+                    symbols.id
+                """,
+                tuple(parameters),
+            ).fetchall()
+        return tuple(_inventory_item_from_row(row) for row in rows)
+
+    def inventory_summary(
+        self,
+        filters: InventoryFilters,
+    ) -> InventorySummary:
+        """Calcula conteos del inventario reverse engineering aplicando los mismos filtros.
+
+        Args:
+            filters: Filtros efectivos de la consulta de inventario.
+
+        Returns:
+            Conteos de archivos, simbolos, referencias y relaciones asociados a
+            los simbolos filtrados.
+        """
+        where, parameters = _inventory_where(filters)
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                f"""
+                SELECT
+                    COUNT(DISTINCT symbols.file_id) AS files,
+                    COUNT(DISTINCT symbols.id) AS symbols,
+                    COUNT(DISTINCT symbol_references.id) AS reference_total,
+                    COUNT(DISTINCT relations.id) AS relations
+                FROM symbols
+                LEFT JOIN files ON files.id = symbols.file_id
+                LEFT JOIN symbol_references
+                  ON symbol_references.source_symbol_id = symbols.id
+                LEFT JOIN relations
+                  ON relations.status = 'active'
+                 AND (
+                    relations.source_symbol_id = symbols.id
+                    OR relations.target_symbol_id = symbols.id
+                 )
+                WHERE {where}
+                """,
+                tuple(parameters),
+            ).fetchone()
+        assert row is not None
+        return InventorySummary(
+            files=int(row["files"]),
+            symbols=int(row["symbols"]),
+            references=int(row["reference_total"]),
+            relations=int(row["relations"]),
+        )
+
+    def upsert_reference(self, *, run_id: int, reference: TechnicalReference) -> None:
+        """Inserta o actualiza una referencia reverse engineering."""
         now = _utc_now()
         with self._connect() as connection:
             connection.execute(
@@ -2303,7 +2413,7 @@ class SQLiteReverseEngineeringRepository:
             )
             connection.commit()
 
-    def get_reference(self, reference_id: str) -> H4Reference | None:
+    def get_reference(self, reference_id: str) -> TechnicalReference | None:
         """Lee una referencia por ID."""
         with self._connect_readonly() as connection:
             row = connection.execute(
@@ -2317,9 +2427,9 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 (reference_id,),
             ).fetchone()
-        return None if row is None else _h4_reference_from_row(row)
+        return None if row is None else _technical_reference_from_row(row)
 
-    def active_references(self) -> tuple[H4Reference, ...]:
+    def active_references(self) -> tuple[TechnicalReference, ...]:
         """Lista referencias vigentes pendientes de convertir en relaciones."""
         with self._connect_readonly() as connection:
             rows = connection.execute(
@@ -2332,15 +2442,15 @@ class SQLiteReverseEngineeringRepository:
                 ORDER BY source_file_id, start_line, id
                 """
             ).fetchall()
-        return tuple(_h4_reference_from_row(row) for row in rows)
+        return tuple(_technical_reference_from_row(row) for row in rows)
 
-    def reconcile_h4_scope(
+    def reconcile_analysis_scope(
         self,
         *,
         run_id: int,
         file_ids: tuple[int, ...],
     ) -> tuple[int, int, int]:
-        """Marca obsoletas filas H4 de archivos del scope no vistas en el run."""
+        """Marca obsoletas filas reverse engineering de archivos del scope no vistas en el run."""
         if not file_ids:
             return (0, 0, 0)
         placeholders = ", ".join("?" for _ in file_ids)
@@ -2382,8 +2492,8 @@ class SQLiteReverseEngineeringRepository:
             int(relation_cursor.rowcount),
         )
 
-    def reconcile_h4_deleted_files(self) -> tuple[int, int, int]:
-        """Marca obsoletas filas H4 cuyo archivo H2 ya no esta vigente."""
+    def reconcile_deleted_files(self) -> tuple[int, int, int]:
+        """Marca obsoletas filas reverse engineering cuyo archivo de ingesta ya no esta vigente."""
         now = _utc_now()
         with self._connect() as connection:
             symbol_cursor = connection.execute(
@@ -2419,8 +2529,8 @@ class SQLiteReverseEngineeringRepository:
             int(relation_cursor.rowcount),
         )
 
-    def upsert_relation(self, *, run_id: int, relation: H4Relation) -> None:
-        """Inserta o actualiza una relacion H4."""
+    def upsert_relation(self, *, run_id: int, relation: TechnicalRelation) -> None:
+        """Inserta o actualiza una relacion reverse engineering."""
         now = _utc_now()
         with self._connect() as connection:
             connection.execute(
@@ -2474,7 +2584,7 @@ class SQLiteReverseEngineeringRepository:
             )
             connection.commit()
 
-    def get_relation(self, relation_id: str) -> H4Relation | None:
+    def get_relation(self, relation_id: str) -> TechnicalRelation | None:
         """Lee una relacion por ID."""
         with self._connect_readonly() as connection:
             row = connection.execute(
@@ -2488,19 +2598,19 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 (relation_id,),
             ).fetchone()
-        return None if row is None else _h4_relation_from_row(row)
+        return None if row is None else _technical_relation_from_row(row)
 
     def active_relations_for_symbol(
         self,
         symbol_id: str,
         *,
-        direction: H4DependencyDirection,
-    ) -> tuple[H4Relation, ...]:
-        """Lista relaciones activas adyacentes a un simbolo H4."""
-        if direction == H4DependencyDirection.OUTGOING:
+        direction: DependencyDirection,
+    ) -> tuple[TechnicalRelation, ...]:
+        """Lista relaciones activas adyacentes a un simbolo reverse engineering."""
+        if direction == DependencyDirection.OUTGOING:
             where = "source_symbol_id = ?"
             params = (symbol_id,)
-        elif direction == H4DependencyDirection.INCOMING:
+        elif direction == DependencyDirection.INCOMING:
             where = "target_symbol_id = ?"
             params = (symbol_id,)
         else:
@@ -2520,9 +2630,9 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 params,
             ).fetchall()
-        return tuple(_h4_relation_from_row(row) for row in rows)
+        return tuple(_technical_relation_from_row(row) for row in rows)
 
-    def relations_for_reference(self, reference_id: str) -> tuple[H4Relation, ...]:
+    def relations_for_reference(self, reference_id: str) -> tuple[TechnicalRelation, ...]:
         """Lista relaciones persistidas para una referencia."""
         with self._connect_readonly() as connection:
             rows = connection.execute(
@@ -2537,13 +2647,13 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 (reference_id,),
             ).fetchall()
-        return tuple(_h4_relation_from_row(row) for row in rows)
+        return tuple(_technical_relation_from_row(row) for row in rows)
 
     def replace_relation_candidates(
         self,
         *,
         relation_id: str,
-        candidates: tuple[H4RelationCandidate, ...],
+        candidates: tuple[RelationCandidate, ...],
     ) -> None:
         """Reemplaza candidatos ambiguos de una relacion."""
         with self._connect() as connection:
@@ -2573,7 +2683,7 @@ class SQLiteReverseEngineeringRepository:
     def relation_candidates(
         self,
         relation_id: str,
-    ) -> tuple[H4RelationCandidate, ...]:
+    ) -> tuple[RelationCandidate, ...]:
         """Lee candidatos de una relacion ambigua."""
         with self._connect_readonly() as connection:
             rows = connection.execute(
@@ -2585,7 +2695,7 @@ class SQLiteReverseEngineeringRepository:
                 """,
                 (relation_id,),
             ).fetchall()
-        return tuple(_h4_relation_candidate_from_row(row) for row in rows)
+        return tuple(_relation_candidate_from_row(row) for row in rows)
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.database_path, timeout=5.0)
@@ -2601,11 +2711,11 @@ class SQLiteReverseEngineeringRepository:
         return connection
 
 
-def _h4_run_from_row(row: sqlite3.Row) -> H4AnalysisRunRecord:
-    return H4AnalysisRunRecord(
+def _analysis_run_from_row(row: sqlite3.Row) -> AnalysisRunRecord:
+    return AnalysisRunRecord(
         id=int(row["id"]),
-        mode=H4AnalysisRunMode(str(row["mode"])),
-        status=H4AnalysisRunStatus(str(row["status"])),
+        mode=AnalysisRunMode(str(row["mode"])),
+        status=AnalysisRunStatus(str(row["status"])),
         scope=_loads_json_object(str(row["scope_json"])),
         symbols_detected=int(row["symbols_detected"]),
         references_detected=int(row["references_detected"]),
@@ -2620,8 +2730,8 @@ def _h4_run_from_row(row: sqlite3.Row) -> H4AnalysisRunRecord:
     )
 
 
-def _h4_symbol_from_row(row: sqlite3.Row) -> H4Symbol:
-    return H4Symbol(
+def _technical_symbol_from_row(row: sqlite3.Row) -> TechnicalSymbol:
+    return TechnicalSymbol(
         symbol_id=str(row["id"]),
         file_id=_optional_int(row["file_id"]),
         document_id=_optional_int(row["document_id"]),
@@ -2637,13 +2747,23 @@ def _h4_symbol_from_row(row: sqlite3.Row) -> H4Symbol:
         end_line=_optional_int(row["end_line"]),
         extraction_method=str(row["extraction_method"]),
         confidence=Confidence(str(row["confidence"])),
-        status=H4SymbolStatus(str(row["status"])),
+        status=SymbolStatus(str(row["status"])),
         metadata=_loads_json_object(str(row["metadata_json"])),
     )
 
 
-def _h4_reference_from_row(row: sqlite3.Row) -> H4Reference:
-    return H4Reference(
+def _inventory_item_from_row(row: sqlite3.Row) -> InventoryItem:
+    return InventoryItem(
+        symbol=_technical_symbol_from_row(row),
+        relative_path=_optional_text(row["relative_path"]),
+        outgoing_relations=int(row["outgoing_relations"]),
+        incoming_relations=int(row["incoming_relations"]),
+        reference_count=int(row["reference_count"]),
+    )
+
+
+def _technical_reference_from_row(row: sqlite3.Row) -> TechnicalReference:
+    return TechnicalReference(
         reference_id=str(row["id"]),
         source_symbol_id=_optional_text(row["source_symbol_id"]),
         source_file_id=int(row["source_file_id"]),
@@ -2656,33 +2776,33 @@ def _h4_reference_from_row(row: sqlite3.Row) -> H4Reference:
         end_line=_optional_int(row["end_line"]),
         detection_method=str(row["detection_method"]),
         confidence=Confidence(str(row["confidence"])),
-        resolution_status=H4ResolutionStatus(str(row["resolution_status"])),
+        resolution_status=ResolutionStatus(str(row["resolution_status"])),
         metadata=_loads_json_object(str(row["metadata_json"])),
     )
 
 
-def _h4_relation_from_row(row: sqlite3.Row) -> H4Relation:
-    return H4Relation(
+def _technical_relation_from_row(row: sqlite3.Row) -> TechnicalRelation:
+    return TechnicalRelation(
         relation_id=str(row["id"]),
         reference_id=str(row["reference_id"]),
         source_symbol_id=_optional_text(row["source_symbol_id"]),
         target_symbol_id=_optional_text(row["target_symbol_id"]),
         target_key=_optional_text(row["target_key"]),
         relation_type=str(row["relation_type"]),
-        classification=H4Classification(str(row["classification"])),
-        resolution_status=H4ResolutionStatus(str(row["resolution_status"])),
+        classification=EvidenceClassification(str(row["classification"])),
+        resolution_status=ResolutionStatus(str(row["resolution_status"])),
         confidence=Confidence(str(row["confidence"])),
         evidence_file_id=int(row["evidence_file_id"]),
         evidence_chunk_id=_optional_text(row["evidence_chunk_id"]),
         start_line=_optional_int(row["start_line"]),
         end_line=_optional_int(row["end_line"]),
         notes=_optional_text(row["notes"]),
-        status=H4RelationStatus(str(row["status"])),
+        status=RelationStatus(str(row["status"])),
     )
 
 
-def _h4_relation_candidate_from_row(row: sqlite3.Row) -> H4RelationCandidate:
-    return H4RelationCandidate(
+def _relation_candidate_from_row(row: sqlite3.Row) -> RelationCandidate:
+    return RelationCandidate(
         relation_id=str(row["relation_id"]),
         candidate_symbol_id=str(row["candidate_symbol_id"]),
         rank=int(row["rank"]),
@@ -2690,8 +2810,36 @@ def _h4_relation_candidate_from_row(row: sqlite3.Row) -> H4RelationCandidate:
     )
 
 
-def _h4_symbol_source_from_row(row: sqlite3.Row) -> H4SymbolSource:
-    return H4SymbolSource(
+def _inventory_where(filters: InventoryFilters) -> tuple[str, list[object]]:
+    clauses = ["1 = 1"]
+    parameters: list[object] = []
+    if filters.technology is not None:
+        clauses.append("symbols.technology = ?")
+        parameters.append(filters.technology.strip().lower())
+    if filters.symbol_type is not None:
+        clauses.append("symbols.symbol_type = ?")
+        parameters.append(filters.symbol_type.strip().lower())
+    if filters.name is not None:
+        clauses.append(
+            "(symbols.normalized_name LIKE ? OR lower(symbols.original_name) LIKE ?)"
+        )
+        value = f"%{filters.name.strip().lower()}%"
+        parameters.extend((value, value))
+    if filters.path is not None:
+        clauses.append("files.relative_path LIKE ?")
+        path_filter = filters.path.strip().replace("\\", "/").rstrip("/")
+        parameters.append(f"{path_filter}%")
+    if filters.status is not None:
+        clauses.append("symbols.status = ?")
+        parameters.append(filters.status.value)
+    if filters.confidence is not None:
+        clauses.append("symbols.confidence = ?")
+        parameters.append(filters.confidence.value)
+    return " AND ".join(clauses), parameters
+
+
+def _symbol_source_from_row(row: sqlite3.Row) -> SymbolSource:
+    return SymbolSource(
         file_id=int(row["file_id"]),
         document_id=int(row["document_id"]),
         chunk_id=str(row["chunk_id"]),
@@ -2751,7 +2899,7 @@ def _indexable_chunk_from_row(row: sqlite3.Row) -> IndexableChunk:
     if folder == ".":
         folder = ""
     metadata_json = _loads_json_object(str(row["chunk_metadata_json"]))
-    symbols = H4SymbolMetadata(
+    symbols = SymbolMetadata(
         symbol_name=_optional_text(metadata_json.get("symbol_name")),
         symbol_kind=_optional_text(metadata_json.get("symbol_kind")),
         parent_symbol=_optional_text(metadata_json.get("parent_symbol")),
@@ -3003,9 +3151,9 @@ def _source_from_chunk_row(
     return source
 
 
-def _symbols_from_chunk_metadata(raw_json: str) -> H4SymbolMetadata:
+def _symbols_from_chunk_metadata(raw_json: str) -> SymbolMetadata:
     metadata_json = _loads_json_object(raw_json)
-    return H4SymbolMetadata(
+    return SymbolMetadata(
         symbol_name=_optional_text(metadata_json.get("symbol_name")),
         symbol_kind=_optional_text(metadata_json.get("symbol_kind")),
         parent_symbol=_optional_text(metadata_json.get("parent_symbol")),

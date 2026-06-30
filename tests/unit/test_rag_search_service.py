@@ -1,4 +1,4 @@
-"""Pruebas del servicio de busqueda H3."""
+"""Pruebas del servicio de busqueda RAG."""
 
 import sqlite3
 from pathlib import Path

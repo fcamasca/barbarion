@@ -1,4 +1,4 @@
-"""Reglas y value objects puros para H3 RAG."""
+"""Reglas y value objects puros para RAG."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ class EmbeddingManifestStatus(StrEnum):
 
 
 class EmbeddingRunStatus(StrEnum):
-    """Estado persistible de una corrida de indexacion H3."""
+    """Estado persistible de una corrida de indexacion RAG."""
 
     RUNNING = "running"
     COMPLETED = "completed"
@@ -31,7 +31,7 @@ class EmbeddingRunStatus(StrEnum):
 
 
 class EmbeddingRunMode(StrEnum):
-    """Modo de indexacion H3."""
+    """Modo de indexacion RAG."""
 
     INCREMENTAL = "incremental"
     FULL = "full"
@@ -57,7 +57,7 @@ class IndexAction(StrEnum):
 
 
 class RetrievalMode(StrEnum):
-    """Modo de recuperacion H3."""
+    """Modo de recuperacion RAG."""
 
     SEMANTIC = "semantic"
     KEYWORD = "keyword"
@@ -152,8 +152,8 @@ class EmbeddingVector:
 
 
 @dataclass(frozen=True, slots=True)
-class H4SymbolMetadata:
-    """Metadata simbolica reservada para H4; puede estar vacia en H3."""
+class SymbolMetadata:
+    """Metadata simbolica reservada para reverse engineering; puede estar vacia en RAG."""
 
     symbol_name: str | None = None
     symbol_kind: str | None = None
@@ -166,7 +166,7 @@ class H4SymbolMetadata:
 
 @dataclass(frozen=True, slots=True)
 class RetrievalFilter:
-    """Filtros de recuperacion soportados por H3."""
+    """Filtros de recuperacion soportados por RAG."""
 
     domain: str | None = None
     artifact_kind: str | None = None
@@ -178,7 +178,7 @@ class RetrievalFilter:
 
 @dataclass(frozen=True, slots=True)
 class IndexScope:
-    """Alcance opcional de indexacion H3."""
+    """Alcance opcional de indexacion RAG."""
 
     path_prefix: str | None = None
     document_id: int | None = None
@@ -206,7 +206,7 @@ class VectorMetadata:
     extension: str | None = None
     object_type: str | None = None
     object_name: str | None = None
-    symbols: H4SymbolMetadata = field(default_factory=H4SymbolMetadata)
+    symbols: SymbolMetadata = field(default_factory=SymbolMetadata)
 
     def __post_init__(self) -> None:
         _require_sha256(self.content_sha256, "content_sha256")
@@ -219,7 +219,7 @@ class VectorMetadata:
 
 @dataclass(frozen=True, slots=True)
 class IndexableChunk:
-    """Chunk vigente H2 listo para indexacion H3."""
+    """Chunk vigente listo para indexacion RAG."""
 
     chunk_id: str
     content: str
@@ -294,7 +294,7 @@ class RetrievalCandidate:
     combined_score: float
     vector_score: float | None = None
     keyword_score: float | None = None
-    metadata: H4SymbolMetadata = field(default_factory=H4SymbolMetadata)
+    metadata: SymbolMetadata = field(default_factory=SymbolMetadata)
     source: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -346,7 +346,7 @@ class SearchTimings:
 
 @dataclass(frozen=True, slots=True)
 class SearchRequest:
-    """Entrada estructurada para busqueda H3."""
+    """Entrada estructurada para busqueda RAG."""
 
     query: str
     mode: RetrievalMode
@@ -373,7 +373,7 @@ class SearchRequest:
 
 @dataclass(frozen=True, slots=True)
 class SearchResponse:
-    """Salida estructurada de busqueda H3."""
+    """Salida estructurada de busqueda RAG."""
 
     query_id: int | None
     mode: RetrievalMode
@@ -450,7 +450,7 @@ class AnswerResult:
 
 @dataclass(frozen=True, slots=True)
 class IndexRunSummary:
-    """Resumen de una corrida de indexacion H3."""
+    """Resumen de una corrida de indexacion RAG."""
 
     status: EmbeddingRunStatus
     new_chunks: int = 0

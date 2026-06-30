@@ -126,7 +126,7 @@ def test_cli_ingest_incremental_touch_change_delete_and_full(
     assert chunk_ids(db_path) == first_chunk_ids
 
     touched.write_text(
-        "Primera nota sintetica modificada.\n\nContenido nuevo para H2.",
+        "Primera nota sintetica modificada.\n\nContenido nuevo para ingesta.",
         encoding="utf-8",
     )
     run_ingest(config, capsys=capsys)

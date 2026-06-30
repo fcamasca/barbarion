@@ -1,7 +1,7 @@
 """Pruebas H4-T03 para extractores conservadores de referencias."""
 
 from barbarion.domain.models import Confidence
-from barbarion.domain.reverse_engineering import H4ResolutionStatus
+from barbarion.domain.reverse_engineering import ResolutionStatus
 from barbarion.infrastructure.parsers.oracle import extract_oracle_references
 from barbarion.infrastructure.parsers.powerbuilder import (
     extract_powerbuilder_references,
@@ -40,12 +40,12 @@ end pkg_orders;
     }
 
     assert observed == {
-        ("pkg_customer.process_order", "call", H4ResolutionStatus.UNRESOLVED, Confidence.MEDIUM, 5),
-        ("pkg_invoice.generate_invoice", "call", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 6),
-        ("order_header", "table", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 7),
-        ("order_line", "table", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 7),
-        ("order_seq", "sequence", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 8),
-        ("dynamic.sql", "dynamic_sql", H4ResolutionStatus.DYNAMIC, Confidence.LOW, 9),
+        ("pkg_customer.process_order", "call", ResolutionStatus.UNRESOLVED, Confidence.MEDIUM, 5),
+        ("pkg_invoice.generate_invoice", "call", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 6),
+        ("order_header", "table", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 7),
+        ("order_line", "table", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 7),
+        ("order_seq", "sequence", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 8),
+        ("dynamic.sql", "dynamic_sql", ResolutionStatus.DYNAMIC, Confidence.LOW, 9),
     }
     assert all(reference.technology == "oracle" for reference in references)
     assert all(reference.detection_method == "regex" for reference in references)
@@ -117,14 +117,14 @@ EXECUTE IMMEDIATE :ls_sql;
     }
 
     assert observed == {
-        ("w_customer", "open", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 1),
-        ("uo_service.process_order", "call", H4ResolutionStatus.UNRESOLVED, Confidence.MEDIUM, 2),
-        ("clicked", "event", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 3),
-        ("d_orders", "datawindow", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 4),
-        ("order_header", "table", H4ResolutionStatus.UNRESOLVED, Confidence.MEDIUM, 5),
-        ("sp_process_order", "stored_procedure", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 6),
-        ("proc_order", "stored_procedure", H4ResolutionStatus.UNRESOLVED, Confidence.HIGH, 7),
-        ("dynamic.sql", "dynamic_sql", H4ResolutionStatus.DYNAMIC, Confidence.LOW, 8),
+        ("w_customer", "open", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 1),
+        ("uo_service.process_order", "call", ResolutionStatus.UNRESOLVED, Confidence.MEDIUM, 2),
+        ("clicked", "event", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 3),
+        ("d_orders", "datawindow", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 4),
+        ("order_header", "table", ResolutionStatus.UNRESOLVED, Confidence.MEDIUM, 5),
+        ("sp_process_order", "stored_procedure", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 6),
+        ("proc_order", "stored_procedure", ResolutionStatus.UNRESOLVED, Confidence.HIGH, 7),
+        ("dynamic.sql", "dynamic_sql", ResolutionStatus.DYNAMIC, Confidence.LOW, 8),
     }
     assert all(reference.technology == "powerbuilder" for reference in references)
     assert all(reference.detection_method == "regex" for reference in references)

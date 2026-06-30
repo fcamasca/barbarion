@@ -1,15 +1,15 @@
-"""Pruebas de reportes de cierre H3."""
+"""Pruebas de reportes de cierre RAG."""
 
 import json
 from pathlib import Path
 
-from barbarion.application.reporting import generate_h3_report
+from barbarion.application.reporting import generate_rag_report
 
 
-def test_generate_h3_report_writes_required_artifacts(tmp_path: Path) -> None:
-    summary = generate_h3_report(
-        dataset_path=Path("tests/fixtures/h3_rag_evaluation.json"),
-        output_dir=tmp_path / "reports" / "h3",
+def test_generate_rag_report_writes_required_artifacts(tmp_path: Path) -> None:
+    summary = generate_rag_report(
+        dataset_path=Path("tests/fixtures/rag_evaluation.json"),
+        output_dir=tmp_path / "reports" / "rag",
         test_summary="341 passed, 12 skipped",
         smoke_summary="10 skipped: entry point no instalado",
         metadata={"commit": "test"},

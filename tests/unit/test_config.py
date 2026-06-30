@@ -190,7 +190,7 @@ def test_missing_explicit_source_is_an_error(
 def test_invalid_toml_is_rejected(tmp_path: Path) -> None:
     source = write_config(tmp_path / "invalid.toml", "domain = [")
 
-    with pytest.raises(ConfigError, match="no es válido"):
+    with pytest.raises(ConfigError, match="no es valido"):
         load_settings(source, environ={}, cwd=tmp_path)
 
 
@@ -237,7 +237,7 @@ def test_unknown_h3_section_keys_are_rejected(
     tmp_path: Path,
 ) -> None:
     del section
-    source = write_config(tmp_path / "unknown-h3.toml", content)
+    source = write_config(tmp_path / "unknown-rag.toml", content)
 
     with pytest.raises(ConfigError, match=expected_message):
         load_settings(source, environ={}, cwd=tmp_path)
@@ -249,7 +249,7 @@ def test_unknown_h3_section_keys_are_rejected(
         ('domain = "  "\n', "domain"),
         ('data_dir = 42\n', "data_dir"),
         ('log_level = "verbose"\n', "log_level"),
-        ('ollama_timeout_seconds = true\n', "debe ser un número"),
+        ('ollama_timeout_seconds = true\n', "debe ser un numero"),
         ('ollama_timeout_seconds = 0\n', "mayor que 0"),
         ('ollama_timeout_seconds = 11\n', "menor o igual que 10"),
         ('ollama_url = "ftp://localhost"\n', "HTTP"),
@@ -362,7 +362,7 @@ def test_invalid_ingestion_values_are_rejected(
 
 def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
     source = write_config(
-        tmp_path / "h3.toml",
+        tmp_path / "rag.toml",
         "\n".join(
             [
                 "[embeddings]",
@@ -461,7 +461,7 @@ def test_invalid_h3_values_are_rejected(
     expected_message: str,
     tmp_path: Path,
 ) -> None:
-    source = write_config(tmp_path / "invalid-h3.toml", content)
+    source = write_config(tmp_path / "invalid-rag.toml", content)
 
     with pytest.raises(ConfigError, match=expected_message):
         load_settings(source, environ={}, cwd=tmp_path)

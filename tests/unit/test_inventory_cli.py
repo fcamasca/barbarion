@@ -1,5 +1,6 @@
-"""Integracion H4-T05 para `barbarion analyze`."""
+"""Pruebas H4-T08 para `barbarion inventory`."""
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from barbarion import cli
 from barbarion.database import initialize_database
 
 
-def test_h4_analyze_dry_run_does_not_mutate_sqlite(
+def test_inventory_cli_filters_and_json(
     tmp_path: Path,
     capsys: object,
 ) -> None:
@@ -22,73 +23,121 @@ def test_h4_analyze_dry_run_does_not_mutate_sqlite(
         content="begin call procesar(); end;",
         metadata={"format": "oracle", "package_name": "pkg_caller"},
     )
-
-    exit_code = cli.main(["--config", str(config), "analyze", "--dry-run"])
-    captured = capsys.readouterr()
-
-    assert exit_code == 0, captured.err
-    assert "Dry-run de analisis tecnico: completed" in captured.out
-    assert _scalar(db_path, "SELECT COUNT(*) FROM analysis_runs") == 0
-    assert _scalar(db_path, "SELECT COUNT(*) FROM symbols") == 0
-    assert _scalar(db_path, 'SELECT COUNT(*) FROM symbol_references') == 0
-
-
-def test_h4_analyze_incremental_resolution_transitions(
-    tmp_path: Path,
-    capsys: object,
-) -> None:
-    config = _prepare_workspace(tmp_path)
-    db_path = tmp_path / "data" / "barbarion.db"
-    _insert_oracle_chunk(
-        db_path,
-        file_id=1,
-        relative_path="oracle/pkg_caller.pkb",
-        object_name="caller",
-        object_type="procedure",
-        content="begin call procesar(); end;",
-        metadata={"format": "oracle", "package_name": "pkg_caller"},
-    )
-
-    _run_analyze(config, capsys)
-    assert _reference_status(db_path, "procesar") == "unresolved"
-    assert _active_relation_statuses(db_path, "procesar") == ()
-
     _insert_oracle_chunk(
         db_path,
         file_id=2,
-        relative_path="oracle/pkg_cliente_a.pkb",
+        relative_path="oracle/pkg_target.pkb",
         object_name="procesar",
         object_type="procedure",
         content="procedure procesar is begin null; end;",
-        metadata={"format": "oracle", "package_name": "pkg_cliente"},
+        metadata={"format": "oracle", "package_name": "pkg_target"},
     )
-    _run_analyze(config, capsys)
-    assert _reference_status(db_path, "procesar") == "resolved"
-    assert _active_relation_statuses(db_path, "procesar") == ("resolved",)
+    assert cli.main(["--config", str(config), "analyze"]) == 0
+    capsys.readouterr()
 
+    exit_code = cli.main(
+        [
+            "--config",
+            str(config),
+            "inventory",
+            "--technology",
+            "oracle",
+            "--type",
+            "procedure",
+            "--name",
+            "procesar",
+            "--format",
+            "json",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, captured.err
+    payload = json.loads(captured.out)
+    assert payload["summary"]["symbols"] == 1
+    assert payload["items"][0]["normalized_name"] == "procesar"
+    assert payload["items"][0]["relative_path"] == "oracle/pkg_target.pkb"
+
+
+def test_inventory_cli_empty_text_output(
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    config = _prepare_workspace(tmp_path)
+
+    exit_code = cli.main(
+        ["--config", str(config), "inventory", "--name", "no_existe"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0, captured.err
+    assert "simbolos = 0" in captured.out
+    assert "sin simbolos para los filtros indicados" in captured.out
+
+
+def test_inventory_cli_safe_output_and_no_overwrite(
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    config = _prepare_workspace(tmp_path)
+    db_path = tmp_path / "data" / "barbarion.db"
     _insert_oracle_chunk(
         db_path,
-        file_id=3,
-        relative_path="oracle/pkg_cliente_b.pkb",
-        object_name="procesar",
+        file_id=1,
+        relative_path="oracle/pkg_caller.pkb",
+        object_name="caller",
         object_type="procedure",
-        content="procedure procesar is begin null; end;",
-        metadata={"format": "oracle", "package_name": "pkg_otro"},
+        content="begin null; end;",
+        metadata={"format": "oracle", "package_name": "pkg_caller"},
     )
-    _run_analyze(config, capsys)
-    assert _reference_status(db_path, "procesar") == "ambiguous"
-    assert _active_relation_statuses(db_path, "procesar") == ("ambiguous",)
-    assert _scalar(db_path, "SELECT COUNT(*) FROM relation_candidates") == 2
+    assert cli.main(["--config", str(config), "analyze"]) == 0
+    capsys.readouterr()
+    output_path = tmp_path / "output" / "inventario.md"
 
-    _mark_file_deleted(db_path, file_id=3)
-    _run_analyze(config, capsys)
-    assert _reference_status(db_path, "procesar") == "resolved"
-    assert _active_relation_statuses(db_path, "procesar") == ("resolved",)
+    first = cli.main(
+        [
+            "--config",
+            str(config),
+            "inventory",
+            "--format",
+            "markdown",
+            "--output",
+            str(output_path),
+        ]
+    )
+    first_capture = capsys.readouterr()
+    second = cli.main(
+        [
+            "--config",
+            str(config),
+            "inventory",
+            "--format",
+            "markdown",
+            "--output",
+            str(output_path),
+        ]
+    )
+    second_capture = capsys.readouterr()
+    third = cli.main(
+        [
+            "--config",
+            str(config),
+            "inventory",
+            "--format",
+            "markdown",
+            "--output",
+            str(output_path),
+            "--overwrite",
+        ]
+    )
+    third_capture = capsys.readouterr()
 
-    _mark_file_deleted(db_path, file_id=2)
-    _run_analyze(config, capsys)
-    assert _reference_status(db_path, "procesar") == "unresolved"
-    assert _active_relation_statuses(db_path, "procesar") == ()
+    assert first == 0, first_capture.err
+    assert output_path.exists()
+    assert "# Inventario tecnico" in output_path.read_text(encoding="utf-8")
+    assert second == 1
+    assert "El archivo ya existe" in second_capture.err
+    assert third == 0, third_capture.err
 
 
 def _prepare_workspace(tmp_path: Path) -> Path:
@@ -190,58 +239,3 @@ def _insert_oracle_chunk(
             ),
         )
         connection.commit()
-
-
-def _run_analyze(config: Path, capsys: object) -> str:
-    exit_code = cli.main(["--config", str(config), "analyze"])
-    captured = capsys.readouterr()
-    assert exit_code == 0, captured.err
-    assert "Analisis tecnico: completed" in captured.out
-    return captured.out
-
-
-def _mark_file_deleted(db_path: Path, *, file_id: int) -> None:
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            "UPDATE files SET status = 'deleted', updated_at = ? WHERE id = ?",
-            ("2026-01-01T00:00:00+00:00", file_id),
-        )
-        connection.commit()
-
-
-def _reference_status(db_path: Path, target: str) -> str:
-    with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            """
-            SELECT resolution_status
-            FROM symbol_references
-            WHERE normalized_target = ?
-            ORDER BY updated_at DESC, id
-            LIMIT 1
-            """,
-            (target,),
-        ).fetchone()
-    assert row is not None
-    return str(row[0])
-
-
-def _active_relation_statuses(db_path: Path, target: str) -> tuple[str, ...]:
-    with sqlite3.connect(db_path) as connection:
-        rows = connection.execute(
-            """
-            SELECT relations.resolution_status
-            FROM relations
-            JOIN symbol_references AS reference_rows
-              ON reference_rows.id = relations.reference_id
-            WHERE reference_rows.normalized_target = ?
-              AND relations.status = 'active'
-            ORDER BY relations.resolution_status
-            """,
-            (target,),
-        ).fetchall()
-    return tuple(str(row[0]) for row in rows)
-
-
-def _scalar(db_path: Path, sql: str) -> int:
-    with sqlite3.connect(db_path) as connection:
-        return int(connection.execute(sql).fetchone()[0])

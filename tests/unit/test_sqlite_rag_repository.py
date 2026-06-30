@@ -1,4 +1,4 @@
-"""Pruebas del repositorio SQLite H3 RAG."""
+"""Pruebas del repositorio SQLite RAG."""
 
 import sqlite3
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""Pruebas de proveedores de embeddings H3."""
+"""Pruebas de proveedores de embeddings RAG."""
 
 import urllib.error
 from typing import Any

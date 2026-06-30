@@ -141,7 +141,7 @@ def probe_ollama(url: str, timeout_seconds: float) -> OllamaProbeResult:
 
 
 def _check_python(version: tuple[int, int, int]) -> CheckResult:
-    """Comprueba la versión mínima y máxima fijada por H1."""
+    """Comprueba la versión mínima y máxima fijada por base."""
     detail = ".".join(str(part) for part in version)
     if (3, 12) <= version[:2] < (3, 13):
         return CheckResult("Python", "PASS", detail, True)
@@ -225,7 +225,7 @@ def _check_database(
 
 
 def _check_ollama(settings: Settings, probe: OllamaProbe) -> CheckResult:
-    """Representa Ollama como dependencia opcional de H1."""
+    """Representa Ollama como dependencia opcional de base."""
     result = probe(settings.ollama_url, settings.ollama_timeout_seconds)
     return CheckResult(
         "Ollama",

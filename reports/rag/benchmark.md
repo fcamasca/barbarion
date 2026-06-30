@@ -1,4 +1,4 @@
-# H3 Retrieval Benchmark
+# RAG Retrieval Benchmark
 
 ## Baseline
 
@@ -11,7 +11,7 @@
 
 - command: barbarion generate-report
 - created_at: 2026-06-25T23:41:14.858092+00:00
-- dataset: tests\fixtures\h3_rag_evaluation.json
+- dataset: tests\fixtures\rag_evaluation.json
 - mode: deterministic-fixture
 - version: 0.3.0
 

@@ -27,7 +27,7 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 - búsqueda `semantic`, `keyword` e `hybrid`;
 - `ask` con contexto trazable, citas y modo `--no-llm`;
 - benchmark RAG con `recall@5`, `recall@10`, `mrr`, latencia e historico local;
-- reportes de cierre H3 en `reports/h3`.
+- reportes de cierre RAG en `reports/rag`.
 
 Qdrant no es dependencia inicial de H3; queda diferido como alternativa futura. Ingeniería inversa profunda y generación de documentos pertenecen a hitos posteriores.
 
@@ -261,8 +261,8 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion ask "pregunta" --no-llm` | Muestra contexto sin invocar LLM | Registra métricas de consulta/contexto |
 | `barbarion embeddings` | Muestra manifests, versiones y conteos | Ninguno |
 | `barbarion embeddings --errors` | Muestra errores de indexación persistidos en SQLite | Ninguno |
-| `barbarion stats` | Muestra estadísticas H2 + H3 | Ninguno |
-| `barbarion generate-report` | Genera evidencia técnica H3 en `reports/h3` | Escribe reportes locales |
+| `barbarion stats` | Muestra estadísticas de ingesta + RAG | Ninguno |
+| `barbarion generate-report` | Genera evidencia técnica RAG en `reports/rag` | Escribe reportes locales |
 
 `index` y `reindex` manejan Ctrl+C como cancelacion segura: cierran la corrida como `interrupted`, muestran procesados/pendientes y permiten continuar luego con la logica incremental existente.
 

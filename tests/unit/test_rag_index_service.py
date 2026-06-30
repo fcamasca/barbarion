@@ -1,4 +1,4 @@
-"""Pruebas del servicio de indexacion H3."""
+"""Pruebas del servicio de indexacion RAG."""
 
 import sqlite3
 from pathlib import Path
@@ -75,7 +75,7 @@ class CancelAfterMetadata(RecordingProgress):
 
 
 def seed_chunks(path: Path) -> None:
-    """Inserta un corpus H2 minimo vigente."""
+    """Inserta un corpus ingesta minimo vigente."""
     with sqlite3.connect(path) as connection:
         connection.execute(
             """

@@ -3,12 +3,12 @@
 from barbarion.application.reverse_engineering import relation_from_reference
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
-    H4Classification,
-    H4Reference,
-    H4ResolutionStatus,
-    H4Symbol,
-    h4_reference_id,
-    h4_symbol_id,
+    EvidenceClassification,
+    TechnicalReference,
+    ResolutionStatus,
+    TechnicalSymbol,
+    technical_reference_id,
+    technical_symbol_id,
 )
 
 
@@ -28,7 +28,7 @@ def test_qualified_reference_resolves_only_compatible_container_and_type() -> No
     ) or (None, ())
 
     assert relation is not None
-    assert relation.resolution_status == H4ResolutionStatus.RESOLVED
+    assert relation.resolution_status == ResolutionStatus.RESOLVED
     assert relation.target_symbol_id == target.symbol_id
     assert relation.target_key == "pkg_cliente.procesar"
     assert relation.relation_type == "calls"
@@ -52,7 +52,7 @@ def test_unqualified_reference_uses_source_container_when_available() -> None:
     ) or (None, ())
 
     assert relation is not None
-    assert relation.resolution_status == H4ResolutionStatus.RESOLVED
+    assert relation.resolution_status == ResolutionStatus.RESOLVED
     assert relation.target_symbol_id == same_container.symbol_id
     assert candidates == ()
 
@@ -72,8 +72,8 @@ def test_multiple_compatible_candidates_become_ambiguous_with_candidates() -> No
     )
 
     assert relation is not None
-    assert relation.resolution_status == H4ResolutionStatus.AMBIGUOUS
-    assert relation.classification == H4Classification.TO_CONFIRM
+    assert relation.resolution_status == ResolutionStatus.AMBIGUOUS
+    assert relation.classification == EvidenceClassification.TO_CONFIRM
     assert relation.target_symbol_id is None
     assert tuple(candidate.candidate_symbol_id for candidate in candidates) == (
         first.symbol_id,
@@ -96,7 +96,7 @@ def test_dynamic_and_external_references_keep_explicit_statuses() -> None:
         "execute immediate v_sql",
         normalized_target="dynamic.sql",
         reference_type="dynamic_sql",
-        resolution_status=H4ResolutionStatus.DYNAMIC,
+        resolution_status=ResolutionStatus.DYNAMIC,
     )
     external_reference = _reference(
         "remote_pkg.process@erp_link",
@@ -115,12 +115,12 @@ def test_dynamic_and_external_references_keep_explicit_statuses() -> None:
     ) or (None, ())
 
     assert dynamic_relation is not None
-    assert dynamic_relation.resolution_status == H4ResolutionStatus.DYNAMIC
-    assert dynamic_relation.classification == H4Classification.TO_CONFIRM
+    assert dynamic_relation.resolution_status == ResolutionStatus.DYNAMIC
+    assert dynamic_relation.classification == EvidenceClassification.TO_CONFIRM
     assert dynamic_relation.target_key == "dynamic.sql"
     assert dynamic_candidates == ()
     assert external_relation is not None
-    assert external_relation.resolution_status == H4ResolutionStatus.EXTERNAL
+    assert external_relation.resolution_status == ResolutionStatus.EXTERNAL
     assert external_relation.target_key == "remote_pkg.process"
     assert external_candidates == ()
 
@@ -131,14 +131,14 @@ def _symbol(
     *,
     container_name: str | None = None,
     technology: str = "oracle",
-) -> H4Symbol:
-    symbol_id = h4_symbol_id(
+) -> TechnicalSymbol:
+    symbol_id = technical_symbol_id(
         normalized_name=normalized_name,
         symbol_type=symbol_type,
         technology=technology,
         container_name=container_name,
     )
-    return H4Symbol(
+    return TechnicalSymbol(
         symbol_id=symbol_id,
         original_name=normalized_name,
         normalized_name=normalized_name,
@@ -157,10 +157,10 @@ def _reference(
     reference_type: str,
     technology: str = "oracle",
     source_symbol_id: str | None = None,
-    resolution_status: H4ResolutionStatus = H4ResolutionStatus.UNRESOLVED,
+    resolution_status: ResolutionStatus = ResolutionStatus.UNRESOLVED,
     metadata: dict[str, object] | None = None,
-) -> H4Reference:
-    reference_id = h4_reference_id(
+) -> TechnicalReference:
+    reference_id = technical_reference_id(
         source_file_id=1,
         raw_text=raw_text,
         normalized_target=normalized_target,
@@ -168,7 +168,7 @@ def _reference(
         start_line=1,
         end_line=1,
     )
-    return H4Reference(
+    return TechnicalReference(
         reference_id=reference_id,
         source_file_id=1,
         source_symbol_id=source_symbol_id,

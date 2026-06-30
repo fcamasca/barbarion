@@ -7,7 +7,7 @@ import pytest
 from barbarion.database import initialize_database
 from barbarion.domain.rag import (
     EmbeddingManifest,
-    H4SymbolMetadata,
+    SymbolMetadata,
     RetrievalFilter,
     VectorMetadata,
     VectorStoreError,
@@ -36,7 +36,7 @@ def metadata(
         relative_path="pkg/demo.sql",
         folder="pkg",
         extension=extension,
-        symbols=H4SymbolMetadata(symbol_name=symbol_name, symbol_kind="procedure"),
+        symbols=SymbolMetadata(symbol_name=symbol_name, symbol_kind="procedure"),
     )
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from barbarion.application.reverse_engineering import SymbolCatalogService
 from barbarion.config import load_settings
 from barbarion.database import initialize_database
-from barbarion.domain.reverse_engineering import H4AnalysisRunStatus
+from barbarion.domain.reverse_engineering import AnalysisRunStatus
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from tests.unit.test_rag_index_service import SHA_CHUNK_1, SHA_DOC, SHA_SOURCE, seed_chunks
 
@@ -26,7 +26,7 @@ def test_h4_symbol_catalog_builds_active_symbols_without_duplicates(
 
     summary = service.run()
 
-    assert summary.status == H4AnalysisRunStatus.COMPLETED
+    assert summary.status == AnalysisRunStatus.COMPLETED
     assert summary.sources_scanned == 6
     assert summary.symbols_detected == 5
     assert summary.duplicates_skipped == 1
@@ -100,7 +100,7 @@ def test_h4_symbol_catalog_builds_active_symbols_without_duplicates(
 
 
 def _seed_h4_symbol_sources(path: Path) -> None:
-    """Extiende el corpus H2 minimo con simbolos H4 sinteticos."""
+    """Extiende el corpus ingesta minimo con simbolos H4 sinteticos."""
     with sqlite3.connect(path) as connection:
         connection.execute(
             """

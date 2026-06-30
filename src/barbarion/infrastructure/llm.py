@@ -1,4 +1,4 @@
-"""Proveedor local de LLM para H3."""
+"""Proveedor local de LLM para RAG."""
 
 from __future__ import annotations
 

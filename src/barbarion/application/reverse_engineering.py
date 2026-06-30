@@ -1,6 +1,6 @@
-"""Casos de uso H4 para catalogo, referencias y relaciones.
+"""Casos de uso reverse engineering para catalogo, referencias y relaciones.
 
-Este modulo coordina la capa de aplicacion del reverse engineering H4. Mantiene
+Este modulo coordina la capa de aplicacion del reverse engineering reverse engineering. Mantiene
 separadas las reglas de normalizacion y resolucion del flujo de orquestacion,
 de modo que los comandos de CLI deleguen en servicios y repositorios sin
 duplicar decisiones de negocio.
@@ -25,30 +25,32 @@ from barbarion.domain.progress import (
 )
 from barbarion.domain.rag import RetrievalFilter, RetrievalMode, SearchRequest
 from barbarion.domain.reverse_engineering import (
-    H4AnalysisRunMode,
-    H4AnalysisRunStatus,
-    H4Classification,
-    H4ComponentDescription,
-    H4DependencyDirection,
-    H4DependencyEdge,
-    H4DependencyFilters,
-    H4DependencyNode,
-    H4DependencyWalk,
-    H4EvidenceItem,
-    H4ImpactAnalysis,
-    H4ObjectResolution,
-    H4Reference,
-    H4Relation,
-    H4RelationCandidate,
-    H4ResolutionStatus,
-    H4Symbol,
-    H4SymbolStatus,
-    h4_symbol_id,
-    h4_relation_id,
+    AnalysisRunMode,
+    AnalysisRunStatus,
+    EvidenceClassification,
+    ComponentDescription,
+    DependencyDirection,
+    DependencyEdge,
+    DependencyFilters,
+    DependencyNode,
+    DependencyWalk,
+    EvidenceItem,
+    Inventory,
+    InventoryFilters,
+    ImpactAnalysis,
+    ObjectResolution,
+    TechnicalReference,
+    TechnicalRelation,
+    RelationCandidate,
+    ResolutionStatus,
+    TechnicalSymbol,
+    SymbolStatus,
+    technical_symbol_id,
+    technical_relation_id,
     normalize_symbol_name,
 )
 from barbarion.infrastructure.sqlite import (
-    H4SymbolSource,
+    SymbolSource,
     SQLiteReverseEngineeringRepository,
 )
 from barbarion.infrastructure.parsers.oracle import extract_oracle_references
@@ -57,7 +59,7 @@ from barbarion.infrastructure.parsers.powerbuilder import extract_powerbuilder_r
 
 @dataclass(frozen=True, slots=True)
 class SymbolCatalogSummary:
-    """Resume una corrida de catalogacion de simbolos H4.
+    """Resume una corrida de catalogacion de simbolos de reverse engineering.
 
     El resumen se usa como contrato de salida de aplicacion para reportar
     conteos de fuentes, simbolos aceptados y descartes conservadores sin
@@ -65,7 +67,7 @@ class SymbolCatalogSummary:
     """
 
     run_id: int
-    status: H4AnalysisRunStatus
+    status: AnalysisRunStatus
     sources_scanned: int
     symbols_detected: int
     duplicates_skipped: int
@@ -75,7 +77,7 @@ class SymbolCatalogSummary:
 
 @dataclass(frozen=True, slots=True)
 class RelationResolutionSummary:
-    """Resume una corrida de resolucion de relaciones H4.
+    """Resume una corrida de resolucion de relaciones de reverse engineering.
 
     Distingue relaciones resueltas, ambiguas, dinamicas, externas y referencias
     que permanecen sin relacion para conservar la trazabilidad del criterio
@@ -83,7 +85,7 @@ class RelationResolutionSummary:
     """
 
     run_id: int
-    status: H4AnalysisRunStatus
+    status: AnalysisRunStatus
     references_seen: int
     relations_resolved: int
     relations_ambiguous: int
@@ -102,7 +104,7 @@ class AnalyzeSummary:
     """
 
     run_id: int | None
-    status: H4AnalysisRunStatus
+    status: AnalysisRunStatus
     files_scanned: int
     chunks_scanned: int
     symbols_detected: int
@@ -127,8 +129,8 @@ class AnalyzeScope:
 
 
 @dataclass(frozen=True, slots=True)
-class H4ObjectRequest:
-    """Solicitud comun para resolver un objeto H4 por ID o nombre.
+class ObjectRequest:
+    """Solicitud comun para resolver un objeto reverse engineering por ID o nombre.
 
     Args:
         query: Nombre simple o calificado recibido desde capas superiores.
@@ -146,7 +148,7 @@ class H4ObjectRequest:
 class DescribeRequest:
     """Solicitud estructurada para producir una descripcion de componente."""
 
-    target: H4ObjectRequest
+    target: ObjectRequest
     depth: int = 1
     no_llm: bool = True
     include_rag: bool = False
@@ -156,20 +158,31 @@ class DescribeRequest:
 class ImpactRequest:
     """Solicitud estructurada para producir un analisis de impacto basico."""
 
-    target: H4ObjectRequest
-    direction: H4DependencyDirection = H4DependencyDirection.BOTH
+    target: ObjectRequest
+    direction: DependencyDirection = DependencyDirection.BOTH
     depth: int = 2
     node_limit: int = 500
     no_llm: bool = True
     include_rag: bool = False
-    filters: H4DependencyFilters | None = None
+    filters: DependencyFilters | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryRequest:
+    """Solicitud estructurada para consultar inventario reverse engineering.
+
+    Attributes:
+        filters: Filtros efectivos de simbolos, tecnologia, ruta y confianza.
+    """
+
+    filters: InventoryFilters = InventoryFilters()
 
 
 @dataclass(frozen=True, slots=True)
 class SymbolCatalogService:
-    """Puebla el catalogo H4 de simbolos desde chunks H2 vigentes.
+    """Puebla el catalogo reverse engineering de simbolos desde chunks vigentes.
 
-    Este servicio conserva el flujo historico H4-T02: toma las fuentes vigentes,
+    Este servicio conserva el flujo historico la tarea de reverse engineering: toma las fuentes vigentes,
     infiere un simbolo por fuente y persiste una identidad logica estable por
     simbolo. No extrae referencias ni intenta resolver relaciones.
     """
@@ -180,12 +193,12 @@ class SymbolCatalogService:
     def run(
         self,
         *,
-        mode: H4AnalysisRunMode = H4AnalysisRunMode.INCREMENTAL,
+        mode: AnalysisRunMode = AnalysisRunMode.INCREMENTAL,
     ) -> SymbolCatalogSummary:
         """Ejecuta una corrida de catalogacion de simbolos.
 
         Args:
-            mode: Modo registrado para la corrida H4.
+            mode: Modo registrado para la corrida de reverse engineering.
 
         Returns:
             Resumen con el `run_id`, el estado final y los conteos de fuentes,
@@ -215,7 +228,7 @@ class SymbolCatalogService:
             self.repository.upsert_symbol(run_id=run_id, symbol=symbol)
 
         duration_ms = int((time.monotonic() - started) * 1000)
-        status = H4AnalysisRunStatus.COMPLETED
+        status = AnalysisRunStatus.COMPLETED
         self.repository.finish_analysis_run(
             run_id=run_id,
             status=status,
@@ -249,13 +262,13 @@ class AnalyzeService:
     def run(
         self,
         *,
-        mode: H4AnalysisRunMode = H4AnalysisRunMode.INCREMENTAL,
+        mode: AnalysisRunMode = AnalysisRunMode.INCREMENTAL,
         scope: AnalyzeScope | None = None,
         dry_run: bool = False,
         progress: ProgressReporterPort | None = None,
         cancellation: CancellationTokenPort | None = None,
     ) -> AnalyzeSummary:
-        """Ejecuta catalogacion, extraccion, reconciliacion y resolucion H4.
+        """Ejecuta catalogacion, extraccion, reconciliacion y resolucion reverse engineering.
 
         Args:
             mode: Modo de corrida que se persiste cuando `dry_run` es falso.
@@ -311,7 +324,7 @@ class AnalyzeService:
         _report(progress, "extract", stages, len(sources), len(sources), counters)
         if _is_cancelled(cancellation):
             if progress is not None:
-                progress.finish(H4AnalysisRunStatus.INTERRUPTED.value)
+                progress.finish(AnalysisRunStatus.INTERRUPTED.value)
             return _interrupted_analyze_summary(counters, started, dry_run=dry_run)
 
         if dry_run:
@@ -321,7 +334,7 @@ class AnalyzeService:
             )
             summary = AnalyzeSummary(
                 run_id=None,
-                status=H4AnalysisRunStatus.COMPLETED,
+                status=AnalysisRunStatus.COMPLETED,
                 files_scanned=counters.files_scanned,
                 chunks_scanned=counters.chunks_scanned,
                 symbols_detected=counters.symbols_detected,
@@ -341,19 +354,19 @@ class AnalyzeService:
             self.repository.upsert_symbol(run_id=run_id, symbol=symbol)
         for reference in references:
             self.repository.upsert_reference(run_id=run_id, reference=reference)
-        self.repository.reconcile_h4_scope(run_id=run_id, file_ids=file_ids)
-        self.repository.reconcile_h4_deleted_files()
+        self.repository.reconcile_analysis_scope(run_id=run_id, file_ids=file_ids)
+        self.repository.reconcile_deleted_files()
         _report(progress, "persist", stages, 1, 1, counters)
         if _is_cancelled(cancellation):
             self.repository.finish_analysis_run(
                 run_id=run_id,
-                status=H4AnalysisRunStatus.INTERRUPTED,
+                status=AnalysisRunStatus.INTERRUPTED,
                 symbols_detected=counters.symbols_detected,
                 references_detected=counters.references_detected,
                 duration_ms=_duration_ms(started),
             )
             if progress is not None:
-                progress.finish(H4AnalysisRunStatus.INTERRUPTED.value)
+                progress.finish(AnalysisRunStatus.INTERRUPTED.value)
             return _interrupted_analyze_summary(
                 counters,
                 started,
@@ -375,7 +388,7 @@ class AnalyzeService:
             relations_unresolved=unresolved,
         )
         _report(progress, "resolve", stages, len(all_references), len(all_references), counters)
-        status = H4AnalysisRunStatus.COMPLETED
+        status = AnalysisRunStatus.COMPLETED
         duration_ms = _duration_ms(started)
         self.repository.finish_analysis_run(
             run_id=run_id,
@@ -406,13 +419,13 @@ class AnalyzeService:
         self,
         *,
         run_id: int,
-        references: tuple[H4Reference, ...],
-        symbols: tuple[H4Symbol, ...],
+        references: tuple[TechnicalReference, ...],
+        symbols: tuple[TechnicalSymbol, ...],
     ) -> tuple[int, int, int]:
         """Re-resuelve referencias vigentes y persiste sus transiciones.
 
         Args:
-            run_id: Corrida H4 a la que se asocian los cambios persistidos.
+            run_id: Corrida reverse engineering a la que se asocian los cambios persistidos.
             references: Referencias vigentes que deben evaluarse contra el
                 catalogo actual.
             symbols: Simbolos vigentes usados como universo de candidatos.
@@ -432,7 +445,7 @@ class AnalyzeService:
                     run_id=run_id,
                     reference=replace(
                         reference,
-                        resolution_status=H4ResolutionStatus.UNRESOLVED,
+                        resolution_status=ResolutionStatus.UNRESOLVED,
                     ),
                 )
                 continue
@@ -449,9 +462,9 @@ class AnalyzeService:
                     resolution_status=relation.resolution_status,
                 ),
             )
-            if relation.resolution_status == H4ResolutionStatus.RESOLVED:
+            if relation.resolution_status == ResolutionStatus.RESOLVED:
                 resolved += 1
-            elif relation.resolution_status == H4ResolutionStatus.AMBIGUOUS:
+            elif relation.resolution_status == ResolutionStatus.AMBIGUOUS:
                 ambiguous += 1
             else:
                 unresolved += 1
@@ -460,9 +473,9 @@ class AnalyzeService:
 
 @dataclass(frozen=True, slots=True)
 class RelationResolutionService:
-    """Convierte referencias H4 en relaciones trazables cuando hay evidencia.
+    """Convierte referencias reverse engineering en relaciones trazables cuando hay evidencia.
 
-    Este servicio conserva el flujo H4-T04 independiente de `analyze`: lee
+    Este servicio conserva el flujo la tarea de reverse engineering independiente de `analyze`: lee
     simbolos y referencias ya persistidos, aplica resolucion conservadora y
     guarda relaciones o candidatos sin convertir referencias sin evidencia en
     relaciones de baja calidad.
@@ -474,7 +487,7 @@ class RelationResolutionService:
     def run(
         self,
         *,
-        mode: H4AnalysisRunMode = H4AnalysisRunMode.INCREMENTAL,
+        mode: AnalysisRunMode = AnalysisRunMode.INCREMENTAL,
     ) -> RelationResolutionSummary:
         """Ejecuta resolucion conservadora de referencias ya persistidas.
 
@@ -511,17 +524,17 @@ class RelationResolutionService:
                 relation_id=relation.relation_id,
                 candidates=candidates,
             )
-            if relation.resolution_status == H4ResolutionStatus.RESOLVED:
+            if relation.resolution_status == ResolutionStatus.RESOLVED:
                 resolved += 1
-            elif relation.resolution_status == H4ResolutionStatus.AMBIGUOUS:
+            elif relation.resolution_status == ResolutionStatus.AMBIGUOUS:
                 ambiguous += 1
-            elif relation.resolution_status == H4ResolutionStatus.DYNAMIC:
+            elif relation.resolution_status == ResolutionStatus.DYNAMIC:
                 dynamic += 1
-            elif relation.resolution_status == H4ResolutionStatus.EXTERNAL:
+            elif relation.resolution_status == ResolutionStatus.EXTERNAL:
                 external += 1
 
         duration_ms = int((time.monotonic() - started) * 1000)
-        status = H4AnalysisRunStatus.COMPLETED
+        status = AnalysisRunStatus.COMPLETED
         self.repository.finish_analysis_run(
             run_id=run_id,
             status=status,
@@ -545,8 +558,35 @@ class RelationResolutionService:
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryService:
+    """Consulta el inventario tecnico sin reanalizar el corpus.
+
+    El servicio delega toda lectura al repositorio SQLite para respetar el
+    contrato la tarea de reverse engineering: `inventory` no ejecuta parsers, no accede al filesystem del
+    corpus y solo presenta estado persistido.
+    """
+
+    repository: SQLiteReverseEngineeringRepository
+
+    def inventory(self, request: InventoryRequest) -> Inventory:
+        """Consulta inventario tecnico desde SQLite.
+
+        Args:
+            request: Filtros estructurados de inventario.
+
+        Returns:
+            Inventario con resumen agregado y filas ordenadas de simbolos.
+        """
+        return Inventory(
+            filters=request.filters,
+            summary=self.repository.inventory_summary(request.filters),
+            items=self.repository.inventory_items(request.filters),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class DependencyWalkService:
-    """Recorre dependencias H4 con BFS local, profundidad y limite de nodos.
+    """Recorre dependencias reverse engineering con BFS local, profundidad y limite de nodos.
 
     El servicio consulta relaciones activas desde el repositorio y calcula la
     direccion en tiempo de consulta. No construye un grafo externo ni intenta
@@ -559,11 +599,11 @@ class DependencyWalkService:
         self,
         seed_symbol_id: str,
         *,
-        direction: H4DependencyDirection = H4DependencyDirection.OUTGOING,
+        direction: DependencyDirection = DependencyDirection.OUTGOING,
         max_depth: int = 1,
         node_limit: int = 500,
-        filters: H4DependencyFilters | None = None,
-    ) -> H4DependencyWalk:
+        filters: DependencyFilters | None = None,
+    ) -> DependencyWalk:
         """Recorre dependencias desde un simbolo semilla.
 
         Args:
@@ -579,21 +619,21 @@ class DependencyWalkService:
 
         Raises:
             ValueError: Si la semilla no existe, no esta activa, o los limites
-            solicitados estan fuera del contrato H4.
+            solicitados estan fuera del contrato reverse engineering.
         """
         _validate_dependency_limits(max_depth=max_depth, node_limit=node_limit)
-        filters = filters or H4DependencyFilters()
+        filters = filters or DependencyFilters()
         seed = self.repository.get_symbol(seed_symbol_id)
-        if seed is None or seed.status != H4SymbolStatus.ACTIVE:
+        if seed is None or seed.status != SymbolStatus.ACTIVE:
             raise ValueError("seed_symbol_id debe identificar un simbolo activo.")
 
-        nodes: dict[str, H4DependencyNode] = {
-            seed.symbol_id: H4DependencyNode(symbol=seed, depth=0),
+        nodes: dict[str, DependencyNode] = {
+            seed.symbol_id: DependencyNode(symbol=seed, depth=0),
         }
-        edges: list[H4DependencyEdge] = []
+        edges: list[DependencyEdge] = []
         cycles: list[tuple[str, ...]] = []
         limit_reached = False
-        queue: deque[tuple[H4Symbol, int, tuple[str, ...]]] = deque(
+        queue: deque[tuple[TechnicalSymbol, int, tuple[str, ...]]] = deque(
             [(seed, 0, (seed.symbol_id,))]
         )
 
@@ -619,7 +659,7 @@ class DependencyWalkService:
                     if cycle not in cycles:
                         cycles.append(cycle)
                 edges.append(
-                    H4DependencyEdge(
+                    DependencyEdge(
                         relation=relation,
                         depth=depth + 1,
                         direction=edge_direction,
@@ -637,7 +677,7 @@ class DependencyWalkService:
                 if len(nodes) >= node_limit:
                     limit_reached = True
                     continue
-                nodes[next_symbol.symbol_id] = H4DependencyNode(
+                nodes[next_symbol.symbol_id] = DependencyNode(
                     symbol=next_symbol,
                     depth=depth + 1,
                 )
@@ -650,7 +690,7 @@ class DependencyWalkService:
             )
         )
         ordered_edges = tuple(sorted(edges, key=_edge_sort_key))
-        return H4DependencyWalk(
+        return DependencyWalk(
             seed_symbol_id=seed.symbol_id,
             direction=direction,
             max_depth=max_depth,
@@ -664,7 +704,7 @@ class DependencyWalkService:
 
 @dataclass(frozen=True, slots=True)
 class DescribeService:
-    """Produce DTOs deterministas para descripcion de componentes H4.
+    """Produce DTOs deterministas para descripcion de componentes reverse engineering.
 
     El servicio resuelve el objeto, consume `DependencyWalkService` para
     dependencias y consumidores, y opcionalmente agrega contexto RAG o una
@@ -678,8 +718,8 @@ class DescribeService:
     llm_provider: LlmProviderPort | None = None
     llm_timeout_seconds: float = 30.0
 
-    def describe(self, request: DescribeRequest) -> H4ComponentDescription:
-        """Describe un componente tecnico desde simbolos y relaciones H4.
+    def describe(self, request: DescribeRequest) -> ComponentDescription:
+        """Describe un componente tecnico desde simbolos y relaciones de reverse engineering.
 
         Args:
             request: Parametros de resolucion, profundidad y uso opcional de
@@ -689,18 +729,18 @@ class DescribeService:
             DTO con identificacion, relaciones relevantes, evidencia,
             inferencias, puntos por confirmar y limitaciones.
         """
-        resolution = _resolve_h4_object(self.repository, request.target)
+        resolution = _resolve_object(self.repository, request.target)
         if resolution.symbol is None:
             return _unresolved_description(resolution)
 
         outgoing = self.dependency_walk_service.walk(
             resolution.symbol.symbol_id,
-            direction=H4DependencyDirection.OUTGOING,
+            direction=DependencyDirection.OUTGOING,
             max_depth=request.depth,
         )
         incoming = self.dependency_walk_service.walk(
             resolution.symbol.symbol_id,
-            direction=H4DependencyDirection.INCOMING,
+            direction=DependencyDirection.INCOMING,
             max_depth=request.depth,
         )
         evidence = _walk_evidence((*outgoing.edges, *incoming.edges))
@@ -728,7 +768,7 @@ class DescribeService:
             self.llm_provider,
             self.llm_timeout_seconds,
         )
-        return H4ComponentDescription(
+        return ComponentDescription(
             resolution=resolution,
             outgoing=outgoing,
             incoming=incoming,
@@ -745,7 +785,7 @@ class DescribeService:
 
 @dataclass(frozen=True, slots=True)
 class ImpactService:
-    """Produce DTOs deterministas para analisis de impacto H4.
+    """Produce DTOs deterministas para analisis de impacto reverse engineering.
 
     El servicio usa exclusivamente `DependencyWalkService` para seleccionar
     nodos y aristas de impacto. RAG y LLM pueden sintetizar evidencia, pero no
@@ -759,8 +799,8 @@ class ImpactService:
     llm_provider: LlmProviderPort | None = None
     llm_timeout_seconds: float = 30.0
 
-    def analyze(self, request: ImpactRequest) -> H4ImpactAnalysis:
-        """Analiza impacto basico desde relaciones H4 persistidas.
+    def analyze(self, request: ImpactRequest) -> ImpactAnalysis:
+        """Analiza impacto basico desde relaciones de reverse engineering persistidas.
 
         Args:
             request: Parametros de resolucion, direccion, profundidad, limites
@@ -770,7 +810,7 @@ class ImpactService:
             DTO con consumidores, dependencias, indirectos, ciclos, riesgos,
             puntos por confirmar, evidencia y limitaciones.
         """
-        resolution = _resolve_h4_object(self.repository, request.target)
+        resolution = _resolve_object(self.repository, request.target)
         if resolution.symbol is None:
             return _unresolved_impact(resolution)
 
@@ -782,10 +822,10 @@ class ImpactService:
             filters=request.filters,
         )
         consumers = tuple(
-            edge for edge in walk.edges if edge.direction == H4DependencyDirection.INCOMING
+            edge for edge in walk.edges if edge.direction == DependencyDirection.INCOMING
         )
         dependencies = tuple(
-            edge for edge in walk.edges if edge.direction == H4DependencyDirection.OUTGOING
+            edge for edge in walk.edges if edge.direction == DependencyDirection.OUTGOING
         )
         indirect = tuple(edge for edge in walk.edges if edge.depth > 1)
         cross_technology = _cross_technology_edges(walk.edges)
@@ -805,7 +845,7 @@ class ImpactService:
             self.llm_provider,
             self.llm_timeout_seconds,
         )
-        return H4ImpactAnalysis(
+        return ImpactAnalysis(
             resolution=resolution,
             walk=walk,
             consumers=consumers,
@@ -823,13 +863,13 @@ class ImpactService:
 
 
 def relation_from_reference(
-    reference: H4Reference,
-    symbols: tuple[H4Symbol, ...],
-) -> tuple[H4Relation, tuple[H4RelationCandidate, ...]] | None:
+    reference: TechnicalReference,
+    symbols: tuple[TechnicalSymbol, ...],
+) -> tuple[TechnicalRelation, tuple[RelationCandidate, ...]] | None:
     """Resuelve una referencia contra simbolos compatibles sin inventar destino.
 
     Args:
-        reference: Referencia textual detectada por extractores H4.
+        reference: Referencia textual detectada por extractores reverse engineering.
         symbols: Catalogo vigente de simbolos candidatos.
 
     Returns:
@@ -840,12 +880,12 @@ def relation_from_reference(
         Las referencias `dynamic` y `external` conservan su propio estado y no
         entran al flujo de resolucion exacta contra simbolos internos.
     """
-    if reference.resolution_status == H4ResolutionStatus.DYNAMIC:
+    if reference.resolution_status == ResolutionStatus.DYNAMIC:
         return (
             _relation(
                 reference,
-                classification=H4Classification.TO_CONFIRM,
-                resolution_status=H4ResolutionStatus.DYNAMIC,
+                classification=EvidenceClassification.TO_CONFIRM,
+                resolution_status=ResolutionStatus.DYNAMIC,
                 target_key=reference.normalized_target,
                 notes="referencia dinamica conservada sin resolucion exacta",
             ),
@@ -855,8 +895,8 @@ def relation_from_reference(
         return (
             _relation(
                 reference,
-                classification=H4Classification.TO_CONFIRM,
-                resolution_status=H4ResolutionStatus.EXTERNAL,
+                classification=EvidenceClassification.TO_CONFIRM,
+                resolution_status=ResolutionStatus.EXTERNAL,
                 target_key=reference.normalized_target,
                 notes="referencia marcada como externa",
             ),
@@ -871,8 +911,8 @@ def relation_from_reference(
         return (
             _relation(
                 reference,
-                classification=H4Classification.DETECTED,
-                resolution_status=H4ResolutionStatus.RESOLVED,
+                classification=EvidenceClassification.DETECTED,
+                resolution_status=ResolutionStatus.RESOLVED,
                 target_symbol_id=target.symbol_id,
                 target_key=reference.normalized_target,
             ),
@@ -881,15 +921,15 @@ def relation_from_reference(
 
     relation = _relation(
         reference,
-        classification=H4Classification.TO_CONFIRM,
-        resolution_status=H4ResolutionStatus.AMBIGUOUS,
+        classification=EvidenceClassification.TO_CONFIRM,
+        resolution_status=ResolutionStatus.AMBIGUOUS,
         target_key=reference.normalized_target,
         notes="multiples candidatos compatibles",
     )
     return (
         relation,
         tuple(
-            H4RelationCandidate(
+            RelationCandidate(
                 relation_id=relation.relation_id,
                 candidate_symbol_id=symbol.symbol_id,
                 rank=index + 1,
@@ -900,14 +940,14 @@ def relation_from_reference(
     )
 
 
-def symbol_from_source(source: H4SymbolSource) -> H4Symbol:
-    """Convierte un chunk H2 vigente en un simbolo H4 normalizado.
+def symbol_from_source(source: SymbolSource) -> TechnicalSymbol:
+    """Convierte un chunk vigente en un simbolo reverse engineering normalizado.
 
     Args:
-        source: Fuente de simbolo derivada de chunks H2 vigentes.
+        source: Fuente de simbolo derivada de chunks vigentes.
 
     Returns:
-        Simbolo H4 con identidad determinista, tecnologia, contenedor y
+        Simbolo reverse engineering con identidad determinista, tecnologia, contenedor y
         metadatos minimos de trazabilidad hacia archivo y chunk.
 
     Note:
@@ -940,13 +980,13 @@ def symbol_from_source(source: H4SymbolSource) -> H4Symbol:
         normalize_symbol_name(container_name) if container_name is not None else None
     )
     confidence = _confidence(metadata, fallback=Confidence.LOW if unknown else Confidence.HIGH)
-    symbol_id = h4_symbol_id(
+    symbol_id = technical_symbol_id(
         normalized_name=normalized_name,
         symbol_type=symbol_type,
         technology=technology,
         container_name=normalized_container,
     )
-    return H4Symbol(
+    return TechnicalSymbol(
         symbol_id=symbol_id,
         original_name=original_name,
         normalized_name=normalized_name,
@@ -981,7 +1021,7 @@ class _AnalyzeCounters:
     relations_unresolved: int = 0
 
     def as_progress(self) -> dict[str, int]:
-        """Adapta los conteos H4 al contrato generico de progreso."""
+        """Adapta los conteos reverse engineering al contrato generico de progreso."""
         return {
             "new": self.symbols_detected,
             "update": self.references_detected,
@@ -991,25 +1031,25 @@ class _AnalyzeCounters:
         }
 
 
-def _symbols_from_sources(sources: tuple[H4SymbolSource, ...]) -> tuple[H4Symbol, ...]:
+def _symbols_from_sources(sources: tuple[SymbolSource, ...]) -> tuple[TechnicalSymbol, ...]:
     """Construye simbolos unicos por identidad determinista."""
-    by_id: dict[str, H4Symbol] = {}
+    by_id: dict[str, TechnicalSymbol] = {}
     for source in sources:
         symbol = symbol_from_source(source)
         by_id.setdefault(symbol.symbol_id, symbol)
     return tuple(by_id.values())
 
 
-def _resolve_h4_object(
+def _resolve_object(
     repository: SQLiteReverseEngineeringRepository,
-    request: H4ObjectRequest,
-) -> H4ObjectResolution:
-    """Resuelve un objeto H4 por ID o nombre sin elegir candidatos ambiguos."""
+    request: ObjectRequest,
+) -> ObjectResolution:
+    """Resuelve un objeto reverse engineering por ID o nombre sin elegir candidatos ambiguos."""
     if request.symbol_id is not None:
         symbol = repository.get_symbol(request.symbol_id)
-        if symbol is not None and symbol.status == H4SymbolStatus.ACTIVE:
-            return H4ObjectResolution(query=request.query, symbol=symbol)
-        return H4ObjectResolution(query=request.query, status="not_found")
+        if symbol is not None and symbol.status == SymbolStatus.ACTIVE:
+            return ObjectResolution(query=request.query, symbol=symbol)
+        return ObjectResolution(query=request.query, status="not_found")
 
     normalized_query = normalize_symbol_name(request.query)
     requested_type = request.symbol_type.lower() if request.symbol_type else None
@@ -1024,27 +1064,27 @@ def _resolve_h4_object(
     )
     candidates = tuple(sorted(candidates, key=_symbol_sort_key))
     if not candidates:
-        return H4ObjectResolution(query=request.query, status="not_found")
+        return ObjectResolution(query=request.query, status="not_found")
     if len(candidates) > 1:
-        return H4ObjectResolution(
+        return ObjectResolution(
             query=request.query,
             candidates=candidates,
             status="ambiguous",
         )
-    return H4ObjectResolution(query=request.query, symbol=candidates[0])
+    return ObjectResolution(query=request.query, symbol=candidates[0])
 
 
-def _unresolved_description(resolution: H4ObjectResolution) -> H4ComponentDescription:
+def _unresolved_description(resolution: ObjectResolution) -> ComponentDescription:
     """Construye una descripcion para objetos inexistentes o ambiguos."""
     if resolution.status == "ambiguous":
         summary = "Objeto ambiguo; se requiere seleccionar un candidato explicito."
         limitations = ("multiples simbolos compatibles",)
         to_confirm = tuple(symbol.normalized_name for symbol in resolution.candidates)
     else:
-        summary = "Objeto no encontrado en el catalogo H4 vigente."
+        summary = "Objeto no encontrado en el catalogo reverse engineering vigente."
         limitations = ("sin simbolo activo para la consulta",)
         to_confirm = ()
-    return H4ComponentDescription(
+    return ComponentDescription(
         resolution=resolution,
         to_confirm=to_confirm,
         limitations=limitations,
@@ -1053,17 +1093,17 @@ def _unresolved_description(resolution: H4ObjectResolution) -> H4ComponentDescri
     )
 
 
-def _unresolved_impact(resolution: H4ObjectResolution) -> H4ImpactAnalysis:
+def _unresolved_impact(resolution: ObjectResolution) -> ImpactAnalysis:
     """Construye un impacto para objetos inexistentes o ambiguos."""
     if resolution.status == "ambiguous":
         summary = "Impacto no calculado porque el objeto es ambiguo."
         limitations = ("multiples simbolos compatibles",)
         to_confirm = tuple(symbol.normalized_name for symbol in resolution.candidates)
     else:
-        summary = "Impacto no calculado porque el objeto no existe en H4."
+        summary = "Impacto no calculado porque el objeto no existe en reverse engineering."
         limitations = ("sin simbolo activo para la consulta",)
         to_confirm = ()
-    return H4ImpactAnalysis(
+    return ImpactAnalysis(
         resolution=resolution,
         to_confirm=to_confirm,
         limitations=limitations,
@@ -1073,9 +1113,9 @@ def _unresolved_impact(resolution: H4ObjectResolution) -> H4ImpactAnalysis:
 
 
 def _component_responsibilities(
-    symbol: H4Symbol,
-    outgoing: H4DependencyWalk,
-    incoming: H4DependencyWalk,
+    symbol: TechnicalSymbol,
+    outgoing: DependencyWalk,
+    incoming: DependencyWalk,
 ) -> tuple[str, ...]:
     """Deriva responsabilidades descriptivas desde relaciones visibles."""
     responsibilities = [
@@ -1089,8 +1129,8 @@ def _component_responsibilities(
 
 
 def _description_inferences(
-    outgoing: H4DependencyWalk,
-    incoming: H4DependencyWalk,
+    outgoing: DependencyWalk,
+    incoming: DependencyWalk,
 ) -> tuple[str, ...]:
     """Genera inferencias conservadoras para describe."""
     inferences = []
@@ -1101,10 +1141,10 @@ def _description_inferences(
     return tuple(inferences)
 
 
-def _walk_evidence(edges: Iterable[H4DependencyEdge]) -> tuple[H4EvidenceItem, ...]:
+def _walk_evidence(edges: Iterable[DependencyEdge]) -> tuple[EvidenceItem, ...]:
     """Convierte aristas de dependencia en evidencia trazable."""
     return tuple(
-        H4EvidenceItem(
+        EvidenceItem(
             source="relation",
             detail=(
                 f"{edge.relation.relation_type} "
@@ -1118,21 +1158,21 @@ def _walk_evidence(edges: Iterable[H4DependencyEdge]) -> tuple[H4EvidenceItem, .
     )
 
 
-def _to_confirm_from_edges(edges: Iterable[H4DependencyEdge]) -> tuple[str, ...]:
+def _to_confirm_from_edges(edges: Iterable[DependencyEdge]) -> tuple[str, ...]:
     """Extrae puntos por confirmar desde relaciones no resueltas exactamente."""
     values = []
     for edge in edges:
         if edge.relation.resolution_status in {
-            H4ResolutionStatus.AMBIGUOUS,
-            H4ResolutionStatus.UNRESOLVED,
-            H4ResolutionStatus.DYNAMIC,
-            H4ResolutionStatus.EXTERNAL,
+            ResolutionStatus.AMBIGUOUS,
+            ResolutionStatus.UNRESOLVED,
+            ResolutionStatus.DYNAMIC,
+            ResolutionStatus.EXTERNAL,
         }:
             values.append(edge.target_key or edge.relation.target_key or "destino sin resolver")
     return tuple(dict.fromkeys(values))
 
 
-def _walk_limitations(walk: H4DependencyWalk) -> tuple[str, ...]:
+def _walk_limitations(walk: DependencyWalk) -> tuple[str, ...]:
     """Resume limites y ciclos observados en un recorrido."""
     limitations = []
     if walk.limit_reached:
@@ -1145,8 +1185,8 @@ def _walk_limitations(walk: H4DependencyWalk) -> tuple[str, ...]:
 
 
 def _cross_technology_edges(
-    edges: Iterable[H4DependencyEdge],
-) -> tuple[H4DependencyEdge, ...]:
+    edges: Iterable[DependencyEdge],
+) -> tuple[DependencyEdge, ...]:
     """Selecciona relaciones que cruzan tecnologias entre origen y destino."""
     return tuple(
         edge
@@ -1157,10 +1197,10 @@ def _cross_technology_edges(
     )
 
 
-def _impact_risks(walk: H4DependencyWalk) -> tuple[str, ...]:
+def _impact_risks(walk: DependencyWalk) -> tuple[str, ...]:
     """Deriva riesgos basicos desde el recorrido determinista."""
     risks = []
-    if any(edge.direction == H4DependencyDirection.INCOMING for edge in walk.edges):
+    if any(edge.direction == DependencyDirection.INCOMING for edge in walk.edges):
         risks.append("hay consumidores que podrian requerir verificacion")
     if _cross_technology_edges(walk.edges):
         risks.append("existen cruces entre tecnologias")
@@ -1174,9 +1214,9 @@ def _impact_risks(walk: H4DependencyWalk) -> tuple[str, ...]:
 
 
 def _describe_summary(
-    symbol: H4Symbol,
-    outgoing: H4DependencyWalk,
-    incoming: H4DependencyWalk,
+    symbol: TechnicalSymbol,
+    outgoing: DependencyWalk,
+    incoming: DependencyWalk,
 ) -> str:
     """Construye una sintesis determinista para describe."""
     return (
@@ -1186,7 +1226,7 @@ def _describe_summary(
     )
 
 
-def _impact_summary(symbol: H4Symbol, walk: H4DependencyWalk) -> str:
+def _impact_summary(symbol: TechnicalSymbol, walk: DependencyWalk) -> str:
     """Construye una sintesis determinista para impact."""
     return (
         f"Impacto basico de {symbol.normalized_name}: "
@@ -1256,10 +1296,10 @@ def _validate_dependency_limits(*, max_depth: int, node_limit: int) -> None:
 
 
 def _filter_relations(
-    relations: Iterable[H4Relation],
-    filters: H4DependencyFilters,
+    relations: Iterable[TechnicalRelation],
+    filters: DependencyFilters,
     repository: SQLiteReverseEngineeringRepository,
-) -> tuple[H4Relation, ...]:
+) -> tuple[TechnicalRelation, ...]:
     """Aplica filtros de navegacion sobre relaciones activas adyacentes."""
     accepted = []
     for relation in relations:
@@ -1290,7 +1330,7 @@ def _filter_relations(
 
 
 def _relation_has_technology(
-    relation: H4Relation,
+    relation: TechnicalRelation,
     technology: str,
     repository: SQLiteReverseEngineeringRepository,
 ) -> bool:
@@ -1314,36 +1354,36 @@ def _confidence_rank(confidence: Confidence) -> int:
 
 def _edge_direction(
     current_symbol_id: str,
-    relation: H4Relation,
-) -> H4DependencyDirection:
+    relation: TechnicalRelation,
+) -> DependencyDirection:
     """Calcula direccion de una arista desde el simbolo que se esta expandiendo."""
     if (
         relation.target_symbol_id == current_symbol_id
         and relation.source_symbol_id != current_symbol_id
     ):
-        return H4DependencyDirection.INCOMING
-    return H4DependencyDirection.OUTGOING
+        return DependencyDirection.INCOMING
+    return DependencyDirection.OUTGOING
 
 
 def _relation_symbol(
     symbol_id: str | None,
     repository: SQLiteReverseEngineeringRepository,
-) -> H4Symbol | None:
+) -> TechnicalSymbol | None:
     """Lee un simbolo activo asociado a una relacion, si existe."""
     if symbol_id is None:
         return None
     symbol = repository.get_symbol(symbol_id)
-    if symbol is None or symbol.status != H4SymbolStatus.ACTIVE:
+    if symbol is None or symbol.status != SymbolStatus.ACTIVE:
         return None
     return symbol
 
 
 def _candidate_symbol_ids(
-    relation: H4Relation,
+    relation: TechnicalRelation,
     repository: SQLiteReverseEngineeringRepository,
 ) -> tuple[str, ...]:
     """Lee candidatos visibles solo para relaciones ambiguas."""
-    if relation.resolution_status != H4ResolutionStatus.AMBIGUOUS:
+    if relation.resolution_status != ResolutionStatus.AMBIGUOUS:
         return ()
     return tuple(
         candidate.candidate_symbol_id
@@ -1353,10 +1393,10 @@ def _candidate_symbol_ids(
 
 def _next_symbol(
     current_symbol_id: str,
-    relation: H4Relation,
-    source: H4Symbol | None,
-    target: H4Symbol | None,
-) -> H4Symbol | None:
+    relation: TechnicalRelation,
+    source: TechnicalSymbol | None,
+    target: TechnicalSymbol | None,
+) -> TechnicalSymbol | None:
     """Devuelve el simbolo vecino que debe entrar a la cola BFS."""
     if relation.source_symbol_id == current_symbol_id:
         return target
@@ -1365,7 +1405,7 @@ def _next_symbol(
     return None
 
 
-def _symbol_sort_key(symbol: H4Symbol) -> tuple[str, str, str, str]:
+def _symbol_sort_key(symbol: TechnicalSymbol) -> tuple[str, str, str, str]:
     """Clave canonica de orden para simbolos en resultados de dependencia."""
     return (
         symbol.technology,
@@ -1375,11 +1415,11 @@ def _symbol_sort_key(symbol: H4Symbol) -> tuple[str, str, str, str]:
     )
 
 
-def _edge_sort_key(edge: H4DependencyEdge) -> tuple[int, str, str, str, str]:
+def _edge_sort_key(edge: DependencyEdge) -> tuple[int, str, str, str, str]:
     """Clave canonica de orden para aristas de dependencia."""
     neighbor = (
         edge.target_symbol
-        if edge.direction == H4DependencyDirection.OUTGOING
+        if edge.direction == DependencyDirection.OUTGOING
         else edge.source_symbol
     )
     return (
@@ -1392,16 +1432,16 @@ def _edge_sort_key(edge: H4DependencyEdge) -> tuple[int, str, str, str, str]:
 
 
 def _references_from_sources(
-    sources: tuple[H4SymbolSource, ...],
-    symbols: tuple[H4Symbol, ...],
-) -> tuple[H4Reference, ...]:
+    sources: tuple[SymbolSource, ...],
+    symbols: tuple[TechnicalSymbol, ...],
+) -> tuple[TechnicalReference, ...]:
     """Extrae referencias unicas y las vincula con el simbolo fuente si existe."""
     source_symbol_by_chunk = {
         symbol.chunk_id: symbol.symbol_id
         for symbol in symbols
         if symbol.chunk_id is not None
     }
-    by_id: dict[str, H4Reference] = {}
+    by_id: dict[str, TechnicalReference] = {}
     for source in sources:
         references = _extract_references_from_source(
             source,
@@ -1413,10 +1453,10 @@ def _references_from_sources(
 
 
 def _extract_references_from_source(
-    source: H4SymbolSource,
+    source: SymbolSource,
     *,
     source_symbol_id: str | None,
-) -> tuple[H4Reference, ...]:
+) -> tuple[TechnicalReference, ...]:
     """Despacha la extraccion de referencias segun la tecnologia del artefacto."""
     if source.artifact_kind == "oracle":
         return extract_oracle_references(
@@ -1436,8 +1476,8 @@ def _extract_references_from_source(
 
 
 def _resolution_counts(
-    references: tuple[H4Reference, ...],
-    symbols: tuple[H4Symbol, ...],
+    references: tuple[TechnicalReference, ...],
+    symbols: tuple[TechnicalSymbol, ...],
 ) -> tuple[int, int, int]:
     """Calcula conteos de resolucion sin persistir relaciones ni referencias."""
     resolved = 0
@@ -1449,9 +1489,9 @@ def _resolution_counts(
             unresolved += 1
             continue
         relation, _ = decision
-        if relation.resolution_status == H4ResolutionStatus.RESOLVED:
+        if relation.resolution_status == ResolutionStatus.RESOLVED:
             resolved += 1
-        elif relation.resolution_status == H4ResolutionStatus.AMBIGUOUS:
+        elif relation.resolution_status == ResolutionStatus.AMBIGUOUS:
             ambiguous += 1
         else:
             unresolved += 1
@@ -1462,8 +1502,8 @@ def _analyze_stages() -> tuple[ProgressStage, ...]:
     """Define las etapas visibles del progreso de `barbarion analyze`."""
     return (
         ProgressStage("discover", "Seleccionando chunks", total=1),
-        ProgressStage("extract", "Extrayendo H4", total=None),
-        ProgressStage("persist", "Persistiendo H4", total=1),
+        ProgressStage("extract", "Extrayendo reverse engineering", total=None),
+        ProgressStage("persist", "Persistiendo reverse engineering", total=1),
         ProgressStage("resolve", "Resolviendo relaciones", total=None),
     )
 
@@ -1514,7 +1554,7 @@ def _interrupted_analyze_summary(
     """Construye un resumen uniforme para corridas interrumpidas."""
     return AnalyzeSummary(
         run_id=run_id,
-        status=H4AnalysisRunStatus.INTERRUPTED,
+        status=AnalysisRunStatus.INTERRUPTED,
         files_scanned=counters.files_scanned,
         chunks_scanned=counters.chunks_scanned,
         symbols_detected=counters.symbols_detected,
@@ -1528,22 +1568,22 @@ def _interrupted_analyze_summary(
 
 
 def _relation(
-    reference: H4Reference,
+    reference: TechnicalReference,
     *,
-    classification: H4Classification,
-    resolution_status: H4ResolutionStatus,
+    classification: EvidenceClassification,
+    resolution_status: ResolutionStatus,
     target_symbol_id: str | None = None,
     target_key: str | None = None,
     notes: str | None = None,
-) -> H4Relation:
+) -> TechnicalRelation:
     """Crea la relacion canonica asociada a una referencia detectada."""
-    relation_id = h4_relation_id(
+    relation_id = technical_relation_id(
         reference_id=reference.reference_id,
         relation_type=_relation_type(reference),
         target_symbol_id=target_symbol_id,
         target_key=target_key,
     )
-    return H4Relation(
+    return TechnicalRelation(
         relation_id=relation_id,
         reference_id=reference.reference_id,
         source_symbol_id=reference.source_symbol_id,
@@ -1562,9 +1602,9 @@ def _relation(
 
 
 def _candidate_symbols(
-    reference: H4Reference,
-    symbols: tuple[H4Symbol, ...],
-) -> tuple[H4Symbol, ...]:
+    reference: TechnicalReference,
+    symbols: tuple[TechnicalSymbol, ...],
+) -> tuple[TechnicalSymbol, ...]:
     """Selecciona candidatos por tecnologia, tipo, nombre y contenedor."""
     compatible = [
         symbol
@@ -1601,7 +1641,7 @@ def _candidate_symbols(
     return tuple(_stable_symbols(matches))
 
 
-def _stable_symbols(symbols: list[H4Symbol]) -> list[H4Symbol]:
+def _stable_symbols(symbols: list[TechnicalSymbol]) -> list[TechnicalSymbol]:
     """Ordena candidatos de forma estable para resultados reproducibles."""
     return sorted(
         symbols,
@@ -1615,9 +1655,9 @@ def _stable_symbols(symbols: list[H4Symbol]) -> list[H4Symbol]:
 
 
 def _source_symbol(
-    reference: H4Reference,
-    symbols: tuple[H4Symbol, ...],
-) -> H4Symbol | None:
+    reference: TechnicalReference,
+    symbols: tuple[TechnicalSymbol, ...],
+) -> TechnicalSymbol | None:
     """Busca el simbolo origen declarado por una referencia."""
     if reference.source_symbol_id is None:
         return None
@@ -1643,8 +1683,8 @@ def _type_compatible(reference_type: str, symbol_type: str) -> bool:
     return symbol_type in allowed
 
 
-def _relation_type(reference: H4Reference) -> str:
-    """Mapea el tipo de referencia al tipo canonico de relacion H4."""
+def _relation_type(reference: TechnicalReference) -> str:
+    """Mapea el tipo de referencia al tipo canonico de relacion reverse engineering."""
     return {
         "call": "calls",
         "calls": "calls",
@@ -1659,7 +1699,7 @@ def _relation_type(reference: H4Reference) -> str:
     }.get(reference.reference_type, "uses")
 
 
-def _is_external_reference(reference: H4Reference) -> bool:
+def _is_external_reference(reference: TechnicalReference) -> bool:
     """Detecta referencias que apuntan fuera del catalogo interno."""
     scope = reference.metadata.get("scope")
     if isinstance(scope, str) and scope.lower() == "external":
@@ -1670,7 +1710,7 @@ def _is_external_reference(reference: H4Reference) -> bool:
 
 
 def _technology(artifact_kind: str, metadata: dict[str, Any]) -> str:
-    """Deriva la tecnologia H4 a partir del tipo de artefacto y metadatos."""
+    """Deriva la tecnologia reverse engineering a partir del tipo de artefacto y metadatos."""
     format_value = _first_text(metadata.get("format"))
     if format_value in {"oracle", "powerbuilder"}:
         return format_value

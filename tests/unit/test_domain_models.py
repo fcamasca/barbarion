@@ -22,14 +22,14 @@ from barbarion.domain.models import (
     SourceFile,
 )
 from barbarion.domain.reverse_engineering import (
-    H4Classification,
-    H4Reference,
-    H4Relation,
-    H4ResolutionStatus,
-    H4Symbol,
-    h4_reference_id,
-    h4_relation_id,
-    h4_symbol_id,
+    EvidenceClassification,
+    TechnicalReference,
+    TechnicalRelation,
+    ResolutionStatus,
+    TechnicalSymbol,
+    technical_reference_id,
+    technical_relation_id,
+    technical_symbol_id,
     normalize_symbol_name,
 )
 
@@ -202,20 +202,20 @@ def test_h4_normalizes_symbol_names_for_cross_file_resolution() -> None:
     assert normalize_symbol_name(' "PKG_CLIENTE" . Procesar ') == "pkg_cliente.procesar"
 
 
-def test_h4_symbol_ids_are_deterministic_and_logical() -> None:
-    first = h4_symbol_id(
+def test_technical_symbol_ids_are_deterministic_and_logical() -> None:
+    first = technical_symbol_id(
         normalized_name="PKG_CLIENTE.PROCESAR",
         symbol_type="Procedure",
         technology="Oracle",
         container_name="PKG_CLIENTE",
     )
-    second = h4_symbol_id(
+    second = technical_symbol_id(
         normalized_name="pkg_cliente.procesar",
         symbol_type="procedure",
         technology="oracle",
         container_name="pkg_cliente",
     )
-    other_container = h4_symbol_id(
+    other_container = technical_symbol_id(
         normalized_name="pkg_cliente.procesar",
         symbol_type="procedure",
         technology="oracle",
@@ -227,13 +227,13 @@ def test_h4_symbol_ids_are_deterministic_and_logical() -> None:
 
 
 def test_h4_models_validate_ranges_and_freeze_metadata() -> None:
-    symbol_id = h4_symbol_id(
+    symbol_id = technical_symbol_id(
         normalized_name="pkg_cliente.procesar",
         symbol_type="procedure",
         technology="oracle",
         container_name="pkg_cliente",
     )
-    symbol = H4Symbol(
+    symbol = TechnicalSymbol(
         symbol_id=symbol_id,
         original_name="PKG_CLIENTE.PROCESAR",
         normalized_name="pkg_cliente.procesar",
@@ -253,7 +253,7 @@ def test_h4_models_validate_ranges_and_freeze_metadata() -> None:
     assert isinstance(symbol.metadata, MappingProxyType)
     assert symbol.metadata["owner"] == "fixture"
     with pytest.raises(ValueError, match="terminar despues"):
-        H4Symbol(
+        TechnicalSymbol(
             symbol_id=symbol_id,
             original_name="PKG_CLIENTE.PROCESAR",
             normalized_name="pkg_cliente.procesar",
@@ -267,12 +267,12 @@ def test_h4_models_validate_ranges_and_freeze_metadata() -> None:
 
 
 def test_h4_reference_and_relation_ids_are_deterministic() -> None:
-    target_id = h4_symbol_id(
+    target_id = technical_symbol_id(
         normalized_name="pkg_cliente.procesar",
         symbol_type="procedure",
         technology="oracle",
     )
-    reference_id = h4_reference_id(
+    reference_id = technical_reference_id(
         source_file_id=10,
         raw_text="PKG_CLIENTE.PROCESAR",
         normalized_target="PKG_CLIENTE.PROCESAR",
@@ -280,18 +280,18 @@ def test_h4_reference_and_relation_ids_are_deterministic() -> None:
         start_line=12,
         end_line=12,
     )
-    relation_id = h4_relation_id(
+    relation_id = technical_relation_id(
         reference_id=reference_id,
         relation_type="calls",
         target_symbol_id=target_id,
     )
-    repeated = h4_relation_id(
+    repeated = technical_relation_id(
         reference_id=reference_id,
         relation_type="CALLS",
         target_symbol_id=target_id,
     )
 
-    reference = H4Reference(
+    reference = TechnicalReference(
         reference_id=reference_id,
         source_file_id=10,
         raw_text="PKG_CLIENTE.PROCESAR",
@@ -300,7 +300,7 @@ def test_h4_reference_and_relation_ids_are_deterministic() -> None:
         technology="oracle",
         detection_method="parser",
         confidence=Confidence.MEDIUM,
-        resolution_status=H4ResolutionStatus.UNRESOLVED,
+        resolution_status=ResolutionStatus.UNRESOLVED,
         start_line=12,
         end_line=12,
     )
@@ -310,36 +310,36 @@ def test_h4_reference_and_relation_ids_are_deterministic() -> None:
 
 
 def test_h4_dynamic_relations_require_to_confirm_classification() -> None:
-    reference_id = h4_reference_id(
+    reference_id = technical_reference_id(
         source_file_id=10,
         raw_text="execute immediate v_sql",
         normalized_target="dynamic.sql",
         reference_type="dynamic_call",
     )
-    relation_id = h4_relation_id(
+    relation_id = technical_relation_id(
         reference_id=reference_id,
         relation_type="dynamic_call",
         target_key="dynamic.sql",
     )
 
-    relation = H4Relation(
+    relation = TechnicalRelation(
         relation_id=relation_id,
         reference_id=reference_id,
         relation_type="dynamic_call",
-        classification=H4Classification.TO_CONFIRM,
-        resolution_status=H4ResolutionStatus.DYNAMIC,
+        classification=EvidenceClassification.TO_CONFIRM,
+        resolution_status=ResolutionStatus.DYNAMIC,
         confidence=Confidence.LOW,
         evidence_file_id=10,
     )
 
-    assert relation.resolution_status == H4ResolutionStatus.DYNAMIC
+    assert relation.resolution_status == ResolutionStatus.DYNAMIC
     with pytest.raises(ValueError, match="por_confirmar"):
-        H4Relation(
+        TechnicalRelation(
             relation_id=relation_id,
             reference_id=reference_id,
             relation_type="dynamic_call",
-            classification=H4Classification.DETECTED,
-            resolution_status=H4ResolutionStatus.DYNAMIC,
+            classification=EvidenceClassification.DETECTED,
+            resolution_status=ResolutionStatus.DYNAMIC,
             confidence=Confidence.LOW,
             evidence_file_id=10,
         )

@@ -12,7 +12,7 @@ from typing import Any
 
 from barbarion.domain.rag import (
     EmbeddingManifest,
-    H4SymbolMetadata,
+    SymbolMetadata,
     RetrievalCandidate,
     RetrievalFilter,
     VectorMetadata,
@@ -249,7 +249,7 @@ def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
 
 
 def _candidate_from_row(row: sqlite3.Row, score: float) -> RetrievalCandidate:
-    metadata = H4SymbolMetadata(
+    metadata = SymbolMetadata(
         symbol_name=row["symbol_name"],
         symbol_kind=row["symbol_kind"],
         parent_symbol=row["parent_symbol"],

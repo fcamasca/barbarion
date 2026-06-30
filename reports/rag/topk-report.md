@@ -1,4 +1,4 @@
-# H3 Top-K Report
+# RAG Top-K Report
 
 | Categoria | Pregunta | recall@5 | recall@10 | mrr | latencia_ms |
 |---|---|---:|---:|---:|---:|

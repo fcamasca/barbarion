@@ -15,8 +15,8 @@ SHA256_HEX_LENGTH = 64
 class Confidence(StrEnum):
     """Nivel de confianza de una unidad logica."""
 
-    # Extensible para H4: futuros niveles podran separar deteccion exacta,
-    # heuristica o inferida sin cambiar el contrato base de H2.
+    # Extensible para reverse engineering: futuros niveles podran separar deteccion exacta,
+    # heuristica o inferida sin cambiar el contrato base de ingesta.
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"

@@ -973,13 +973,13 @@ def test_generate_report_command_writes_artifacts(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    output = tmp_path / "reports" / "h3"
+    output = tmp_path / "reports" / "rag"
 
     exit_code = cli.main(
         [
             "generate-report",
             "--dataset",
-            "tests/fixtures/h3_rag_evaluation.json",
+            "tests/fixtures/rag_evaluation.json",
             "--output",
             str(output),
             "--test-summary",
@@ -991,7 +991,7 @@ def test_generate_report_command_writes_artifacts(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Reporte H3 generado" in captured.out
+    assert "Reporte RAG generado" in captured.out
     assert (output / "metrics.json").exists()
     assert (output / "topk-report.md").exists()
     assert (output / "smoke-report.md").exists()

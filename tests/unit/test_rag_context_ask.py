@@ -1,4 +1,4 @@
-"""Pruebas de contexto, prompts, citas y ask H3."""
+"""Pruebas de contexto, prompts, citas y ask RAG."""
 
 import sqlite3
 

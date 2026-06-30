@@ -1,4 +1,4 @@
-"""Benchmark local de recuperacion H3."""
+"""Benchmark local de recuperacion RAG."""
 
 from __future__ import annotations
 
@@ -198,7 +198,7 @@ def _benchmark_markdown(
     metadata: dict[str, object],
 ) -> str:
     lines = [
-        "# H3 Retrieval Benchmark",
+        "# RAG Retrieval Benchmark",
         "",
         "## Baseline",
         "",

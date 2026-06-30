@@ -13,9 +13,9 @@ from barbarion.domain.models import (
     SourceFile,
 )
 from barbarion.domain.reverse_engineering import (
-    H4Reference,
-    H4ResolutionStatus,
-    h4_reference_id,
+    TechnicalReference,
+    ResolutionStatus,
+    technical_reference_id,
     normalize_symbol_name,
 )
 from barbarion.infrastructure.parsers.base import BaseParser
@@ -106,7 +106,7 @@ class PowerBuilderParser(BaseParser):
         if source.discovered.extension == ".pbl":
             raise TextExtractionError(
                 error_code=UNSUPPORTED_BINARY_PBL,
-                message="Los archivos PBL binarios no son soportados por H2.",
+                message="Los archivos PBL binarios no son soportados por ingesta.",
                 relative_path=source.discovered.relative_path,
                 details={"extension": ".pbl"},
             )
@@ -159,11 +159,11 @@ def extract_powerbuilder_references(
     source_file_id: int,
     source_chunk_id: str | None = None,
     source_symbol_id: str | None = None,
-) -> tuple[H4Reference, ...]:
+) -> tuple[TechnicalReference, ...]:
     """Extrae referencias PowerBuilder crudas sin resolver destinos."""
     lines = text.splitlines() or [text]
     masked_lines = _mask_powerbuilder(lines)
-    references: list[H4Reference] = []
+    references: list[TechnicalReference] = []
     seen: set[str] = set()
     for line_number, line in enumerate(masked_lines, start=1):
         raw_line = lines[line_number - 1]
@@ -179,7 +179,7 @@ def extract_powerbuilder_references(
                 reference_type="dynamic_sql",
                 start_line=line_number,
                 confidence=Confidence.LOW,
-                resolution_status=H4ResolutionStatus.DYNAMIC,
+                resolution_status=ResolutionStatus.DYNAMIC,
                 metadata={"pattern": "powerbuilder_dynamic_sql"},
             )
         for match in OPEN_RE.finditer(line):
@@ -195,7 +195,7 @@ def extract_powerbuilder_references(
                 reference_type="open",
                 start_line=line_number,
                 confidence=Confidence.HIGH,
-                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                resolution_status=ResolutionStatus.UNRESOLVED,
                 metadata={"pattern": "powerbuilder_open"},
             )
         for match in QUALIFIED_CALL_RE.finditer(line):
@@ -213,7 +213,7 @@ def extract_powerbuilder_references(
                 reference_type="call",
                 start_line=line_number,
                 confidence=Confidence.MEDIUM,
-                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                resolution_status=ResolutionStatus.UNRESOLVED,
                 metadata={"pattern": "powerbuilder_qualified_call"},
             )
         for match in TRIGGER_EVENT_RE.finditer(line):
@@ -229,7 +229,7 @@ def extract_powerbuilder_references(
                 reference_type="event",
                 start_line=line_number,
                 confidence=Confidence.HIGH,
-                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                resolution_status=ResolutionStatus.UNRESOLVED,
                 metadata={"pattern": "powerbuilder_trigger_event"},
             )
         datawindow_source = raw_line if re.search(r"\b(?:dataobject|datawindow)\s*=", line, re.IGNORECASE) else ""
@@ -246,7 +246,7 @@ def extract_powerbuilder_references(
                 reference_type="datawindow",
                 start_line=line_number,
                 confidence=Confidence.HIGH,
-                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                resolution_status=ResolutionStatus.UNRESOLVED,
                 metadata={"pattern": "powerbuilder_datawindow"},
             )
         for match in EMBEDDED_SQL_RE.finditer(line):
@@ -264,7 +264,7 @@ def extract_powerbuilder_references(
                 reference_type="table",
                 start_line=line_number,
                 confidence=Confidence.MEDIUM,
-                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                resolution_status=ResolutionStatus.UNRESOLVED,
                 metadata={"pattern": "powerbuilder_embedded_sql"},
             )
         for match in STORED_PROCEDURE_RE.finditer(line):
@@ -282,7 +282,7 @@ def extract_powerbuilder_references(
                 reference_type="stored_procedure",
                 start_line=line_number,
                 confidence=Confidence.HIGH,
-                resolution_status=H4ResolutionStatus.UNRESOLVED,
+                resolution_status=ResolutionStatus.UNRESOLVED,
                 metadata={"pattern": "powerbuilder_stored_procedure"},
             )
     return tuple(references)
@@ -457,7 +457,7 @@ def _object_kind(kind: str | None, extension: str) -> str:
 
 
 def _append_reference(
-    references: list[H4Reference],
+    references: list[TechnicalReference],
     seen: set[str],
     *,
     source_file_id: int,
@@ -468,11 +468,11 @@ def _append_reference(
     reference_type: str,
     start_line: int,
     confidence: Confidence,
-    resolution_status: H4ResolutionStatus,
+    resolution_status: ResolutionStatus,
     metadata: dict[str, str],
 ) -> None:
     normalized = normalize_symbol_name(normalized_target)
-    reference_id = h4_reference_id(
+    reference_id = technical_reference_id(
         source_file_id=source_file_id,
         raw_text=raw_text,
         normalized_target=normalized,
@@ -485,7 +485,7 @@ def _append_reference(
         return
     seen.add(seen_key)
     references.append(
-        H4Reference(
+        TechnicalReference(
             reference_id=reference_id,
             source_file_id=source_file_id,
             source_symbol_id=source_symbol_id,

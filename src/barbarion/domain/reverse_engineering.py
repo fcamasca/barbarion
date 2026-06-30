@@ -1,7 +1,7 @@
-"""Modelos puros para H4 Reverse Engineering.
+"""Modelos puros para reverse engineering.
 
 El modulo define identidades, estados y validaciones de dominio para simbolos,
-referencias y relaciones H4. No accede a infraestructura ni persiste datos; su
+referencias y relaciones de reverse engineering. No accede a infraestructura ni persiste datos; su
 responsabilidad es mantener contratos inmutables y reproducibles para las capas
 de aplicacion e infraestructura.
 """
@@ -19,16 +19,16 @@ from typing import Any
 from barbarion.domain.models import Confidence
 
 
-class H4AnalysisRunMode(StrEnum):
-    """Modo operativo de una corrida H4."""
+class AnalysisRunMode(StrEnum):
+    """Modo operativo de una corrida de reverse engineering."""
 
     INCREMENTAL = "incremental"
     FULL = "full"
     PARTIAL = "partial"
 
 
-class H4AnalysisRunStatus(StrEnum):
-    """Estado persistible de una corrida H4."""
+class AnalysisRunStatus(StrEnum):
+    """Estado persistible de una corrida de reverse engineering."""
 
     RUNNING = "running"
     COMPLETED = "completed"
@@ -37,8 +37,8 @@ class H4AnalysisRunStatus(StrEnum):
     INTERRUPTED = "interrupted"
 
 
-class H4SymbolStatus(StrEnum):
-    """Estado vigente de un simbolo H4."""
+class SymbolStatus(StrEnum):
+    """Estado vigente de un simbolo reverse engineering."""
 
     ACTIVE = "active"
     STALE = "stale"
@@ -46,8 +46,8 @@ class H4SymbolStatus(StrEnum):
     AMBIGUOUS = "ambiguous"
 
 
-class H4ResolutionStatus(StrEnum):
-    """Estado de resolucion de una referencia o relacion H4."""
+class ResolutionStatus(StrEnum):
+    """Estado de resolucion de una referencia o relacion reverse engineering."""
 
     RESOLVED = "resolved"
     AMBIGUOUS = "ambiguous"
@@ -56,23 +56,23 @@ class H4ResolutionStatus(StrEnum):
     DYNAMIC = "dynamic"
 
 
-class H4Classification(StrEnum):
-    """Clasificacion de evidencia de una relacion H4."""
+class EvidenceClassification(StrEnum):
+    """Clasificacion de evidencia de una relacion reverse engineering."""
 
     DETECTED = "detectado"
     INFERRED = "inferido"
     TO_CONFIRM = "por_confirmar"
 
 
-class H4RelationStatus(StrEnum):
-    """Estado vigente de una relacion H4."""
+class RelationStatus(StrEnum):
+    """Estado vigente de una relacion reverse engineering."""
 
     ACTIVE = "active"
     STALE = "stale"
     DELETED = "deleted"
 
 
-class H4DependencyDirection(StrEnum):
+class DependencyDirection(StrEnum):
     """Direccion calculada para recorrer dependencias desde una semilla."""
 
     INCOMING = "incoming"
@@ -81,17 +81,106 @@ class H4DependencyDirection(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class H4AnalysisRunRecord:
-    """Resumen persistido de una corrida H4.
+class InventoryFilters:
+    """Filtros de consulta para el inventario tecnico.
 
-    El registro representa el estado observable de una ejecucion H4. Sus
+    Attributes:
+        technology: Tecnologia reverse engineering exacta, por ejemplo `oracle` o
+            `powerbuilder`.
+        symbol_type: Tipo tecnico del simbolo, como `package`, `procedure` o
+            `window`.
+        name: Texto buscado en nombre original o normalizado.
+        path: Prefijo de ruta persistida en SQLite.
+        status: Estado vigente del simbolo.
+        confidence: Confianza exacta del simbolo.
+    """
+
+    technology: str | None = None
+    symbol_type: str | None = None
+    name: str | None = None
+    path: str | None = None
+    status: SymbolStatus | None = None
+    confidence: Confidence | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryItem:
+    """Fila estable del inventario tecnico.
+
+    Attributes:
+        symbol: Simbolo tecnico consultado desde SQLite.
+        relative_path: Ruta persistida del archivo fuente.
+        outgoing_relations: Cantidad de relaciones activas salientes.
+        incoming_relations: Cantidad de relaciones activas entrantes.
+        reference_count: Cantidad de referencias reverse engineering asociadas al simbolo como
+            origen.
+    """
+
+    symbol: TechnicalSymbol
+    relative_path: str | None = None
+    outgoing_relations: int = 0
+    incoming_relations: int = 0
+    reference_count: int = 0
+
+    def __post_init__(self) -> None:
+        """Valida conteos no negativos del inventario."""
+        for field_name in (
+            "outgoing_relations",
+            "incoming_relations",
+            "reference_count",
+        ):
+            _require_non_negative(getattr(self, field_name), field_name)
+
+
+@dataclass(frozen=True, slots=True)
+class InventorySummary:
+    """Conteos agregados visibles en el inventario tecnico.
+
+    Attributes:
+        files: Archivos vigentes que participan en la consulta.
+        symbols: Simbolos reverse engineering que cumplen filtros.
+        references: Referencias asociadas a los simbolos filtrados.
+        relations: Relaciones activas asociadas a los simbolos filtrados.
+    """
+
+    files: int = 0
+    symbols: int = 0
+    references: int = 0
+    relations: int = 0
+
+    def __post_init__(self) -> None:
+        """Valida que todos los conteos sean no negativos."""
+        for field_name in ("files", "symbols", "references", "relations"):
+            _require_non_negative(getattr(self, field_name), field_name)
+
+
+@dataclass(frozen=True, slots=True)
+class Inventory:
+    """Resultado estructurado de `barbarion inventory`.
+
+    Attributes:
+        filters: Filtros efectivos usados por la consulta.
+        summary: Conteos agregados calculados desde SQLite.
+        items: Filas de simbolos del inventario en orden canonico.
+    """
+
+    filters: InventoryFilters
+    summary: InventorySummary
+    items: tuple[InventoryItem, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisRunRecord:
+    """Resumen persistido de una corrida de reverse engineering.
+
+    El registro representa el estado observable de una ejecucion reverse engineering. Sus
     conteos nunca son negativos y `scope` se congela para evitar mutaciones
     accidentales despues de construido el objeto.
     """
 
     id: int
-    mode: H4AnalysisRunMode
-    status: H4AnalysisRunStatus
+    mode: AnalysisRunMode
+    status: AnalysisRunStatus
     scope: dict[str, Any] = field(default_factory=dict)
     symbols_detected: int = 0
     references_detected: int = 0
@@ -121,8 +210,8 @@ class H4AnalysisRunRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class H4Symbol:
-    """Simbolo logico detectado por H4.
+class TechnicalSymbol:
+    """Simbolo logico detectado por reverse engineering.
 
     Un simbolo representa la identidad consultable de una unidad tecnica, como
     un package, procedure, evento, ventana o tabla. `symbol_id` es una identidad
@@ -149,7 +238,7 @@ class H4Symbol:
     signature: str | None = None
     start_line: int | None = None
     end_line: int | None = None
-    status: H4SymbolStatus = H4SymbolStatus.ACTIVE
+    status: SymbolStatus = SymbolStatus.ACTIVE
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -175,7 +264,7 @@ class H4Symbol:
 
 
 @dataclass(frozen=True, slots=True)
-class H4Reference:
+class TechnicalReference:
     """Referencia textual detectada antes o despues de resolverla.
 
     La referencia conserva evidencia de origen, objetivo normalizado y estado de
@@ -195,7 +284,7 @@ class H4Reference:
     technology: str
     detection_method: str
     confidence: Confidence
-    resolution_status: H4ResolutionStatus
+    resolution_status: ResolutionStatus
     source_symbol_id: str | None = None
     source_chunk_id: str | None = None
     start_line: int | None = None
@@ -220,7 +309,7 @@ class H4Reference:
 
 
 @dataclass(frozen=True, slots=True)
-class H4Relation:
+class TechnicalRelation:
     """Relacion canonica `source -> target` derivada de una referencia.
 
     La relacion almacena origen, destino resuelto o clave objetivo, y evidencia
@@ -235,8 +324,8 @@ class H4Relation:
     relation_id: str
     reference_id: str
     relation_type: str
-    classification: H4Classification
-    resolution_status: H4ResolutionStatus
+    classification: EvidenceClassification
+    resolution_status: ResolutionStatus
     confidence: Confidence
     evidence_file_id: int
     source_symbol_id: str | None = None
@@ -246,7 +335,7 @@ class H4Relation:
     start_line: int | None = None
     end_line: int | None = None
     notes: str | None = None
-    status: H4RelationStatus = H4RelationStatus.ACTIVE
+    status: RelationStatus = RelationStatus.ACTIVE
 
     def __post_init__(self) -> None:
         """Valida identidad, evidencia y restricciones de relaciones dinamicas."""
@@ -265,15 +354,15 @@ class H4Relation:
         if self.notes is not None:
             _require_non_empty(self.notes, "notes")
         if (
-            self.resolution_status == H4ResolutionStatus.DYNAMIC
-            and self.classification != H4Classification.TO_CONFIRM
+            self.resolution_status == ResolutionStatus.DYNAMIC
+            and self.classification != EvidenceClassification.TO_CONFIRM
         ):
             raise ValueError("Las relaciones dynamic requieren clasificacion por_confirmar.")
         _validate_optional_range(self.start_line, self.end_line, "line")
 
 
 @dataclass(frozen=True, slots=True)
-class H4RelationCandidate:
+class RelationCandidate:
     """Candidato alternativo para una relacion ambigua.
 
     Se usa cuando una referencia coincide con mas de un simbolo compatible. El
@@ -295,8 +384,8 @@ class H4RelationCandidate:
 
 
 @dataclass(frozen=True, slots=True)
-class H4DependencyFilters:
-    """Filtros aplicables al recorrido de dependencias H4.
+class DependencyFilters:
+    """Filtros aplicables al recorrido de dependencias reverse engineering.
 
     Los filtros se evaluan sobre relaciones activas ya persistidas. `technology`
     se compara contra los simbolos origen o destino disponibles; las relaciones
@@ -305,12 +394,12 @@ class H4DependencyFilters:
 
     technology: str | None = None
     relation_type: str | None = None
-    resolution_status: H4ResolutionStatus | None = None
+    resolution_status: ResolutionStatus | None = None
     min_confidence: Confidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class H4DependencyNode:
+class DependencyNode:
     """Nodo visible en un recorrido BFS de dependencias.
 
     Attributes:
@@ -318,7 +407,7 @@ class H4DependencyNode:
         depth: Distancia desde el simbolo semilla.
     """
 
-    symbol: H4Symbol
+    symbol: TechnicalSymbol
     depth: int
 
     def __post_init__(self) -> None:
@@ -327,8 +416,8 @@ class H4DependencyNode:
 
 
 @dataclass(frozen=True, slots=True)
-class H4DependencyEdge:
-    """Arista visible derivada de una relacion H4 activa.
+class DependencyEdge:
+    """Arista visible derivada de una relacion reverse engineering activa.
 
     La arista conserva la relacion original y la direccion calculada desde el
     nodo expandido. Si la relacion no tiene destino resuelto, `target_symbol`
@@ -336,11 +425,11 @@ class H4DependencyEdge:
     dynamic o external.
     """
 
-    relation: H4Relation
+    relation: TechnicalRelation
     depth: int
-    direction: H4DependencyDirection
-    source_symbol: H4Symbol | None
-    target_symbol: H4Symbol | None
+    direction: DependencyDirection
+    source_symbol: TechnicalSymbol | None
+    target_symbol: TechnicalSymbol | None
     target_key: str | None
     candidate_symbol_ids: tuple[str, ...] = ()
     is_cycle: bool = False
@@ -353,8 +442,8 @@ class H4DependencyEdge:
 
 
 @dataclass(frozen=True, slots=True)
-class H4DependencyWalk:
-    """Resultado completo de un recorrido BFS de dependencias H4.
+class DependencyWalk:
+    """Resultado completo de un recorrido BFS de dependencias reverse engineering.
 
     `nodes` contiene simbolos activos alcanzados hasta el limite solicitado.
     `edges` conserva tambien hojas unresolved, ambiguous, dynamic y external,
@@ -363,11 +452,11 @@ class H4DependencyWalk:
     """
 
     seed_symbol_id: str
-    direction: H4DependencyDirection
+    direction: DependencyDirection
     max_depth: int
     node_limit: int
-    nodes: tuple[H4DependencyNode, ...]
-    edges: tuple[H4DependencyEdge, ...]
+    nodes: tuple[DependencyNode, ...]
+    edges: tuple[DependencyEdge, ...]
     cycles: tuple[tuple[str, ...], ...] = ()
     limit_reached: bool = False
 
@@ -379,7 +468,7 @@ class H4DependencyWalk:
 
 
 @dataclass(frozen=True, slots=True)
-class H4ObjectResolution:
+class ObjectResolution:
     """Resultado determinista de resolver un objeto tecnico solicitado.
 
     El resultado evita elegir automaticamente cuando hay multiples simbolos
@@ -388,8 +477,8 @@ class H4ObjectResolution:
     """
 
     query: str
-    symbol: H4Symbol | None = None
-    candidates: tuple[H4Symbol, ...] = ()
+    symbol: TechnicalSymbol | None = None
+    candidates: tuple[TechnicalSymbol, ...] = ()
     status: str = "resolved"
 
     def __post_init__(self) -> None:
@@ -400,15 +489,15 @@ class H4ObjectResolution:
 
 
 @dataclass(frozen=True, slots=True)
-class H4EvidenceItem:
-    """Evidencia trazable usada por servicios H4 de descripcion e impacto.
+class EvidenceItem:
+    """Evidencia trazable usada por servicios reverse engineering de descripcion e impacto.
 
     Attributes:
         source: Origen logico de la evidencia, por ejemplo `symbol`, `relation`
             o `rag`.
         detail: Texto breve y estable que puede mostrarse en salidas futuras.
-        reference_id: Identificador opcional de referencia H4.
-        relation_id: Identificador opcional de relacion H4.
+        reference_id: Identificador opcional de referencia reverse engineering.
+        relation_id: Identificador opcional de relacion reverse engineering.
         chunk_id: Chunk opcional asociado a la evidencia.
     """
 
@@ -431,7 +520,7 @@ class H4EvidenceItem:
 
 
 @dataclass(frozen=True, slots=True)
-class H4ComponentDescription:
+class ComponentDescription:
     """DTO determinista producido por el servicio `describe`.
 
     Incluye resolucion del objeto, relaciones relevantes, evidencia,
@@ -439,11 +528,11 @@ class H4ComponentDescription:
     sintesis proviene solo de datos estructurados.
     """
 
-    resolution: H4ObjectResolution
-    outgoing: H4DependencyWalk | None = None
-    incoming: H4DependencyWalk | None = None
+    resolution: ObjectResolution
+    outgoing: DependencyWalk | None = None
+    incoming: DependencyWalk | None = None
     responsibilities: tuple[str, ...] = ()
-    evidence: tuple[H4EvidenceItem, ...] = ()
+    evidence: tuple[EvidenceItem, ...] = ()
     inferences: tuple[str, ...] = ()
     to_confirm: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
@@ -457,7 +546,7 @@ class H4ComponentDescription:
 
 
 @dataclass(frozen=True, slots=True)
-class H4ImpactAnalysis:
+class ImpactAnalysis:
     """DTO determinista producido por el servicio `impact`.
 
     El impacto se deriva de recorridos de dependencias, no de similitud
@@ -465,15 +554,15 @@ class H4ImpactAnalysis:
     los nodos ni aristas seleccionados.
     """
 
-    resolution: H4ObjectResolution
-    walk: H4DependencyWalk | None = None
-    consumers: tuple[H4DependencyEdge, ...] = ()
-    dependencies: tuple[H4DependencyEdge, ...] = ()
-    indirect: tuple[H4DependencyEdge, ...] = ()
-    cross_technology: tuple[H4DependencyEdge, ...] = ()
+    resolution: ObjectResolution
+    walk: DependencyWalk | None = None
+    consumers: tuple[DependencyEdge, ...] = ()
+    dependencies: tuple[DependencyEdge, ...] = ()
+    indirect: tuple[DependencyEdge, ...] = ()
+    cross_technology: tuple[DependencyEdge, ...] = ()
     risks: tuple[str, ...] = ()
     to_confirm: tuple[str, ...] = ()
-    evidence: tuple[H4EvidenceItem, ...] = ()
+    evidence: tuple[EvidenceItem, ...] = ()
     limitations: tuple[str, ...] = ()
     rag_sources: tuple[str, ...] = ()
     summary: str = ""
@@ -509,7 +598,7 @@ def normalize_symbol_name(value: str) -> str:
     return ".".join(part.lower() for part in parts)
 
 
-def h4_symbol_id(
+def technical_symbol_id(
     *,
     normalized_name: str,
     symbol_type: str,
@@ -528,7 +617,7 @@ def h4_symbol_id(
         SHA-256 hexadecimal estable para la identidad logica del simbolo.
     """
     return _sha256_payload(
-        "barbarion.h4.symbol-id.v1",
+        "barbarion.reverse-engineering.symbol-id.v1",
         {
             "container_name": normalize_symbol_name(container_name)
             if container_name
@@ -540,7 +629,7 @@ def h4_symbol_id(
     )
 
 
-def h4_reference_id(
+def technical_reference_id(
     *,
     source_file_id: int,
     raw_text: str,
@@ -569,7 +658,7 @@ def h4_reference_id(
     _require_positive(source_file_id, "source_file_id")
     _validate_optional_range(start_line, end_line, "line")
     return _sha256_payload(
-        "barbarion.h4.reference-id.v1",
+        "barbarion.reverse-engineering.reference-id.v1",
         {
             "end_line": end_line,
             "normalized_target": normalize_symbol_name(normalized_target),
@@ -581,7 +670,7 @@ def h4_reference_id(
     )
 
 
-def h4_relation_id(
+def technical_relation_id(
     *,
     reference_id: str,
     relation_type: str,
@@ -611,7 +700,7 @@ def h4_relation_id(
     if target_symbol_id is not None:
         _require_sha256(target_symbol_id, "target_symbol_id")
     return _sha256_payload(
-        "barbarion.h4.relation-id.v1",
+        "barbarion.reverse-engineering.relation-id.v1",
         {
             "reference_id": reference_id,
             "relation_type": _normalized_token(relation_type),

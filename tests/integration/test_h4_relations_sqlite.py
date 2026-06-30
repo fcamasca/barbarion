@@ -7,12 +7,12 @@ from barbarion.config import load_settings
 from barbarion.database import initialize_database
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
-    H4AnalysisRunMode,
-    H4ResolutionStatus,
-    H4Symbol,
-    H4Reference,
-    h4_reference_id,
-    h4_symbol_id,
+    AnalysisRunMode,
+    ResolutionStatus,
+    TechnicalSymbol,
+    TechnicalReference,
+    technical_reference_id,
+    technical_symbol_id,
 )
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from tests.unit.test_rag_index_service import seed_chunks
@@ -26,7 +26,7 @@ def test_h4_relation_resolution_persists_relations_and_candidates(
     seed_chunks(path)
     repository = SQLiteReverseEngineeringRepository(path)
     seed_run_id = repository.begin_analysis_run(
-        mode=H4AnalysisRunMode.INCREMENTAL,
+        mode=AnalysisRunMode.INCREMENTAL,
         scope={"stage": "fixture"},
     )
     source = _symbol("actual", "procedure", container_name="pkg_cliente")
@@ -57,7 +57,7 @@ def test_h4_relation_resolution_persists_relations_and_candidates(
             "execute immediate v_sql",
             normalized_target="dynamic.sql",
             reference_type="dynamic_sql",
-            resolution_status=H4ResolutionStatus.DYNAMIC,
+            resolution_status=ResolutionStatus.DYNAMIC,
         ),
         _reference(
             "remote_pkg.process@erp_link",
@@ -87,11 +87,11 @@ def test_h4_relation_resolution_persists_relations_and_candidates(
     assert summary.unresolved_without_relation == 1
     relations = _relations_by_reference(repository, references)
     assert relations[references[0].reference_id].target_symbol_id == target.symbol_id
-    assert relations[references[0].reference_id].resolution_status == H4ResolutionStatus.RESOLVED
-    assert relations[references[1].reference_id].resolution_status == H4ResolutionStatus.AMBIGUOUS
+    assert relations[references[0].reference_id].resolution_status == ResolutionStatus.RESOLVED
+    assert relations[references[1].reference_id].resolution_status == ResolutionStatus.AMBIGUOUS
     assert relations[references[2].reference_id].target_symbol_id == table.symbol_id
-    assert relations[references[3].reference_id].resolution_status == H4ResolutionStatus.DYNAMIC
-    assert relations[references[4].reference_id].resolution_status == H4ResolutionStatus.EXTERNAL
+    assert relations[references[3].reference_id].resolution_status == ResolutionStatus.DYNAMIC
+    assert relations[references[4].reference_id].resolution_status == ResolutionStatus.EXTERNAL
     assert references[5].reference_id not in relations
     candidates = repository.relation_candidates(
         relations[references[1].reference_id].relation_id
@@ -104,7 +104,7 @@ def test_h4_relation_resolution_persists_relations_and_candidates(
 
 def _relations_by_reference(
     repository: SQLiteReverseEngineeringRepository,
-    references: tuple[H4Reference, ...],
+    references: tuple[TechnicalReference, ...],
 ) -> dict[str, object]:
     relations = {}
     for reference in references:
@@ -120,14 +120,14 @@ def _symbol(
     symbol_type: str,
     *,
     container_name: str | None = None,
-) -> H4Symbol:
-    symbol_id = h4_symbol_id(
+) -> TechnicalSymbol:
+    symbol_id = technical_symbol_id(
         normalized_name=normalized_name,
         symbol_type=symbol_type,
         technology="oracle",
         container_name=container_name,
     )
-    return H4Symbol(
+    return TechnicalSymbol(
         symbol_id=symbol_id,
         original_name=normalized_name,
         normalized_name=normalized_name,
@@ -148,10 +148,10 @@ def _reference(
     normalized_target: str,
     reference_type: str,
     source_symbol_id: str | None = None,
-    resolution_status: H4ResolutionStatus = H4ResolutionStatus.UNRESOLVED,
+    resolution_status: ResolutionStatus = ResolutionStatus.UNRESOLVED,
     metadata: dict[str, object] | None = None,
-) -> H4Reference:
-    reference_id = h4_reference_id(
+) -> TechnicalReference:
+    reference_id = technical_reference_id(
         source_file_id=1,
         raw_text=raw_text,
         normalized_target=normalized_target,
@@ -159,7 +159,7 @@ def _reference(
         start_line=1,
         end_line=1,
     )
-    return H4Reference(
+    return TechnicalReference(
         reference_id=reference_id,
         source_file_id=1,
         source_symbol_id=source_symbol_id,

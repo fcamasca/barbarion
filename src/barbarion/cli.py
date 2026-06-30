@@ -26,8 +26,10 @@ from barbarion.application.reverse_engineering import (
     AnalyzeScope,
     AnalyzeService,
     AnalyzeSummary,
+    InventoryRequest,
+    InventoryService,
 )
-from barbarion.application.reporting import generate_h3_report
+from barbarion.application.reporting import generate_rag_report
 from barbarion.bootstrap import DirectoryResult, initialize_directories
 from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
 from barbarion.database import DatabaseError, initialize_database
@@ -35,6 +37,7 @@ from barbarion.doctor import DoctorReport, run_doctor_checks
 from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
 from barbarion.domain.models import IngestionRunStatus
+from barbarion.domain.models import Confidence
 from barbarion.domain.progress import ProgressSnapshot, ProgressStage
 from barbarion.domain.rag import (
     AnswerResult,
@@ -49,8 +52,12 @@ from barbarion.domain.rag import (
     SearchResponse,
 )
 from barbarion.domain.reverse_engineering import (
-    H4AnalysisRunMode,
-    H4AnalysisRunStatus,
+    AnalysisRunMode,
+    AnalysisRunStatus,
+    Inventory,
+    InventoryFilters,
+    InventoryItem,
+    SymbolStatus,
 )
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
@@ -69,6 +76,11 @@ from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
+from barbarion.infrastructure.markdown import (
+    render_inventory_markdown,
+    safe_inventory_filename,
+    write_text_artifact,
+)
 from barbarion.logging_config import configure_logging
 
 
@@ -388,7 +400,7 @@ def _run_reindex(args: argparse.Namespace) -> int:
 
 
 def _run_analyze(args: argparse.Namespace) -> int:
-    """Ejecuta analisis H4 sobre chunks ya ingeridos."""
+    """Ejecuta analisis reverse engineering sobre chunks ya ingeridos."""
     settings = load_settings(args.config)
     if not settings.database_path.exists():
         print(
@@ -399,10 +411,10 @@ def _run_analyze(args: argparse.Namespace) -> int:
         return 1
     initialize_database(settings.database_path)
     service = _build_analyze_service(settings)
-    mode = H4AnalysisRunMode.FULL if args.full else H4AnalysisRunMode.INCREMENTAL
+    mode = AnalysisRunMode.FULL if args.full else AnalysisRunMode.INCREMENTAL
     path_prefixes = _analyze_path_prefixes(args.path)
     if path_prefixes:
-        mode = H4AnalysisRunMode.PARTIAL
+        mode = AnalysisRunMode.PARTIAL
     cancellation = CliCancellationToken()
     summaries: list[AnalyzeSummary] = []
     with _index_cancellation_context(cancellation):
@@ -415,11 +427,52 @@ def _run_analyze(args: argparse.Namespace) -> int:
                 cancellation=cancellation,
             )
             summaries.append(summary)
-            if summary.status == H4AnalysisRunStatus.INTERRUPTED:
+            if summary.status == AnalysisRunStatus.INTERRUPTED:
                 break
     for summary in summaries:
         _render_analyze_summary(summary)
     return _analyze_exit_code(tuple(summaries))
+
+
+def _run_inventory(args: argparse.Namespace) -> int:
+    """Consulta inventario reverse engineering desde SQLite y lo presenta.
+
+    Args:
+        args: Argumentos parseados por `argparse` para el comando
+            `inventory`.
+
+    Returns:
+        Codigo de salida CLI: 0 si se genera la salida, 1 ante errores
+        operativos esperados.
+    """
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' e "
+            "ingesta el corpus antes de consultar inventario.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    service = _build_inventory_service(settings)
+    request = InventoryRequest(filters=_inventory_filters(args))
+    inventory = service.inventory(request)
+    content = _render_inventory(inventory, args.format)
+    if args.output is not None:
+        output_path = _inventory_output_path(settings, args.output, inventory)
+        try:
+            written = write_text_artifact(
+                output_path,
+                content,
+                overwrite=args.overwrite,
+            )
+        except FileExistsError as error:
+            print(f"Error operativo: {error}", file=sys.stderr)
+            return 1
+        print(f"Inventario escrito: {written}")
+        return 0
+    print(content)
+    return 0
 
 
 def _run_search(args: argparse.Namespace) -> int:
@@ -506,7 +559,7 @@ def _run_embeddings(args: argparse.Namespace) -> int:
 
 
 def _run_stats(args: argparse.Namespace) -> int:
-    """Muestra estadisticas H2 + H3 sin mutar la DB."""
+    """Muestra estadisticas ingesta + RAG sin mutar la DB."""
     settings = load_settings(args.config)
     if not settings.database_path.exists():
         print("No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor'.")
@@ -544,8 +597,8 @@ def _run_stats(args: argparse.Namespace) -> int:
 
 
 def _run_generate_report(args: argparse.Namespace) -> int:
-    """Genera evidencia tecnica local del cierre H3."""
-    summary = generate_h3_report(
+    """Genera evidencia tecnica local del cierre RAG."""
+    summary = generate_rag_report(
         dataset_path=Path(args.dataset),
         output_dir=Path(args.output),
         test_summary=args.test_summary,
@@ -555,7 +608,7 @@ def _run_generate_report(args: argparse.Namespace) -> int:
             "version": __version__,
         },
     )
-    print("Reporte H3 generado")
+    print("Reporte RAG generado")
     print(f"Directorio: {summary.output_dir}")
     print(f"metrics.json: {summary.metrics_path}")
     print(f"topk-report.md: {summary.topk_report_path}")
@@ -715,6 +768,20 @@ def _build_index_service(settings: Settings) -> IndexService:
 def _build_analyze_service(settings: Settings) -> AnalyzeService:
     return AnalyzeService(
         settings=settings,
+        repository=SQLiteReverseEngineeringRepository(settings.database_path),
+    )
+
+
+def _build_inventory_service(settings: Settings) -> InventoryService:
+    """Construye el servicio de inventario reverse engineering.
+
+    Args:
+        settings: Configuracion efectiva de Barbarion.
+
+    Returns:
+        Servicio de inventario conectado al repositorio SQLite reverse engineering.
+    """
+    return InventoryService(
         repository=SQLiteReverseEngineeringRepository(settings.database_path),
     )
 
@@ -984,7 +1051,7 @@ def _render_index_summary(summary: IndexRunSummary) -> None:
 
 
 def _render_analyze_summary(summary: AnalyzeSummary) -> None:
-    prefix = "Dry-run de analyze H4" if summary.dry_run else "Analyze H4"
+    prefix = "Dry-run de analisis tecnico" if summary.dry_run else "Analisis tecnico"
     print(f"{prefix}: {summary.status.value}")
     print(f"Run: {summary.run_id if summary.run_id is not None else 'ninguno'}")
     print(f"Archivos: {summary.files_scanned}")
@@ -995,6 +1062,149 @@ def _render_analyze_summary(summary: AnalyzeSummary) -> None:
     print(f"Relaciones ambiguas: {summary.relations_ambiguous}")
     print(f"Relaciones no resueltas: {summary.relations_unresolved}")
     print(f"Duracion: {summary.duration_ms} ms")
+
+
+def _inventory_filters(args: argparse.Namespace) -> InventoryFilters:
+    """Construye filtros reverse engineering desde argumentos de CLI.
+
+    Args:
+        args: Argumentos parseados para `barbarion inventory`.
+
+    Returns:
+        Filtros estructurados para la consulta de inventario.
+    """
+    return InventoryFilters(
+        technology=args.technology,
+        symbol_type=args.symbol_type,
+        name=args.name,
+        path=args.path.replace("\\", "/") if args.path else None,
+        status=SymbolStatus(args.status) if args.status else None,
+        confidence=Confidence(args.confidence) if args.confidence else None,
+    )
+
+
+def _render_inventory(inventory: Inventory, output_format: str) -> str:
+    """Renderiza inventario reverse engineering en text, JSON o Markdown.
+
+    Args:
+        inventory: Resultado estructurado de inventario.
+        output_format: Formato solicitado por CLI.
+
+    Returns:
+        Contenido listo para stdout o escritura a archivo.
+    """
+    if output_format == "json":
+        return json.dumps(_inventory_json(inventory), ensure_ascii=False, indent=2)
+    if output_format == "markdown":
+        return render_inventory_markdown(inventory)
+    lines = [
+        "Inventario tecnico",
+        f"archivos = {inventory.summary.files}",
+        f"simbolos = {inventory.summary.symbols}",
+        f"referencias = {inventory.summary.references}",
+        f"relaciones = {inventory.summary.relations}",
+    ]
+    if not inventory.items:
+        lines.append("sin simbolos para los filtros indicados")
+        return "\n".join(lines)
+    lines.extend(_inventory_item_text(item) for item in inventory.items)
+    return "\n".join(lines)
+
+
+def _inventory_output_path(
+    settings: Settings,
+    requested_output: str,
+    inventory: Inventory,
+) -> Path:
+    """Resuelve una ruta de salida de inventario.
+
+    Args:
+        settings: Configuracion efectiva con `output_dir`.
+        requested_output: Ruta o directorio solicitado por el usuario.
+        inventory: Inventario usado para nombre seguro cuando se pasa un
+            directorio.
+
+    Returns:
+        Ruta absoluta o relativa a `output_dir` lista para escritura.
+    """
+    requested = Path(requested_output)
+    if requested_output.endswith(("/", "\\")) or requested.suffix == "":
+        requested = requested / safe_inventory_filename(inventory.filters)
+    if requested.is_absolute():
+        return requested
+    return settings.output_dir / requested
+
+
+def _inventory_json(inventory: Inventory) -> dict[str, object]:
+    return {
+        "template_version": "inventory.v1",
+        "filters": {
+            "technology": inventory.filters.technology,
+            "type": inventory.filters.symbol_type,
+            "name": inventory.filters.name,
+            "path": inventory.filters.path,
+            "status": (
+                inventory.filters.status.value if inventory.filters.status else None
+            ),
+            "confidence": (
+                inventory.filters.confidence.value
+                if inventory.filters.confidence
+                else None
+            ),
+        },
+        "summary": {
+            "files": inventory.summary.files,
+            "symbols": inventory.summary.symbols,
+            "references": inventory.summary.references,
+            "relations": inventory.summary.relations,
+        },
+        "items": [_inventory_item_json(item) for item in inventory.items],
+    }
+
+
+def _inventory_item_json(item: InventoryItem) -> dict[str, object]:
+    symbol = item.symbol
+    return {
+        "symbol_id": symbol.symbol_id,
+        "original_name": symbol.original_name,
+        "normalized_name": symbol.normalized_name,
+        "type": symbol.symbol_type,
+        "technology": symbol.technology,
+        "status": symbol.status.value,
+        "confidence": symbol.confidence.value,
+        "file_id": symbol.file_id,
+        "relative_path": item.relative_path,
+        "chunk_id": symbol.chunk_id,
+        "start_line": symbol.start_line,
+        "end_line": symbol.end_line,
+        "container_name": symbol.container_name,
+        "counts": {
+            "references": item.reference_count,
+            "outgoing_relations": item.outgoing_relations,
+            "incoming_relations": item.incoming_relations,
+        },
+    }
+
+
+def _inventory_item_text(item: InventoryItem) -> str:
+    symbol = item.symbol
+    line_range = _inventory_line_range(symbol.start_line, symbol.end_line)
+    return (
+        f"- {symbol.normalized_name} tipo={symbol.symbol_type} "
+        f"tecnologia={symbol.technology} estado={symbol.status.value} "
+        f"confianza={symbol.confidence.value} archivo={item.relative_path or 'n/a'} "
+        f"chunk={symbol.chunk_id or 'n/a'} lineas={line_range} "
+        f"refs={item.reference_count} out={item.outgoing_relations} "
+        f"in={item.incoming_relations}"
+    )
+
+
+def _inventory_line_range(start_line: int | None, end_line: int | None) -> str:
+    if start_line is None or end_line is None:
+        return "n/a"
+    if start_line == end_line:
+        return str(start_line)
+    return f"{start_line}-{end_line}"
 
 
 def _progress_percent(current: int, total: int | None) -> str:
@@ -1067,9 +1277,9 @@ def _index_exit_code(summary: IndexRunSummary) -> int:
 
 
 def _analyze_exit_code(summaries: tuple[AnalyzeSummary, ...]) -> int:
-    if any(summary.status == H4AnalysisRunStatus.INTERRUPTED for summary in summaries):
+    if any(summary.status == AnalysisRunStatus.INTERRUPTED for summary in summaries):
         return 130
-    if any(summary.status == H4AnalysisRunStatus.FAILED for summary in summaries):
+    if any(summary.status == AnalysisRunStatus.FAILED for summary in summaries):
         return 1
     return 0
 
@@ -1347,8 +1557,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     analyze_parser = commands.add_parser(
         "analyze",
-        help="analiza simbolos y relaciones H4",
-        description="Ejecuta analisis H4 incremental sobre chunks ingeridos.",
+        help="analiza simbolos y relaciones de reverse engineering",
+        description="Ejecuta analisis reverse engineering incremental sobre chunks ingeridos.",
         add_help=False,
     )
     _add_help_option(analyze_parser)
@@ -1369,6 +1579,62 @@ def build_parser() -> argparse.ArgumentParser:
         help="calcula alcance y resultados esperados sin escribir SQLite",
     )
     analyze_parser.set_defaults(handler=_run_analyze)
+
+    inventory_parser = commands.add_parser(
+        "inventory",
+        help="consulta inventario tecnico",
+        description="Consulta inventario tecnico desde SQLite.",
+        add_help=False,
+    )
+    _add_help_option(inventory_parser)
+    inventory_parser.add_argument(
+        "--technology",
+        choices=("oracle", "powerbuilder", "document", "unknown"),
+        help="filtra por tecnologia",
+    )
+    inventory_parser.add_argument(
+        "--type",
+        dest="symbol_type",
+        metavar="TIPO",
+        help="filtra por tipo tecnico de simbolo",
+    )
+    inventory_parser.add_argument(
+        "--name",
+        metavar="TEXTO",
+        help="filtra por nombre original o normalizado",
+    )
+    inventory_parser.add_argument(
+        "--path",
+        metavar="PREFIJO",
+        help="filtra por prefijo de ruta persistida",
+    )
+    inventory_parser.add_argument(
+        "--status",
+        choices=tuple(status.value for status in SymbolStatus),
+        help="filtra por estado del simbolo",
+    )
+    inventory_parser.add_argument(
+        "--confidence",
+        choices=tuple(confidence.value for confidence in Confidence),
+        help="filtra por confianza",
+    )
+    inventory_parser.add_argument(
+        "--format",
+        choices=("text", "json", "markdown"),
+        default="text",
+        help="formato de salida",
+    )
+    inventory_parser.add_argument(
+        "--output",
+        metavar="RUTA",
+        help="escribe la salida en un archivo",
+    )
+    inventory_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="permite sobrescribir el archivo de salida",
+    )
+    inventory_parser.set_defaults(handler=_run_inventory)
 
     search_parser = commands.add_parser(
         "search",
@@ -1424,7 +1690,7 @@ def build_parser() -> argparse.ArgumentParser:
     stats_parser = commands.add_parser(
         "stats",
         help="muestra estadisticas locales",
-        description="Muestra estadisticas H2 y H3 sin mutar SQLite.",
+        description="Muestra estadisticas ingesta y RAG sin mutar SQLite.",
         add_help=False,
     )
     _add_help_option(stats_parser)
@@ -1438,19 +1704,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     report_parser = commands.add_parser(
         "generate-report",
-        help="genera evidencia tecnica H3",
-        description="Genera reportes locales de cierre tecnico H3.",
+        help="genera evidencia tecnica RAG",
+        description="Genera reportes locales de cierre tecnico RAG.",
         add_help=False,
     )
     _add_help_option(report_parser)
     report_parser.add_argument(
         "--dataset",
-        default="tests/fixtures/h3_rag_evaluation.json",
+        default="tests/fixtures/rag_evaluation.json",
         help="dataset de evaluacion RAG",
     )
     report_parser.add_argument(
         "--output",
-        default="reports/h3",
+        default="reports/rag",
         help="directorio de salida de reportes",
     )
     report_parser.add_argument(

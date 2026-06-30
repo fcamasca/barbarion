@@ -92,7 +92,7 @@ Estados iniciales: `pendiente`.
 
 ### H4-T08 - Implementar `inventory` CLI y Markdown de inventario
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** exponer inventario tecnico en text/json/markdown y escritura segura.  
 **Modulos estimados:** `cli.py`, `application/reverse_engineering.py`, `infrastructure/markdown.py`.  
 **Requisitos:** H4-RF-001, H4-RF-009, H4-RNF-007.  

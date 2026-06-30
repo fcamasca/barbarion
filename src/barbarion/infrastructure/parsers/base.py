@@ -12,7 +12,7 @@ from barbarion.domain.models import (
 
 
 class BaseParser(ABC):
-    """Base comun para extractores de formatos soportados por H2."""
+    """Base comun para extractores de formatos soportados por ingesta."""
 
     parser_id: str
     parser_version: str

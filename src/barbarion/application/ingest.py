@@ -1,4 +1,4 @@
-"""Caso de uso secuencial de ingesta H2."""
+"""Caso de uso secuencial de ingesta ingesta."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Pruebas de contratos puros H3 RAG."""
+"""Pruebas de contratos puros RAG."""
 
 from types import MappingProxyType
 
@@ -9,7 +9,7 @@ from barbarion.domain.rag import (
     EmbeddingManifest,
     EmbeddingRequest,
     EmbeddingVector,
-    H4SymbolMetadata,
+    SymbolMetadata,
     RetrievalCandidate,
     RetrievalMode,
     SearchRequest,
@@ -79,7 +79,7 @@ def test_embedding_request_and_vector_validate_values() -> None:
 
 
 def test_retrieval_candidate_keeps_h4_metadata_and_freezes_source() -> None:
-    metadata = H4SymbolMetadata(
+    metadata = SymbolMetadata(
         symbol_name="order_total",
         symbol_kind="variable",
         package_name="PKG_COSTOS",

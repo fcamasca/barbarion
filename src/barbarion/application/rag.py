@@ -1,4 +1,4 @@
-"""Casos de uso H3 para indexacion RAG."""
+"""Casos de uso RAG para indexacion RAG."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ from barbarion.infrastructure.sqlite import SQLiteRagRepository
 
 @dataclass(frozen=True, slots=True)
 class IndexService:
-    """Orquesta indexacion incremental H3."""
+    """Orquesta indexacion incremental RAG."""
 
     settings: Settings
     repository: SQLiteRagRepository
@@ -521,7 +521,7 @@ def _duration_ms(started: float) -> int:
 
 @dataclass(frozen=True, slots=True)
 class SearchService:
-    """Orquesta recuperacion semantic, keyword e hybrid para H3."""
+    """Orquesta recuperacion semantic, keyword e hybrid para RAG."""
 
     settings: Settings
     repository: SQLiteRagRepository

@@ -6,22 +6,22 @@ from barbarion.application.reverse_engineering import (
     DependencyWalkService,
     DescribeRequest,
     DescribeService,
-    H4ObjectRequest,
+    ObjectRequest,
     ImpactRequest,
     ImpactService,
 )
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
-    H4Classification,
-    H4DependencyDirection,
-    H4Reference,
-    H4Relation,
-    H4RelationCandidate,
-    H4ResolutionStatus,
-    H4Symbol,
-    h4_reference_id,
-    h4_relation_id,
-    h4_symbol_id,
+    EvidenceClassification,
+    DependencyDirection,
+    TechnicalReference,
+    TechnicalRelation,
+    RelationCandidate,
+    ResolutionStatus,
+    TechnicalSymbol,
+    technical_reference_id,
+    technical_relation_id,
+    technical_symbol_id,
 )
 
 
@@ -42,7 +42,7 @@ def test_describe_resolves_unique_object_without_llm() -> None:
     )
 
     result = service.describe(
-        DescribeRequest(target=H4ObjectRequest(query="pkg.root"), no_llm=True)
+        DescribeRequest(target=ObjectRequest(query="pkg.root"), no_llm=True)
     )
 
     assert result.resolution.symbol == root
@@ -63,10 +63,10 @@ def test_describe_reports_missing_and_ambiguous_without_auto_selection() -> None
     )
 
     missing = service.describe(
-        DescribeRequest(target=H4ObjectRequest(query="pkg.missing"))
+        DescribeRequest(target=ObjectRequest(query="pkg.missing"))
     )
     ambiguous = service.describe(
-        DescribeRequest(target=H4ObjectRequest(query="pkg.duplicado"))
+        DescribeRequest(target=ObjectRequest(query="pkg.duplicado"))
     )
 
     assert missing.resolution.status == "not_found"
@@ -93,7 +93,7 @@ def test_describe_uses_fake_llm_after_deterministic_walk() -> None:
     )
 
     result = service.describe(
-        DescribeRequest(target=H4ObjectRequest(query="pkg.root"), no_llm=False)
+        DescribeRequest(target=ObjectRequest(query="pkg.root"), no_llm=False)
     )
 
     assert result.no_llm is False
@@ -123,8 +123,8 @@ def test_impact_consumes_dependency_walk_and_keeps_rag_out_of_selection() -> Non
 
     result = service.analyze(
         ImpactRequest(
-            target=H4ObjectRequest(query="pkg.root"),
-            direction=H4DependencyDirection.BOTH,
+            target=ObjectRequest(query="pkg.root"),
+            direction=DependencyDirection.BOTH,
             depth=1,
             include_rag=True,
         )
@@ -150,7 +150,7 @@ def test_impact_reports_cycles_and_unresolved_edges_as_risks() -> None:
         root,
         None,
         target_key="pkg.missing",
-        resolution_status=H4ResolutionStatus.UNRESOLVED,
+        resolution_status=ResolutionStatus.UNRESOLVED,
     )
     repository = _FakeRepository(
         symbols=(root, dependency),
@@ -166,7 +166,7 @@ def test_impact_reports_cycles_and_unresolved_edges_as_risks() -> None:
     )
 
     result = service.analyze(
-        ImpactRequest(target=H4ObjectRequest(query="pkg.root"), depth=2)
+        ImpactRequest(target=ObjectRequest(query="pkg.root"), depth=2)
     )
 
     assert result.walk is not None
@@ -182,19 +182,19 @@ class _FakeRepository:
     def __init__(
         self,
         *,
-        symbols: tuple[H4Symbol, ...],
-        relations: tuple[H4Relation, ...],
-        candidates: dict[str, tuple[H4RelationCandidate, ...]] | None = None,
+        symbols: tuple[TechnicalSymbol, ...],
+        relations: tuple[TechnicalRelation, ...],
+        candidates: dict[str, tuple[RelationCandidate, ...]] | None = None,
     ) -> None:
         self._symbols = {symbol.symbol_id: symbol for symbol in symbols}
         self._relations = relations
         self._candidates = candidates or {}
 
-    def get_symbol(self, symbol_id: str) -> H4Symbol | None:
+    def get_symbol(self, symbol_id: str) -> TechnicalSymbol | None:
         """Devuelve un simbolo fixture por ID."""
         return self._symbols.get(symbol_id)
 
-    def active_symbols(self) -> tuple[H4Symbol, ...]:
+    def active_symbols(self) -> tuple[TechnicalSymbol, ...]:
         """Devuelve simbolos activos ordenados."""
         return tuple(
             sorted(
@@ -212,16 +212,16 @@ class _FakeRepository:
         self,
         symbol_id: str,
         *,
-        direction: H4DependencyDirection,
-    ) -> tuple[H4Relation, ...]:
+        direction: DependencyDirection,
+    ) -> tuple[TechnicalRelation, ...]:
         """Devuelve relaciones adyacentes segun direccion calculada."""
-        if direction == H4DependencyDirection.OUTGOING:
+        if direction == DependencyDirection.OUTGOING:
             return tuple(
                 relation
                 for relation in self._relations
                 if relation.source_symbol_id == symbol_id
             )
-        if direction == H4DependencyDirection.INCOMING:
+        if direction == DependencyDirection.INCOMING:
             return tuple(
                 relation
                 for relation in self._relations
@@ -236,7 +236,7 @@ class _FakeRepository:
     def relation_candidates(
         self,
         relation_id: str,
-    ) -> tuple[H4RelationCandidate, ...]:
+    ) -> tuple[RelationCandidate, ...]:
         """Devuelve candidatos ambiguos asociados a una relacion fixture."""
         return self._candidates.get(relation_id, ())
 
@@ -303,14 +303,14 @@ def _symbol(
     *,
     technology: str = "oracle",
     container_name: str = "pkg",
-) -> H4Symbol:
-    symbol_id = h4_symbol_id(
+) -> TechnicalSymbol:
+    symbol_id = technical_symbol_id(
         normalized_name=normalized_name,
         symbol_type="procedure",
         technology=technology,
         container_name=container_name,
     )
-    return H4Symbol(
+    return TechnicalSymbol(
         symbol_id=symbol_id,
         original_name=normalized_name,
         normalized_name=normalized_name,
@@ -323,39 +323,39 @@ def _symbol(
 
 
 def _relation(
-    source: H4Symbol,
-    target: H4Symbol | None,
+    source: TechnicalSymbol,
+    target: TechnicalSymbol | None,
     *,
     target_key: str | None = None,
-    resolution_status: H4ResolutionStatus = H4ResolutionStatus.RESOLVED,
-) -> H4Relation:
+    resolution_status: ResolutionStatus = ResolutionStatus.RESOLVED,
+) -> TechnicalRelation:
     raw_target = target.normalized_name if target is not None else target_key or "missing"
     reference = _reference(source, raw_target)
-    relation_id = h4_relation_id(
+    relation_id = technical_relation_id(
         reference_id=reference.reference_id,
         relation_type="calls",
         source_symbol_id=source.symbol_id,
         target_symbol_id=target.symbol_id if target is not None else None,
         target_key=target_key,
     )
-    return H4Relation(
+    return TechnicalRelation(
         relation_id=relation_id,
         reference_id=reference.reference_id,
         source_symbol_id=source.symbol_id,
         target_symbol_id=target.symbol_id if target is not None else None,
         target_key=target.normalized_name if target is not None else target_key,
         relation_type="calls",
-        classification=H4Classification.DETECTED
-        if resolution_status == H4ResolutionStatus.RESOLVED
-        else H4Classification.TO_CONFIRM,
+        classification=EvidenceClassification.DETECTED
+        if resolution_status == ResolutionStatus.RESOLVED
+        else EvidenceClassification.TO_CONFIRM,
         resolution_status=resolution_status,
         confidence=Confidence.MEDIUM,
         evidence_file_id=1,
     )
 
 
-def _reference(source: H4Symbol, target: str) -> H4Reference:
-    reference_id = h4_reference_id(
+def _reference(source: TechnicalSymbol, target: str) -> TechnicalReference:
+    reference_id = technical_reference_id(
         source_file_id=1,
         raw_text=f"{source.normalized_name}->{target}",
         normalized_target=target,
@@ -363,7 +363,7 @@ def _reference(source: H4Symbol, target: str) -> H4Reference:
         start_line=1,
         end_line=1,
     )
-    return H4Reference(
+    return TechnicalReference(
         reference_id=reference_id,
         source_file_id=1,
         source_symbol_id=source.symbol_id,
@@ -373,7 +373,7 @@ def _reference(source: H4Symbol, target: str) -> H4Reference:
         technology=source.technology,
         detection_method="fixture",
         confidence=Confidence.MEDIUM,
-        resolution_status=H4ResolutionStatus.RESOLVED,
+        resolution_status=ResolutionStatus.RESOLVED,
         start_line=1,
         end_line=1,
     )

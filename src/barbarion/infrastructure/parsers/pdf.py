@@ -49,7 +49,7 @@ class PdfParser(BaseParser):
         if reader.is_encrypted:
             raise TextExtractionError(
                 error_code=PDF_ENCRYPTED,
-                message="El PDF esta cifrado y no se extrae en H2.",
+                message="El PDF esta cifrado y no se extrae en ingesta.",
                 relative_path=source.discovered.relative_path,
             )
 

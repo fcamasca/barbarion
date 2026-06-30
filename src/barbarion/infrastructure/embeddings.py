@@ -1,4 +1,4 @@
-"""Proveedores locales de embeddings para H3."""
+"""Proveedores locales de embeddings para RAG."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# H3 Smoke Report
+# RAG Smoke Report
 
 ## Suite
 

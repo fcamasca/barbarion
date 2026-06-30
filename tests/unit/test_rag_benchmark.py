@@ -1,4 +1,4 @@
-"""Pruebas del dataset y benchmark RAG H3."""
+"""Pruebas del dataset y benchmark RAG RAG."""
 
 import json
 from pathlib import Path
@@ -39,7 +39,7 @@ class FakeSearchService:
 
 
 def test_evaluation_dataset_has_required_categories_and_examples() -> None:
-    dataset = load_evaluation_dataset(Path("tests/fixtures/h3_rag_evaluation.json"))
+    dataset = load_evaluation_dataset(Path("tests/fixtures/rag_evaluation.json"))
 
     assert len(dataset) >= 10
     assert {question.category for question in dataset}.issubset(ALLOWED_CATEGORIES)

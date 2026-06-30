@@ -1,4 +1,4 @@
-"""Carga y validación de la configuración local de Barbarion."""
+"""Carga y validación de la configuracion local de Barbarion."""
 
 import codecs
 import os
@@ -119,7 +119,7 @@ _RETRIEVAL_MODES = frozenset({"semantic", "keyword", "hybrid"})
 
 
 class ConfigError(ValueError):
-    """Error esperado al localizar, leer o validar la configuración."""
+    """Error esperado al localizar, leer o validar la configuracion."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,7 +216,7 @@ def load_settings(
     environ: Mapping[str, str] | None = None,
     cwd: Path | None = None,
 ) -> Settings:
-    """Carga la configuración según la precedencia definida por H1."""
+    """Carga la configuracion según la precedencia definida por base."""
     working_dir = _normalize_working_dir(cwd)
     environment = os.environ if environ is None else environ
     source = _resolve_config_source(config_path, environment, working_dir)
@@ -227,7 +227,7 @@ def load_settings(
     unknown_keys = sorted(set(raw_values) - _ALLOWED_KEYS)
     if unknown_keys:
         formatted = ", ".join(unknown_keys)
-        raise ConfigError(f"Claves de configuración desconocidas: {formatted}.")
+        raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
 
     return Settings(
         domain=_require_non_empty_string(values["domain"], "domain"),
@@ -255,7 +255,7 @@ def load_settings(
 
 
 def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
-    """Devuelve la configuración en el orden estable de la salida CLI."""
+    """Devuelve la configuracion en el orden estable de la salida CLI."""
     source_kind = (
         "archivo"
         if settings.config_source is not None
@@ -358,7 +358,7 @@ def _resolve_config_source(
         return implicit_path.resolve(strict=False)
     if implicit_path.exists():
         raise ConfigError(
-            f"La ruta de configuración '{implicit_path}' no es un archivo."
+            f"La ruta de configuracion '{implicit_path}' no es un archivo."
         )
     return None
 
@@ -368,9 +368,9 @@ def _require_config_file(
     working_dir: Path,
     origin: str,
 ) -> Path:
-    """Valida una ruta de configuración indicada explícitamente."""
+    """Valida una ruta de configuracion indicada explícitamente."""
     if isinstance(raw_path, str) and not raw_path.strip():
-        raise ConfigError(f"La ruta indicada por {origin} está vacía.")
+        raise ConfigError(f"La ruta indicada por {origin} está vacia.")
 
     candidate = Path(raw_path).expanduser()
     if not candidate.is_absolute():
@@ -379,12 +379,12 @@ def _require_config_file(
 
     if not candidate.exists():
         raise ConfigError(
-            f"El archivo de configuración indicado por {origin} no existe: "
+            f"El archivo de configuracion indicado por {origin} no existe: "
             f"'{candidate}'."
         )
     if not candidate.is_file():
         raise ConfigError(
-            f"La ruta de configuración indicada por {origin} no es un archivo: "
+            f"La ruta de configuracion indicada por {origin} no es un archivo: "
             f"'{candidate}'."
         )
     return candidate
@@ -396,17 +396,17 @@ def _load_toml(source: Path) -> dict[str, object]:
         with source.open("rb") as file:
             return tomllib.load(file)
     except tomllib.TOMLDecodeError as error:
-        raise ConfigError(f"El archivo TOML '{source}' no es válido.") from error
+        raise ConfigError(f"El archivo TOML '{source}' no es valido.") from error
     except OSError as error:
         raise ConfigError(
-            f"No se pudo leer el archivo de configuración '{source}'."
+            f"No se pudo leer el archivo de configuracion '{source}'."
         ) from error
 
 
 def _require_non_empty_string(value: object, key: str) -> str:
     """Valida una cadena obligatoria y elimina espacios externos."""
     if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"La clave '{key}' debe ser una cadena no vacía.")
+        raise ConfigError(f"La clave '{key}' debe ser una cadena no vacia.")
     return value.strip()
 
 
@@ -414,7 +414,7 @@ def _resolve_path(value: object, key: str, base_dir: Path) -> Path:
     """Resuelve una ruta relativa contra el archivo que la define."""
     raw_path = _require_non_empty_string(value, key)
     if "\x00" in raw_path:
-        raise ConfigError(f"La clave '{key}' contiene una ruta no válida.")
+        raise ConfigError(f"La clave '{key}' contiene una ruta no valida.")
 
     try:
         path = Path(raw_path).expanduser()
@@ -422,7 +422,7 @@ def _resolve_path(value: object, key: str, base_dir: Path) -> Path:
             path = base_dir / path
         return path.resolve(strict=False)
     except (OSError, RuntimeError) as error:
-        raise ConfigError(f"La clave '{key}' contiene una ruta no válida.") from error
+        raise ConfigError(f"La clave '{key}' contiene una ruta no valida.") from error
 
 
 def _validate_log_level(value: object) -> str:
@@ -440,7 +440,7 @@ def _validate_timeout(value: object) -> float:
     """Valida el timeout corto utilizado para diagnosticar Ollama."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ConfigError(
-            "La clave 'ollama_timeout_seconds' debe ser un número."
+            "La clave 'ollama_timeout_seconds' debe ser un numero."
         )
     timeout = float(value)
     if not 0 < timeout <= 10:
@@ -452,7 +452,7 @@ def _validate_timeout(value: object) -> float:
 
 
 def _validate_positive_timeout(value: object, key: str) -> float:
-    """Valida timeouts operativos de H3."""
+    """Valida timeouts operativos de RAG."""
     timeout = _validate_float(value, key)
     if timeout <= 0 or timeout > 600:
         raise ConfigError(
@@ -468,11 +468,11 @@ def _validate_ollama_url(value: object) -> str:
         parsed = urlsplit(url)
         parsed_port = parsed.port
     except ValueError as error:
-        raise ConfigError("La clave 'ollama_url' contiene una URL no válida.") from error
+        raise ConfigError("La clave 'ollama_url' contiene una URL no valida.") from error
 
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ConfigError(
-            "La clave 'ollama_url' debe contener una URL HTTP(S) válida."
+            "La clave 'ollama_url' debe contener una URL HTTP(S) valida."
         )
     if parsed.username is not None or parsed.password is not None:
         raise ConfigError(
@@ -484,7 +484,7 @@ def _validate_ollama_url(value: object) -> str:
         )
     if parsed_port is not None and not 1 <= parsed_port <= 65535:
         raise ConfigError(
-            "La clave 'ollama_url' contiene un puerto no válido."
+            "La clave 'ollama_url' contiene un puerto no valido."
         )
     return url.rstrip("/")
 
@@ -548,7 +548,7 @@ def _build_ingestion_settings(value: object, base_dir: Path) -> IngestionSetting
 
 
 def _build_embeddings_settings(value: object) -> EmbeddingsSettings:
-    """Construye la configuracion de embeddings H3."""
+    """Construye la configuracion de embeddings RAG."""
     values = _merge_section(
         value,
         "embeddings",
@@ -578,7 +578,7 @@ def _build_embeddings_settings(value: object) -> EmbeddingsSettings:
 
 
 def _build_vector_store_settings(value: object) -> VectorStoreSettings:
-    """Construye la configuracion del vector store H3."""
+    """Construye la configuracion del vector store RAG."""
     values = _merge_section(
         value,
         "vector_store",
@@ -605,7 +605,7 @@ def _build_vector_store_settings(value: object) -> VectorStoreSettings:
 
 
 def _build_retrieval_settings(value: object) -> RetrievalSettings:
-    """Construye la configuracion de recuperacion H3."""
+    """Construye la configuracion de recuperacion RAG."""
     values = _merge_section(
         value,
         "retrieval",
@@ -651,7 +651,7 @@ def _build_retrieval_settings(value: object) -> RetrievalSettings:
 
 
 def _build_rag_settings(value: object) -> RagSettings:
-    """Construye la configuracion del context builder H3."""
+    """Construye la configuracion del context builder RAG."""
     values = _merge_section(value, "rag", _DEFAULT_RAG, _ALLOWED_RAG_KEYS)
     return RagSettings(
         context_token_budget=_validate_int_range(
@@ -680,7 +680,7 @@ def _build_rag_settings(value: object) -> RagSettings:
 
 
 def _build_llm_settings(value: object) -> LlmSettings:
-    """Construye la configuracion del LLM local H3."""
+    """Construye la configuracion del LLM local RAG."""
     values = _merge_section(value, "llm", _DEFAULT_LLM, _ALLOWED_LLM_KEYS)
     return LlmSettings(
         provider=_validate_choice(values["provider"], "llm.provider", {"ollama"}),
@@ -699,7 +699,7 @@ def _merge_section(
     defaults: dict[str, object],
     allowed_keys: frozenset[str],
 ) -> dict[str, object]:
-    """Mezcla defaults y una seccion TOML H3 validando claves."""
+    """Mezcla defaults y una seccion TOML RAG validando claves."""
     if value is None:
         raw_section: dict[str, object] = {}
     elif isinstance(value, dict):

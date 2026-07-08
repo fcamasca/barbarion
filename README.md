@@ -54,7 +54,7 @@ Este flujo deja una instalación local lista para hacer la primera consulta RAG 
 ### 1. Crear entorno virtual
 
 ```bash
-git clone https://github.com/tu-org/barbarion.git
+git clone https://github.com/fcamasca/barbarion.git
 cd barbarion
 python -m venv .venv
 ```

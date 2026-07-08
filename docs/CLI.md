@@ -73,7 +73,7 @@ Offline significa sin servicios cloud. Barbarion esta disenado para operar local
 
 ### Generales
 
-#### version
+### version
 
 Proposito: mostrar la version instalada y finalizar sin inicializar recursos.
 
@@ -93,7 +93,7 @@ barbarion --version
 
 Usalo para confirmar que el entorno ejecuta la version esperada. No modifica SQLite, no requiere embeddings y no requiere LLM. Codigo de salida esperado: `0`.
 
-#### help
+### help
 
 Proposito: mostrar ayuda generada por la CLI.
 
@@ -115,7 +115,7 @@ barbarion search --help
 
 Usalo para consultar la ayuda corta disponible en la instalacion actual. No modifica SQLite, no requiere embeddings y no requiere LLM. Codigo de salida esperado: `0`.
 
-#### config
+### config
 
 Proposito: consultar la configuracion efectiva.
 
@@ -136,7 +136,7 @@ barbarion config show
 
 Usalo para verificar rutas, modelos y parametros antes de ejecutar ingesta o RAG. No modifica SQLite, no requiere embeddings y no requiere LLM. Codigos de salida: `0` si la configuracion es valida, `2` si hay error de configuracion.
 
-#### doctor
+### doctor
 
 Proposito: inicializar recursos locales minimos y diagnosticar el entorno.
 
@@ -158,7 +158,7 @@ Usalo como primer comando de un proyecto local. Crea directorios configurados, S
 
 ### Ingesta
 
-#### ingest
+### ingest
 
 Proposito: leer corpus local autorizado y persistir metadata, documentos y chunks en SQLite, o consultar estadisticas de ingesta.
 
@@ -188,7 +188,7 @@ Usalo despues de `doctor` y antes de `index` o `analyze`. Modifica SQLite salvo 
 
 ### RAG
 
-#### Notas operativas RAG
+### Notas operativas RAG
 
 `--mode keyword` usa coincidencia textual. Es la mejor opcion cuando conoces el identificador exacto: variables, tablas, procedimientos, funciones, clases, eventos, codigos de negocio o literales del corpus.
 
@@ -218,7 +218,7 @@ Errores operativos frecuentes:
 - Evidencia insuficiente: `ask` declara que no hay fuentes suficientes y no inventa respuesta.
 - Citas invalidas: la respuesta candidata se rechaza antes de mostrarse como valida.
 
-#### index
+### index
 
 Proposito: indexar incrementalmente chunks vigentes para recuperacion RAG.
 
@@ -241,7 +241,7 @@ barbarion index
 
 Usalo despues de `ingest`. Modifica SQLite y el almacenamiento vectorial, salvo en `--dry-run`. Requiere embeddings en ejecucion real; no requiere LLM. Codigos de salida: `0` si termina sin errores, `1` ante error operativo o chunks fallidos, `130` si se interrumpe.
 
-#### reindex
+### reindex
 
 Proposito: reconstruir total o parcialmente el indice RAG.
 
@@ -271,7 +271,7 @@ barbarion reindex --chunk-id chunk-abc
 
 Usalo cuando cambia el modelo de embeddings, la version de indice o quieres reconstruir un subconjunto. Requiere al menos uno de `--full`, `--path`, `--document` o `--chunk-id`. Modifica SQLite y vectores salvo en `--dry-run`. Requiere embeddings en ejecucion real; no requiere LLM. Codigos de salida: `0`, `1`, `2` o `130` segun resultado.
 
-#### search
+### search
 
 Proposito: recuperar evidencia RAG local.
 
@@ -302,7 +302,7 @@ barbarion search "logica de descuentos" --mode semantic --format json
 
 Usalo para encontrar evidencia antes de preguntar o para inspeccion tecnica directa. Registra metricas de consulta en SQLite. `keyword` no requiere embeddings; `semantic` e `hybrid` requieren embeddings. No requiere LLM. Codigos de salida: `0` si ejecuta la busqueda, `1` si falta SQLite o hay error operativo, `2` si los argumentos son invalidos.
 
-#### ask
+### ask
 
 Proposito: responder una pregunta usando contexto RAG local, con evidencia y citas.
 
@@ -324,7 +324,7 @@ barbarion ask "donde se calcula el total?" --format markdown
 
 Usalo cuando necesitas una respuesta sintetizada y trazable. Registra metricas de consulta/contexto en SQLite. `keyword --no-llm` no requiere embeddings ni LLM. Sin `--no-llm`, requiere LLM local. Codigos de salida: `0` si la respuesta pasa validacion de citas, `1` si hay error operativo, error LLM o citas invalidas, `2` si los argumentos son invalidos, `130` si se interrumpe.
 
-#### embeddings
+### embeddings
 
 Proposito: consultar manifests, versiones, conteos y errores de indexacion RAG.
 
@@ -353,7 +353,7 @@ Usalo para diagnosticar el estado del indice. No modifica SQLite, no requiere em
 
 ### Reverse Engineering
 
-#### analyze
+### analyze
 
 Proposito: extraer simbolos y relaciones desde chunks vigentes.
 
@@ -380,7 +380,7 @@ barbarion analyze --path sources/oracle --path sources/powerbuilder
 
 Usalo despues de `ingest` para poblar el catalogo tecnico H4. Modifica SQLite salvo con `--dry-run`. No requiere embeddings ni LLM. Codigos de salida: `0`, `1` o `130` segun resultado.
 
-#### inventory
+### inventory
 
 Proposito: consultar inventario tecnico persistido.
 
@@ -406,7 +406,7 @@ barbarion inventory --name order --output reports/inventory.md --overwrite
 
 Usalo para revisar el catalogo tecnico sin reanalizar el corpus. No modifica SQLite, no requiere embeddings ni LLM. Codigos de salida: `0`, `1` o `2` segun resultado.
 
-#### describe
+### describe
 
 Proposito: generar una ficha tecnica de un componente.
 
@@ -437,7 +437,7 @@ barbarion describe order_total --id oracle:procedure:order_total
 
 Usalo para explicar un componente a partir de simbolos y relaciones persistidas. No modifica SQLite. No requiere embeddings salvo que el servicio use RAG por `--include-rag`; requiere LLM solo con `--with-llm`. Codigos de salida: `0`, `1` o `2` segun resultado.
 
-#### impact
+### impact
 
 Proposito: analizar impacto tecnico desde relaciones persistidas.
 
@@ -470,7 +470,7 @@ Usalo para estimar consumidores, dependencias, cruces de tecnologia y riesgos. N
 
 ### Spec Mode
 
-#### Notas operativas Spec Mode
+### Notas operativas Spec Mode
 
 Spec Mode genera una especificacion Markdown editable para un cambio funcional. No modifica codigo fuente, no ejecuta tareas y no reemplaza la revision humana. El pipeline operativo de `spec create` es:
 
@@ -490,7 +490,7 @@ Errores operativos frecuentes:
 - Carpeta existente: `spec create` rechaza sobrescritura por defecto; usa `--overwrite` solo cuando quieras reemplazar los cuatro Markdown esperados.
 - Spec editada manualmente: ejecuta `spec validate` antes de usarla como entrada de revision humana.
 
-#### spec create
+### spec create
 
 Proposito: crear una spec Markdown H5 desde un requerimiento funcional.
 
@@ -522,7 +522,7 @@ barbarion spec create "Agregar validacion de limite de credito" --output specs/l
 
 Escribe `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` si Review y validacion pasan. Codigos de salida: `0` si escribe correctamente, `1` ante error operativo, Review fallido o validacion fallida, `2` si los argumentos son invalidos.
 
-#### spec validate
+### spec validate
 
 Proposito: validar una spec Markdown H5 existente, generada o editada manualmente.
 
@@ -550,7 +550,7 @@ No ejecuta H3, H4, Review ni sintesis; solo aplica `SpecValidator` sobre archivo
 
 ### Observabilidad
 
-#### stats
+### stats
 
 Proposito: mostrar estadisticas locales de ingesta, RAG y reverse engineering.
 
@@ -573,7 +573,7 @@ barbarion stats --format json
 
 Usalo para revisar estado general sin mutar la base. No modifica SQLite, no requiere embeddings ni LLM. Si no existe SQLite, informa el estado y devuelve `0`.
 
-#### generate-report
+### generate-report
 
 Proposito: generar evidencia tecnica RAG local.
 

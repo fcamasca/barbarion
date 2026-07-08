@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from barbarion.application.reverse_engineering import ImpactRequest, ObjectRequest
@@ -33,9 +34,66 @@ from barbarion.domain.spec_mode import (
     SpecDraft,
     SpecRequest,
     ValidationSeverity,
+    ValidationIssue,
     evidence_id,
     spec_draft_id,
 )
+
+
+SPEC_REQUIRED_DOCUMENTS = (
+    "requirements.md",
+    "design.md",
+    "tasks.md",
+    "test-plan.md",
+)
+
+SPEC_REQUIRED_SECTIONS = {
+    "requirements.md": (
+        "Objetivo",
+        "Alcance",
+        "Fuera de alcance",
+        "Historias de usuario",
+        "Requisitos funcionales",
+        "Requisitos no funcionales",
+        "Supuestos",
+        "Preguntas abiertas",
+        "Evidencia",
+        "Trazabilidad",
+    ),
+    "design.md": (
+        "Contexto",
+        "Arquitectura funcional",
+        "Integracion con sistema existente",
+        "Flujo propuesto",
+        "Componentes afectados",
+        "Cambios propuestos",
+        "Modelo de datos si aplica",
+        "CLI o interfaz si aplica",
+        "Manejo de errores",
+        "Decisiones tecnicas",
+        "Riesgos y limites",
+        "Diagramas Mermaid",
+        "Evidencia",
+    ),
+    "tasks.md": (
+        "Reglas",
+        "Tareas implementables",
+        "Orden de ejecucion",
+        "Trazabilidad",
+        "Ultima tarea de validacion y aceptacion integral",
+    ),
+    "test-plan.md": (
+        "Estrategia",
+        "Unitarias",
+        "Integracion",
+        "CLI",
+        "Regresion",
+        "Casos negativos",
+        "Golden files si aplica",
+        "Evidencia esperada",
+        "Matriz requisito-prueba",
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +335,95 @@ class SpecReviewer:
         _review_projected_items(draft, issues)
         _review_minimum_evidence(draft, issues)
         return SpecReviewResult(draft=draft, issues=tuple(issues))
+
+
+@dataclass(frozen=True, slots=True)
+class SpecValidationResult:
+    """Resultado de validar documentos Markdown H5 ya renderizados."""
+
+    issues: tuple[ValidationIssue, ...] = ()
+
+    @property
+    def valid(self) -> bool:
+        """Indica si no hay errores estructurales."""
+        return not any(issue.severity == ValidationSeverity.ERROR for issue in self.issues)
+
+    @property
+    def errors(self) -> tuple[ValidationIssue, ...]:
+        """Errores bloqueantes."""
+        return tuple(
+            issue for issue in self.issues if issue.severity == ValidationSeverity.ERROR
+        )
+
+    @property
+    def warnings(self) -> tuple[ValidationIssue, ...]:
+        """Advertencias no bloqueantes."""
+        return tuple(
+            issue for issue in self.issues if issue.severity == ValidationSeverity.WARNING
+        )
+
+    def to_text(self) -> str:
+        """Renderiza issues como texto accionable para CLI."""
+        if self.valid and not self.warnings:
+            return "Spec valida."
+        lines = ["Spec valida con advertencias." if self.valid else "Spec invalida."]
+        for issue in self.issues:
+            location = f" en {issue.location}" if issue.location else ""
+            related = (
+                f" ({', '.join(issue.related_ids)})" if issue.related_ids else ""
+            )
+            lines.append(
+                f"- {issue.severity.value} {issue.code}{location}: "
+                f"{issue.message}{related}"
+            )
+        return "\n".join(lines)
+
+    def to_jsonable(self) -> dict[str, object]:
+        """Devuelve una estructura serializable a JSON."""
+        return {
+            "valid": self.valid,
+            "issues": [
+                {
+                    "severity": issue.severity.value,
+                    "code": issue.code,
+                    "message": issue.message,
+                    "location": issue.location,
+                    "related_ids": list(issue.related_ids),
+                }
+                for issue in self.issues
+            ],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SpecValidator:
+    """Valida estructura Markdown, IDs, citas y trazabilidad documental.
+
+    Esta clase no infiere reglas de negocio ni vuelve a evaluar evidencia
+    funcional; ese limite pertenece al Review previo sobre `SpecDraft`.
+    """
+
+    def validate(self, documents: Mapping[str, str]) -> SpecValidationResult:
+        """Valida los cuatro documentos Markdown H5 renderizados."""
+        issues: list[ValidationIssue] = []
+        normalized = {str(name): content for name, content in documents.items()}
+        _validate_required_documents(normalized, issues)
+        for filename in SPEC_REQUIRED_DOCUMENTS:
+            content = normalized.get(filename)
+            if content is None:
+                continue
+            _validate_document_text(filename, content, issues)
+            _validate_required_sections(filename, content, issues)
+        if issues and any(
+            issue.code == "H5_SPEC_DOCUMENT_MISSING" for issue in issues
+        ):
+            return SpecValidationResult(tuple(issues))
+        _validate_ids(normalized, issues)
+        _validate_citations(normalized, issues)
+        _validate_traceability(normalized, issues)
+        _validate_single_acceptance_task(normalized.get("tasks.md", ""), issues)
+        _validate_detected_lines_have_evidence(normalized, issues)
+        return SpecValidationResult(tuple(issues))
 
 
 @dataclass(frozen=True, slots=True)
@@ -753,6 +900,396 @@ def _draft_text_sections(draft: SpecDraft) -> tuple[tuple[str, tuple[str, ...]],
 def _citation_ids(value: str) -> tuple[str, ...]:
     """Extrae citas H5 con formato `[F<hex>]`."""
     return tuple(re.findall(r"\[(F[0-9a-f]{12})\]", value))
+
+
+def _validate_required_documents(
+    documents: Mapping[str, str],
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida presencia de los cuatro documentos H5."""
+    for filename in SPEC_REQUIRED_DOCUMENTS:
+        if filename not in documents:
+            issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.ERROR,
+                    code="H5_SPEC_DOCUMENT_MISSING",
+                    message=f"Falta el documento requerido {filename}.",
+                    location=filename,
+                )
+            )
+
+
+def _validate_document_text(
+    filename: str,
+    content: str,
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida contenido minimo y version de plantilla."""
+    if not isinstance(content, str) or not content.strip():
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_DOCUMENT_EMPTY",
+                message=f"El documento {filename} esta vacio.",
+                location=filename,
+            )
+        )
+        return
+    if "template_version: spec.v1" not in content:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_TEMPLATE_VERSION_MISSING",
+                message="Falta metadata template_version: spec.v1.",
+                location=filename,
+            )
+        )
+
+
+def _validate_required_sections(
+    filename: str,
+    content: str,
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida headings obligatorios de cada documento."""
+    headings = set(_markdown_h2(content))
+    for section in SPEC_REQUIRED_SECTIONS[filename]:
+        if section not in headings:
+            issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.ERROR,
+                    code="H5_SPEC_SECTION_MISSING",
+                    message=f"Falta la seccion obligatoria {section}.",
+                    location=f"{filename}#{section}",
+                )
+            )
+
+
+def _validate_ids(
+    documents: Mapping[str, str],
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida IDs duplicados de requisitos, tareas, pruebas y evidencia."""
+    for kind, definitions in (
+        ("REQ", _requirement_definitions(documents.get("requirements.md", ""))),
+        ("TASK", _task_definitions(documents.get("tasks.md", ""))),
+        ("TEST", _test_definitions(documents.get("test-plan.md", ""))),
+    ):
+        duplicated = tuple(
+            item_id for item_id, count in definitions.items() if count > 1
+        )
+        if duplicated:
+            issues.append(
+                ValidationIssue(
+                    severity=ValidationSeverity.ERROR,
+                    code=f"H5_SPEC_{kind}_ID_DUPLICATED",
+                    message=f"Hay IDs {kind} definidos mas de una vez.",
+                    related_ids=duplicated,
+                )
+            )
+    duplicated_evidence = _duplicated_evidence_ids(documents)
+    if duplicated_evidence:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_EVIDENCE_ID_DUPLICATED",
+                message="Hay IDs de evidencia definidos mas de una vez.",
+                related_ids=duplicated_evidence,
+            )
+        )
+
+
+def _validate_citations(
+    documents: Mapping[str, str],
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida que las citas H5 existan y que la evidencia se use fuera del bloque."""
+    evidence_ids = _evidence_ids(documents)
+    all_citations: list[tuple[str, str]] = []
+    external_citations: set[str] = set()
+    for filename, content in documents.items():
+        evidence_ranges = _section_ranges(content, "Evidencia") + _section_ranges(
+            content,
+            "Evidencia esperada",
+        )
+        for match in re.finditer(r"\[(F[0-9a-f]{12})\]", content):
+            citation = match.group(1)
+            all_citations.append((filename, citation))
+            if not _inside_any(match.start(), evidence_ranges):
+                external_citations.add(citation)
+
+    missing = tuple(
+        sorted(
+            {
+                citation
+                for _, citation in all_citations
+                if citation not in evidence_ids
+            }
+        )
+    )
+    if missing:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_CITATION_MISSING",
+                message="Hay citas que no existen en bloques de evidencia.",
+                related_ids=missing,
+            )
+        )
+
+    unused = tuple(sorted(evidence_ids - external_citations))
+    if unused:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.WARNING,
+                code="H5_SPEC_EVIDENCE_UNUSED",
+                message="Hay evidencia declarada que no se cita fuera de evidencia.",
+                related_ids=unused,
+            )
+        )
+
+
+def _validate_traceability(
+    documents: Mapping[str, str],
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida enlaces documentales entre REQ, TASK y TEST."""
+    requirements = set(_requirement_definitions(documents.get("requirements.md", "")))
+    tasks = set(_task_definitions(documents.get("tasks.md", "")))
+    tests = set(_test_definitions(documents.get("test-plan.md", "")))
+
+    if not requirements:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_REQUIREMENT_MISSING",
+                message="No se encontro ningun requisito REQ-NNN.",
+                location="requirements.md",
+            )
+        )
+    task_requirements = _task_requirement_links(documents.get("tasks.md", ""))
+    test_requirements = _test_requirement_links(documents.get("test-plan.md", ""))
+    orphan_tasks = tuple(sorted(task for task in tasks if task not in task_requirements))
+    orphan_tests = tuple(sorted(test for test in tests if test not in test_requirements))
+    if orphan_tasks:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_TASK_WITHOUT_REQUIREMENT",
+                message="Hay tareas sin enlace documental a requisito.",
+                location="tasks.md",
+                related_ids=orphan_tasks,
+            )
+        )
+    if orphan_tests:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_TEST_WITHOUT_REQUIREMENT",
+                message="Hay pruebas sin enlace documental a requisito.",
+                location="test-plan.md",
+                related_ids=orphan_tests,
+            )
+        )
+
+    missing_req_links = tuple(
+        sorted(
+            {
+                req_id
+                for req_id in (*task_requirements.values(), *test_requirements.values())
+                if req_id not in requirements
+            }
+        )
+    )
+    if missing_req_links:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_REQUIREMENT_REFERENCE_MISSING",
+                message="Hay enlaces a requisitos no definidos.",
+                related_ids=missing_req_links,
+            )
+        )
+
+
+def _validate_single_acceptance_task(
+    tasks_content: str,
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida que solo la ultima tarea concentre aceptacion integral."""
+    task_matches = tuple(re.finditer(r"^###\s+(TASK-\d{3})\s+-\s+(.+)$", tasks_content, re.M))
+    acceptance_tasks = tuple(
+        match.group(1)
+        for match in task_matches
+        if "aceptacion integral" in _normalize_text(match.group(2))
+    )
+    if len(acceptance_tasks) != 1:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_ACCEPTANCE_TASK_COUNT",
+                message="Debe existir una unica tarea de aceptacion integral.",
+                location="tasks.md",
+                related_ids=acceptance_tasks,
+            )
+        )
+        return
+    if task_matches and task_matches[-1].group(1) != acceptance_tasks[0]:
+        issues.append(
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code="H5_SPEC_ACCEPTANCE_TASK_NOT_LAST",
+                message="La tarea de aceptacion integral debe ser la ultima.",
+                location="tasks.md",
+                related_ids=acceptance_tasks,
+            )
+        )
+
+
+def _validate_detected_lines_have_evidence(
+    documents: Mapping[str, str],
+    issues: list[ValidationIssue],
+) -> None:
+    """Valida marcas `detectado` sin volver a razonar el contenido."""
+    for filename, content in documents.items():
+        evidence_ranges = _section_ranges(content, "Evidencia") + _section_ranges(
+            content,
+            "Evidencia esperada",
+        )
+        offset = 0
+        for line_number, line in enumerate(content.splitlines(), start=1):
+            start = offset
+            offset += len(line) + 1
+            if _inside_any(start, evidence_ranges):
+                continue
+            normalized = _normalize_text(line)
+            if not re.search(r"\bdetectado\b", normalized):
+                continue
+            if not re.search(r"\[F[0-9a-f]{12}\]", line):
+                issues.append(
+                    ValidationIssue(
+                        severity=ValidationSeverity.ERROR,
+                        code="H5_SPEC_DETECTED_WITHOUT_EVIDENCE",
+                        message="Una linea marcada como detectado no cita evidencia.",
+                        location=f"{filename}:{line_number}",
+                    )
+                )
+
+
+def _markdown_h2(content: str) -> tuple[str, ...]:
+    """Extrae headings H2 en orden."""
+    return tuple(
+        _compact_whitespace(match.group(1))
+        for match in re.finditer(r"^##\s+(.+?)\s*$", content, re.M)
+    )
+
+
+def _requirement_definitions(content: str) -> dict[str, int]:
+    """Cuenta requisitos definidos en `Requisitos funcionales`."""
+    counts: dict[str, int] = {}
+    for section_start, section_end in _section_ranges(content, "Requisitos funcionales"):
+        section = content[section_start:section_end]
+        for requirement_id in re.findall(r"^\s*-\s+(REQ-\d{3})\b", section, re.M):
+            counts[requirement_id] = counts.get(requirement_id, 0) + 1
+    return counts
+
+
+def _task_definitions(content: str) -> dict[str, int]:
+    """Cuenta tareas definidas por headings `### TASK-NNN`."""
+    counts: dict[str, int] = {}
+    for task_id in re.findall(r"^###\s+(TASK-\d{3})\b", content, re.M):
+        counts[task_id] = counts.get(task_id, 0) + 1
+    return counts
+
+
+def _test_definitions(content: str) -> dict[str, int]:
+    """Cuenta pruebas definidas en matriz requisito-prueba."""
+    counts: dict[str, int] = {}
+    for line in content.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        if re.fullmatch(r"REQ-\d{3}", cells[0]) and re.fullmatch(r"TEST-\d{3}", cells[1]):
+            counts[cells[1]] = counts.get(cells[1], 0) + 1
+    return counts
+
+
+def _evidence_ids(documents: Mapping[str, str]) -> set[str]:
+    """Devuelve IDs de evidencia definidos en cualquier bloque de evidencia."""
+    ids: set[str] = set()
+    for content in documents.values():
+        for start, end in _evidence_ranges(content):
+            section = content[start:end]
+            ids.update(re.findall(r"^\s*-\s+\[(F[0-9a-f]{12})\]", section, re.M))
+    return ids
+
+
+def _duplicated_evidence_ids(documents: Mapping[str, str]) -> tuple[str, ...]:
+    """Detecta duplicados de evidencia dentro de un mismo documento."""
+    duplicated: set[str] = set()
+    for content in documents.values():
+        counts: dict[str, int] = {}
+        ranges = _evidence_ranges(content)
+        for start, end in ranges:
+            section = content[start:end]
+            for evidence_id in re.findall(r"^\s*-\s+\[(F[0-9a-f]{12})\]", section, re.M):
+                counts[evidence_id] = counts.get(evidence_id, 0) + 1
+        duplicated.update(
+            evidence_id for evidence_id, count in counts.items() if count > 1
+        )
+    return tuple(sorted(duplicated))
+
+
+def _evidence_ranges(content: str) -> tuple[tuple[int, int], ...]:
+    """Devuelve todos los rangos de evidencia reconocidos."""
+    return _section_ranges(content, "Evidencia") + _section_ranges(
+        content,
+        "Evidencia esperada",
+    )
+
+
+def _section_ranges(content: str, section_name: str) -> tuple[tuple[int, int], ...]:
+    """Devuelve rangos de una seccion H2 hasta el siguiente H2."""
+    ranges: list[tuple[int, int]] = []
+    pattern = re.compile(rf"^##\s+{re.escape(section_name)}\s*$", re.M)
+    for match in pattern.finditer(content):
+        next_heading = re.search(r"^##\s+", content[match.end():], re.M)
+        end = match.end() + next_heading.start() if next_heading else len(content)
+        ranges.append((match.start(), end))
+    return tuple(ranges)
+
+
+def _inside_any(position: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+    """Indica si una posicion cae dentro de alguno de los rangos."""
+    return any(start <= position < end for start, end in ranges)
+
+
+def _task_requirement_links(content: str) -> dict[str, str]:
+    """Extrae enlace TASK -> REQ desde bloques de tareas."""
+    links: dict[str, str] = {}
+    task_blocks = tuple(re.finditer(r"^###\s+(TASK-\d{3})\s+-\s+.+$", content, re.M))
+    for index, match in enumerate(task_blocks):
+        start = match.end()
+        end = task_blocks[index + 1].start() if index + 1 < len(task_blocks) else len(content)
+        block = content[start:end]
+        req_match = re.search(r"\*\*Requisito:\*\*\s*(REQ-\d{3})", block)
+        if req_match:
+            links[match.group(1)] = req_match.group(1)
+    return links
+
+
+def _test_requirement_links(content: str) -> dict[str, str]:
+    """Extrae enlace TEST -> REQ desde matriz requisito-prueba."""
+    links: dict[str, str] = {}
+    for line in content.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        req_match = re.fullmatch(r"REQ-\d{3}", cells[0])
+        test_match = re.fullmatch(r"TEST-\d{3}", cells[1])
+        if req_match and test_match:
+            links[test_match.group(0)] = req_match.group(0)
+    return links
 
 
 _ACTION_ALIASES: dict[str, str] = {

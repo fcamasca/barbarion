@@ -76,7 +76,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T07 - Implementar validacion de estructura, IDs y citas
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** detectar specs incompletas o sin trazabilidad antes de considerarlas generadas.  
 **Descripcion:** Validar documentos renderizados requeridos, secciones, IDs duplicados, enlaces requisito-diseno-tarea-prueba, citas `[F#]`, conclusiones detectadas sin fuente y tarea final unica de aceptacion. Mantener coherencia con el Review interno, pero aplicado a archivos ya generados o editados.
 **Dependencias:** H5-T06.  

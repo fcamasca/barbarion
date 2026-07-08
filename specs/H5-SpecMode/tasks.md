@@ -96,7 +96,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T09 - Exponer CLI `spec validate`
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** validar una spec existente desde la CLI.  
 **Descripcion:** Agregar `barbarion spec validate RUTA [--strict] [--format text|json]` usando el mismo validador interno. Cubrir errores esperados, formato JSON y codigos de salida.  
 **Dependencias:** H5-T07.  

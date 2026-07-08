@@ -104,6 +104,7 @@ from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.infrastructure.markdown import (
     SafeSpecWriter,
+    SpecDocumentReader,
     render_component_markdown,
     render_impact_markdown,
     render_inventory_markdown,
@@ -762,6 +763,32 @@ def _run_spec_create(args: argparse.Namespace) -> int:
         return 1
     _render_spec_create_summary(result)
     return 0
+
+
+def _run_spec_validate(args: argparse.Namespace) -> int:
+    """Valida una spec H5 existente sin regenerarla ni reinterpretarla."""
+    try:
+        documents = SpecDocumentReader().read(Path(args.path))
+    except (OSError, UnicodeError) as error:
+        print(f"Error operativo: {error}", file=sys.stderr)
+        return 1
+
+    result = SpecValidator().validate(documents)
+    strict_valid = result.valid and (not args.strict or not result.warnings)
+
+    if args.format == "json":
+        payload = result.to_jsonable()
+        payload["strict"] = args.strict
+        payload["strict_valid"] = strict_valid
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(result.to_text())
+        if result.valid and args.strict and result.warnings:
+            print(
+                "Modo strict: advertencias tratadas como error.",
+                file=sys.stderr,
+            )
+    return 0 if strict_valid else 1
 
 
 def _run_search(args: argparse.Namespace) -> int:
@@ -2934,6 +2961,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="muestra metricas operativas en stderr",
     )
     spec_create_parser.set_defaults(handler=_run_spec_create)
+
+    spec_validate_parser = spec_commands.add_parser(
+        "validate",
+        help="valida una spec Markdown H5 existente",
+        description="Valida una carpeta de spec Markdown H5 ya renderizada.",
+        add_help=False,
+    )
+    _add_help_option(spec_validate_parser)
+    spec_validate_parser.add_argument(
+        "path",
+        metavar="RUTA",
+        help="carpeta que contiene requirements.md, design.md, tasks.md y test-plan.md",
+    )
+    spec_validate_parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="trata advertencias del validador como codigo de salida fallido",
+    )
+    spec_validate_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato del reporte de validacion",
+    )
+    spec_validate_parser.set_defaults(handler=_run_spec_validate)
 
     search_parser = commands.add_parser(
         "search",

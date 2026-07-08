@@ -336,6 +336,38 @@ class SafeSpecWriter:
         return tuple(written)
 
 
+class SpecDocumentReader:
+    """Lee los documentos Markdown esperados de una spec H5 existente."""
+
+    def read(self, input_dir: Path) -> dict[str, str]:
+        """Carga archivos Markdown H5 desde un directorio.
+
+        Los documentos faltantes se omiten para que `SpecValidator` reporte la
+        inconsistencia con sus codigos estructurales. Las rutas que no son
+        carpetas o entradas que deberian ser archivos se tratan como errores de
+        operacion.
+        """
+        resolved_dir = input_dir.expanduser().resolve(strict=False)
+        if not resolved_dir.exists():
+            raise FileNotFoundError(f"La carpeta de spec no existe: {resolved_dir}")
+        if not resolved_dir.is_dir():
+            raise NotADirectoryError(
+                f"La ruta de spec no es un directorio: {resolved_dir}"
+            )
+
+        documents: dict[str, str] = {}
+        for filename in SPEC_MARKDOWN_FILES:
+            path = resolved_dir / filename
+            if not path.exists():
+                continue
+            if not path.is_file():
+                raise IsADirectoryError(
+                    f"La entrada esperada no es un archivo: {path}"
+                )
+            documents[filename] = path.read_text(encoding="utf-8")
+        return documents
+
+
 def safe_spec_slug(value: str) -> str:
     """Construye un slug seguro para carpetas de spec."""
     normalized = unicodedata.normalize("NFKD", value)

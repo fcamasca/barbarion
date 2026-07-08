@@ -11,6 +11,7 @@ from barbarion.domain.spec_mode import (
     EvidenceSourceType,
     ExistingRule,
     RequirementIntent,
+    ReviewIssue,
     SpecConclusionKind,
     SpecDraft,
     SpecItemKind,
@@ -206,6 +207,21 @@ def test_validation_issue_keeps_related_ids() -> None:
     assert issue.related_ids == ("REQ-001", "Fabcdef123456")
 
 
+def test_review_issue_marks_draft_stage_and_degradation() -> None:
+    issue = ReviewIssue(
+        severity=ValidationSeverity.WARNING,
+        code="H5_REVIEW_INSUFFICIENT_EVIDENCE",
+        message="El requisito debe degradarse a evidencia insuficiente.",
+        draft_section="requirements",
+        related_ids=("REQ-001", "Fabcdef123456"),
+        degradable=True,
+    )
+
+    assert issue.draft_section == "requirements"
+    assert issue.degradable is True
+    assert issue.related_ids == ("REQ-001", "Fabcdef123456")
+
+
 @pytest.mark.parametrize(
     "factory",
     [
@@ -241,6 +257,12 @@ def test_validation_issue_keeps_related_ids() -> None:
             severity=ValidationSeverity.WARNING,
             code="",
             message="Mensaje",
+        ),
+        lambda: ReviewIssue(
+            severity=ValidationSeverity.ERROR,
+            code="H5_REVIEW_EMPTY_SECTION",
+            message="Mensaje",
+            draft_section="",
         ),
     ],
 )

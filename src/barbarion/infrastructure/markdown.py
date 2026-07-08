@@ -14,11 +14,24 @@ from barbarion.domain.reverse_engineering import (
     InventoryItem,
     TechnicalSymbol,
 )
+from barbarion.domain.spec_mode import (
+    AffectedComponent,
+    EvidenceItem as SpecEvidenceItem,
+    ExistingRule,
+    SpecDraft,
+)
 
 
 INVENTORY_TEMPLATE_VERSION = "inventory.v1"
 COMPONENT_TEMPLATE_VERSION = "component.v1"
 IMPACT_TEMPLATE_VERSION = "impact.v1"
+SPEC_TEMPLATE_VERSION = "spec.v1"
+SPEC_MARKDOWN_FILES = (
+    "requirements.md",
+    "design.md",
+    "tasks.md",
+    "test-plan.md",
+)
 
 
 def render_inventory_markdown(
@@ -235,6 +248,30 @@ def render_impact_markdown(
     return "\n".join(lines)
 
 
+def render_spec_markdown(
+    draft: SpecDraft,
+    *,
+    generated_at: str | None = None,
+) -> dict[str, str]:
+    """Renderiza los cuatro documentos Markdown H5 `spec.v1`.
+
+    Args:
+        draft: Modelo intermedio revisado.
+        generated_at: Marca temporal opcional. Si no se informa, se usa UTC.
+
+    Returns:
+        Diccionario con `requirements.md`, `design.md`, `tasks.md` y
+        `test-plan.md`.
+    """
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+    return {
+        "requirements.md": _render_spec_requirements(draft, generated_at),
+        "design.md": _render_spec_design(draft, generated_at),
+        "tasks.md": _render_spec_tasks(draft, generated_at),
+        "test-plan.md": _render_spec_test_plan(draft, generated_at),
+    }
+
+
 def write_text_artifact(
     output_path: Path,
     content: str,
@@ -307,6 +344,307 @@ def safe_impact_filename(impact: ImpactAnalysis) -> str:
     symbol = impact.resolution.symbol
     name = symbol.normalized_name if symbol is not None else impact.resolution.query
     return f"impact-{_slug(name)}.md"
+
+
+def _render_spec_requirements(draft: SpecDraft, generated_at: str) -> str:
+    requirement = _primary_requirement(draft)
+    lines = [
+        f"# Requisitos - {_spec_title(draft)}",
+        "",
+        "## Metadata",
+        f"- generado_en: {generated_at}",
+        f"- template_version: {SPEC_TEMPLATE_VERSION}",
+        f"- draft_id: {draft.draft_id}",
+        f"- modo: {draft.request.retrieval_mode}",
+        "",
+        "## Objetivo",
+        f"- {draft.intent.original_text}",
+        "",
+        "## Alcance",
+        f"- {requirement}",
+        "",
+        "## Fuera de alcance",
+        "- generacion automatica de codigo",
+        "- aprobacion funcional sin revision humana",
+        "",
+        "## Historias de usuario",
+        f"- HU-001 Como mantenedor, quiero {draft.intent.original_text} para evolucionar el sistema con trazabilidad.",
+        "",
+        "## Requisitos funcionales",
+    ]
+    lines.extend(_render_requirements(draft))
+    lines.extend(
+        [
+            "",
+            "## Requisitos no funcionales",
+            "- RNF-001 Mantener trazabilidad entre requisitos, decisiones, tareas, pruebas y evidencia.",
+            "- RNF-002 Generar Markdown estable y editable.",
+            "",
+            "## Supuestos",
+        ]
+    )
+    lines.extend(_list_or_empty(draft.assumptions, "sin supuestos declarados"))
+    lines.extend(["", "## Preguntas abiertas"])
+    lines.extend(_list_or_empty(draft.open_questions, "sin preguntas abiertas"))
+    lines.extend(["", "## Evidencia"])
+    lines.extend(_spec_evidence_lines(draft.evidence))
+    lines.extend(
+        [
+            "",
+            "## Trazabilidad",
+            "- REQ-001 -> TASK-001, TEST-001",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_spec_design(draft: SpecDraft, generated_at: str) -> str:
+    lines = [
+        f"# Diseno - {_spec_title(draft)}",
+        "",
+        "## Metadata",
+        f"- generado_en: {generated_at}",
+        f"- template_version: {SPEC_TEMPLATE_VERSION}",
+        f"- draft_id: {draft.draft_id}",
+        "",
+        "## Contexto",
+        f"- requerimiento: {draft.intent.original_text}",
+        "",
+        "## Arquitectura funcional",
+        "- Spec Mode coordina evidencia documental H3, impacto H4 y sintesis conservadora.",
+        "",
+        "## Integracion con sistema existente",
+    ]
+    lines.extend(_spec_component_lines(draft.affected_components))
+    lines.extend(
+        [
+            "",
+            "## Flujo propuesto",
+            "1. Confirmar reglas existentes con evidencia citada.",
+            "2. Revisar componentes afectados y relaciones por confirmar.",
+            "3. Implementar el cambio manteniendo pruebas asociadas a REQ-001.",
+            "",
+            "## Componentes afectados",
+        ]
+    )
+    lines.extend(_spec_component_lines(draft.affected_components))
+    lines.extend(["", "## Cambios propuestos"])
+    lines.extend(_render_existing_rules(draft.existing_rules))
+    lines.extend(
+        [
+            "",
+            "## Modelo de datos si aplica",
+            "- por confirmar durante diseno detallado",
+            "",
+            "## CLI o interfaz si aplica",
+            "- por confirmar durante refinamiento",
+            "",
+            "## Manejo de errores",
+            "- fallar con mensajes accionables en espanol para errores esperados",
+            "",
+            "## Decisiones tecnicas",
+        ]
+    )
+    lines.extend(_list_or_empty(draft.design_decisions, "sin decisiones tecnicas adicionales"))
+    lines.extend(["", "## Riesgos y limites"])
+    lines.extend(_list_or_empty(draft.risks, "sin riesgos adicionales detectados"))
+    lines.extend(
+        [
+            "",
+            "## Diagramas Mermaid",
+            "```mermaid",
+            "flowchart LR",
+            '    REQ["REQ-001 Requerimiento"] --> H3["Evidencia H3"]',
+            '    REQ --> H4["Impacto H4"]',
+            '    H3 --> SPEC["SpecDraft"]',
+            '    H4 --> SPEC',
+            '    SPEC --> REVIEW["Review"]',
+            '    REVIEW --> MD["Markdown spec.v1"]',
+            "```",
+            "",
+            "## Evidencia",
+        ]
+    )
+    lines.extend(_spec_evidence_lines(draft.evidence))
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _render_spec_tasks(draft: SpecDraft, generated_at: str) -> str:
+    lines = [
+        f"# Tareas - {_spec_title(draft)}",
+        "",
+        "## Metadata",
+        f"- generado_en: {generated_at}",
+        f"- template_version: {SPEC_TEMPLATE_VERSION}",
+        f"- draft_id: {draft.draft_id}",
+        "",
+        "## Reglas",
+        "- implementar tareas en orden",
+        "- no generar codigo automaticamente fuera del alcance de la spec",
+        "- mantener trazabilidad con REQ-001",
+        "",
+        "## Tareas implementables",
+        "### TASK-001 - Analizar alcance detallado",
+        "**Objetivo:** confirmar alcance y evidencia de REQ-001.",
+        "**Descripcion:** revisar reglas, componentes afectados, riesgos y preguntas abiertas.",
+        "**Dependencias:** ninguna.",
+        "**Resultado esperado:** alcance confirmado o vacios documentados.",
+        "**Requisito:** REQ-001.",
+        "",
+        "### TASK-002 - Implementar cambio funcional",
+        "**Objetivo:** aplicar el cambio de REQ-001.",
+        "**Descripcion:** modificar solo los componentes confirmados y conservar trazabilidad.",
+        "**Dependencias:** TASK-001.",
+        "**Resultado esperado:** cambio implementado con pruebas unitarias o de integracion.",
+        "**Requisito:** REQ-001.",
+        "",
+        "### TASK-003 - Validacion y aceptacion integral",
+        "**Objetivo:** ejecutar validacion final de REQ-001.",
+        "**Descripcion:** correr pruebas, revisar evidencia, validar regresion y registrar aceptacion humana.",
+        "**Dependencias:** TASK-002.",
+        "**Resultado esperado:** spec lista para aceptacion o feedback documentado.",
+        "**Requisito:** REQ-001.",
+        "",
+        "## Orden de ejecucion",
+        "```mermaid",
+        "flowchart LR",
+        '    T1["TASK-001"] --> T2["TASK-002"]',
+        '    T2 --> T3["TASK-003 Aceptacion integral"]',
+        "```",
+        "",
+        "## Trazabilidad",
+        "| Tarea | Requisito | Prueba |",
+        "|---|---|---|",
+        "| TASK-001 | REQ-001 | TEST-001 |",
+        "| TASK-002 | REQ-001 | TEST-002 |",
+        "| TASK-003 | REQ-001 | TEST-003 |",
+        "",
+        "## Ultima tarea de validacion y aceptacion integral",
+        "- TASK-003 concentra la aceptacion integral.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _render_spec_test_plan(draft: SpecDraft, generated_at: str) -> str:
+    lines = [
+        f"# Plan de pruebas - {_spec_title(draft)}",
+        "",
+        "## Metadata",
+        f"- generado_en: {generated_at}",
+        f"- template_version: {SPEC_TEMPLATE_VERSION}",
+        f"- draft_id: {draft.draft_id}",
+        "",
+        "## Estrategia",
+        "- validar REQ-001 con pruebas proporcionales al impacto y evidencia recuperada",
+        "",
+        "## Unitarias",
+        "- TEST-001 cubrir reglas puras o transformaciones deterministicas de REQ-001",
+        "",
+        "## Integracion",
+        "- TEST-002 cubrir componentes afectados confirmados por H4",
+        "",
+        "## CLI",
+        "- verificar comandos o flujos de usuario cuando aplique",
+        "",
+        "## Regresion",
+        "- ejecutar regresion sobre funcionalidades vecinas y consumidores identificados",
+        "",
+        "## Casos negativos",
+        "- validar errores esperados y condiciones limite",
+        "",
+        "## Golden files si aplica",
+        "- usar golden files cuando el cambio produzca Markdown o salida estable",
+        "",
+        "## Evidencia esperada",
+    ]
+    lines.extend(_spec_evidence_lines(draft.evidence))
+    lines.extend(
+        [
+            "",
+            "## Matriz requisito-prueba",
+            "| Requisito | Prueba | Tipo |",
+            "|---|---|---|",
+            "| REQ-001 | TEST-001 | unitaria |",
+            "| REQ-001 | TEST-002 | integracion |",
+            "| REQ-001 | TEST-003 | regresion |",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _spec_title(draft: SpecDraft) -> str:
+    return draft.request.name or "spec generada"
+
+
+def _primary_requirement(draft: SpecDraft) -> str:
+    if draft.requirements:
+        return draft.requirements[0]
+    citations = _supporting_evidence_refs(draft.existing_rules)
+    suffix = f" {citations}" if citations else " (evidencia insuficiente)"
+    return f"REQ-001 {draft.intent.original_text}{suffix}"
+
+
+def _render_requirements(draft: SpecDraft) -> list[str]:
+    if draft.requirements:
+        return [f"- {requirement}" for requirement in draft.requirements]
+    return [f"- {_primary_requirement(draft)}"]
+
+
+def _render_existing_rules(rules: tuple[ExistingRule, ...]) -> list[str]:
+    if not rules:
+        return ["- por confirmar: no hay reglas existentes detectadas con evidencia documental"]
+    return [
+        f"- {rule.rule_id} {rule.description} {_supporting_evidence_refs((rule,))}"
+        for rule in rules
+    ]
+
+
+def _supporting_evidence_refs(rules: tuple[ExistingRule, ...]) -> str:
+    ids: list[str] = []
+    seen: set[str] = set()
+    for rule in rules:
+        for evidence_id in rule.evidence_ids:
+            if evidence_id in seen:
+                continue
+            ids.append(f"[{evidence_id}]")
+            seen.add(evidence_id)
+    return " ".join(ids)
+
+
+def _spec_component_lines(components: tuple[AffectedComponent, ...]) -> list[str]:
+    if not components:
+        return ["- sin componentes afectados confirmados"]
+    return [
+        (
+            f"- `{component.name}` rol={component.role.value} "
+            f"tecnologia={component.technology} "
+            f"clasificacion={component.classification.value} "
+            f"evidencia={_inline_refs(component.evidence_ids)}"
+        )
+        for component in components
+    ]
+
+
+def _spec_evidence_lines(evidence: tuple[SpecEvidenceItem, ...]) -> list[str]:
+    if not evidence:
+        return ["- evidencia insuficiente"]
+    return [
+        (
+            f"- [{item.evidence_id}] {item.source_type.value}: "
+            f"{item.title}; {item.citation}"
+        )
+        for item in evidence
+    ]
+
+
+def _inline_refs(evidence_ids: tuple[str, ...]) -> str:
+    if not evidence_ids:
+        return "por_confirmar"
+    return " ".join(f"[{evidence_id}]" for evidence_id in evidence_ids)
 
 
 def _filters_text(filters: InventoryFilters) -> str:

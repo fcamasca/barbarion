@@ -327,6 +327,34 @@ class ValidationIssue:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ReviewIssue:
+    """Problema detectado sobre un `SpecDraft` antes del render Markdown.
+
+    Review es una etapa interna distinta de la validacion de archivos
+    renderizados. Este modelo solo representa el hallazgo; las reglas concretas
+    de review pertenecen a H5-T06.
+    """
+
+    severity: ValidationSeverity
+    code: str
+    message: str
+    draft_section: str | None = None
+    related_ids: tuple[str, ...] = ()
+    degradable: bool = False
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.code, "code")
+        _require_non_empty(self.message, "message")
+        if self.draft_section is not None:
+            _require_non_empty(self.draft_section, "draft_section")
+        object.__setattr__(
+            self,
+            "related_ids",
+            _validate_text_tuple(self.related_ids, "related_ids"),
+        )
+
+
 def spec_draft_id(request: SpecRequest, intent: RequirementIntent) -> str:
     """Calcula una identidad estable para un draft H5.
 

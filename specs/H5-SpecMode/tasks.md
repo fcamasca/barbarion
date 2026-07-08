@@ -26,7 +26,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T02 - Implementar interpretacion inicial del requerimiento
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** convertir el texto del usuario en una intencion estructurada y consultas candidatas.  
 **Descripcion:** Conservar el texto original, extraer terminos, entidades, acciones, restricciones, supuestos y preguntas abiertas con reglas deterministas y sintesis asistida opcional.
 **Dependencias:** H5-T01.  
@@ -36,7 +36,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T03 - Integrar recuperacion RAG H3 para evidencia documental
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** recuperar chunks y documentos relevantes reutilizando H3.  
 **Descripcion:** Invocar `SearchService`, `ContextBuilder` o contratos equivalentes con modo `keyword|semantic|hybrid`, `top-k`, filtros y presupuesto de contexto. Deduplicar fuentes y asignar IDs `[F#]`.  
 **Dependencias:** H5-T02.  
@@ -46,7 +46,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T04 - Integrar simbolos, dependencias e impacto H4
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** complementar la evidencia con catalogo tecnico, relaciones y componentes afectados.  
 **Descripcion:** Resolver nombres contra H4, consultar dependencias con profundidad limitada, incorporar relaciones resolved/ambiguous/unresolved/dynamic y clasificar afectacion. No ejecutar `analyze` automaticamente.  
 **Dependencias:** H5-T03.  
@@ -56,7 +56,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T05 - Sintetizar reglas, riesgos, supuestos y preguntas abiertas
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** construir contenido analitico de la spec sin inventar informacion.  
 **Descripcion:** Generar reglas existentes, riesgos, dependencias tecnicas, supuestos, vacios y preguntas abiertas desde evidencia citada. La sintesis asistida es opcional; en modo `--no-llm`, producir sintesis conservadora.
 **Dependencias:** H5-T04.  
@@ -66,7 +66,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T06 - Implementar Review y renderizar documentos Markdown H5
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** revisar automaticamente `SpecDraft` y generar `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` solo si el draft es consistente o degradable.
 **Descripcion:** Implementar Review interno antes de Markdown y plantillas `spec.v1` con secciones obligatorias, Mermaid en diseno, tareas pequenas y una unica ultima tarea de aceptacion integral. Mantener estructura determinista.
 **Dependencias:** H5-T05.  

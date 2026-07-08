@@ -10,7 +10,7 @@ El plan asume **12 semanas**, con una dedicación aproximada de **2 horas por d�
 | H2 — Ingestion | 3–5 | 26 h | Corpus autorizado inventariado, fragmentado e incremental |
 | H3 — RAG | 6–8 | 28 h | Consultas locales con recuperación y fuentes |
 | H4 — Reverse Engineering | 9–11 | 30 h | Inventarios, relaciones e impacto técnico básico |
-| H5 — Spec Mode | 12 | 12 h | Generación guiada de specs Markdown |
+| H5 — Spec Mode | 12 | 12 h | Specs Markdown trazables, validadas técnicamente |
 | Reserva transversal | Durante todo el plan | 6 h | Ajustes, documentación y contingencias |
 | **Total** | **12** | **120 h** | **MVP evaluable de extremo a extremo** |
 
@@ -215,20 +215,20 @@ El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no 
 ### Entregables
 
 - comando para iniciar una spec desde una consulta o análisis existente;
-- estructura estándar con `requirements.md`, `design.md` y `tasks.md`;
+- estructura estándar con `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`;
 - plantillas con fuentes, supuestos, decisiones, riesgos y criterios de aceptación;
 - identificadores trazables entre requisitos, diseño y tareas;
 - validaciones simples de estructura y referencias;
-- una spec piloto del caso de validación revisada por una persona.
+- una spec piloto del caso de validación lista para revisión humana.
 
 ### Criterios de aceptación
 
-- una ejecución genera los tres documentos sin sobrescribir contenido existente sin confirmación;
+- una ejecución genera los cuatro documentos sin sobrescribir contenido existente sin confirmación;
 - cada requisito tiene criterios de aceptación verificables;
 - diseño y tareas referencian los requisitos que atienden;
 - la spec conserva las fuentes técnicas utilizadas y separa hechos de supuestos;
 - una persona puede editar y versionar los archivos sin herramientas especiales;
-- la spec piloto permite iniciar desarrollo sin rehacer el análisis técnico base.
+- la spec piloto pasa validación técnica y deja explícita cualquier revisión humana pendiente.
 
 ### Riesgos
 

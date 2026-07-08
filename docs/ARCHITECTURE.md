@@ -266,9 +266,11 @@ Tipos iniciales:
 - inventario técnico;
 - ficha de componente;
 - análisis de impacto;
-- spec con `requirements.md`, `design.md` y `tasks.md`.
+- spec con `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`.
 
 Antes de escribir se valida la ruta de salida. Un archivo existente no se reemplaza sin una opción o confirmación explícita. Los artefactos incluyen fecha, versión de plantilla, fuentes y advertencias; no necesitan metadata propietaria.
+
+Spec Mode coordina evidencia documental H3, impacto técnico H4, síntesis conservadora, Review de `SpecDraft`, render Markdown, `SpecValidator` y escritura segura. La CLI solo orquesta argumentos y presentación; no recalcula RAG/H4 ni reemplaza revisión humana.
 
 ## 6. Estructura inicial propuesta
 

@@ -117,7 +117,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T11 - Validacion y aceptacion integral H5
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** ejecutar validacion final, spec piloto, evidencia, revision humana y aceptacion del hito.  
 **Descripcion:** Ejecutar suite completa, smoke instalado, regresion H1-H4, generacion de spec piloto sobre caso autorizado, validacion de citas, revision humana, scan de datos sensibles y registro de limitaciones. Crear o actualizar `specs/H5-SpecMode/acceptance.md` solo durante esta tarea.  
 **Dependencias:** H5-T01 a H5-T10.  

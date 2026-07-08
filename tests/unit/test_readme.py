@@ -11,6 +11,8 @@ def test_quick_start_documents_ollama_model_and_list() -> None:
     assert 'barbarion search "donde se calcula order_total"' in readme
     assert 'barbarion ask "pregunta"' in readme
     assert 'barbarion ask "que fuentes explican order_total?"' in readme
+    assert 'barbarion spec create "Agregar validacion de limite de credito"' in readme
+    assert 'barbarion spec validate output/specs/limite-credito' in readme
     assert "`--mode keyword`: coincidencia textual" in readme
     assert "`--mode semantic`: similitud por significado" in readme
     assert "`--mode hybrid`: combina keyword y semantic" in readme

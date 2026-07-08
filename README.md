@@ -12,8 +12,9 @@ Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender códi
 `H2-Ingestion` está completado y aceptado en la versión `0.2.0`.
 `H3-RAG` está completado y aceptado en la versión `0.3.0`.
 `H4-ReverseEngineering` está completado, revisado y aceptado en la versión `0.4.0`.
+`H5-SpecMode` está completado, revisado y aceptado en la versión `0.5.0`.
 
-H3 incluye:
+El MVP validado hasta H5 incluye:
 
 - paquete Python instalable;
 - CLI local en español;
@@ -31,8 +32,12 @@ H3 incluye:
 - `ask` con contexto trazable, citas y modo `--no-llm`;
 - benchmark RAG con `recall@5`, `recall@10`, `mrr`, latencia e historico local;
 - reportes de cierre RAG en `reports/rag`.
+- inventario técnico, fichas de componente e impacto H4 desde símbolos y relaciones persistidas;
+- Spec Mode para generar `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`;
+- `barbarion spec create` como orquestador del pipeline H5;
+- `barbarion spec validate` para validar specs Markdown existentes.
 
-Qdrant no es dependencia inicial de H3; queda diferido como alternativa futura. Ingeniería inversa profunda y generación de documentos pertenecen a hitos posteriores.
+Qdrant no es dependencia inicial del MVP; queda diferido como alternativa futura. Spec Mode genera especificaciones Markdown trazables, no modifica código fuente ni reemplaza la revisión humana.
 
 ## Requisitos
 
@@ -235,7 +240,16 @@ barbarion describe order_total --no-llm
 barbarion impact order_total --depth 2 --no-llm
 ```
 
-### 16. Estadisticas locales
+### 16. Primera spec
+
+```bash
+barbarion spec create "Agregar validacion de limite de credito" --name limite-credito --mode keyword --no-llm
+barbarion spec validate output/specs/limite-credito
+```
+
+`spec create` genera `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` si Review y validacion pasan. `spec validate` revisa archivos existentes; no vuelve a ejecutar RAG, H4 ni Review. Para opciones como `--depth`, `--top-k`, `--overwrite`, `--strict` y `--format json`, ver [Referencia CLI](docs/CLI.md#spec-mode).
+
+### 17. Estadisticas locales
 
 ```bash
 barbarion stats
@@ -293,6 +307,8 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion inventory` | Consulta inventario tecnico persistido | Ninguno |
 | `barbarion describe OBJETO` | Genera ficha tecnica de un componente | Ninguno |
 | `barbarion impact OBJETO` | Analiza impacto tecnico desde relaciones persistidas | Ninguno |
+| `barbarion spec create "REQUERIMIENTO"` | Genera una spec Markdown H5 desde evidencia H3/H4 | Escribe cuatro archivos Markdown si Review y validacion pasan |
+| `barbarion spec validate RUTA` | Valida una spec Markdown existente | Ninguno |
 | `barbarion stats` | Muestra estadísticas de ingesta + RAG + reverse engineering | Ninguno |
 | `barbarion generate-report` | Genera evidencia técnica RAG en `reports/rag` | Escribe reportes locales |
 
@@ -362,6 +378,7 @@ El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
 - [Operación de ingesta H2](docs/INGESTION.md)
 - [Aceptación H3](specs/H3-RAG/acceptance.md)
 - [Aceptación H4](specs/H4-ReverseEngineering/acceptance.md)
+- [Validación H5](specs/H5-SpecMode/acceptance.md)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)
 

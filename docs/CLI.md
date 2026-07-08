@@ -21,10 +21,14 @@ describe
   |
 impact
   |
+spec create / spec validate
+  |
 stats
 ```
 
 `doctor` inicializa recursos locales y diagnostica el entorno. `ingest` lee el corpus autorizado y persiste metadata/chunks en SQLite. `index` prepara embeddings locales para RAG. `search` recupera evidencia y `ask` construye una respuesta citada. `analyze` extrae simbolos y relaciones para reverse engineering. `inventory`, `describe` e `impact` consultan ese catalogo tecnico. `stats` permite revisar el estado local de ingesta, RAG y reverse engineering.
+
+`spec create` coordina Spec Mode sobre la evidencia ya disponible: H3 para evidencia documental, H4 para impacto tecnico, Review interno, render Markdown, validacion estructural y escritura segura. `spec validate` revisa una carpeta Markdown existente sin regenerarla.
 
 ## Operacion con y sin Ollama
 
@@ -47,6 +51,9 @@ stats
 | `describe --with-llm` | No; puede usar RAG si se pide `--include-rag` | Si | Si, usando Ollama local |
 | `impact --no-llm` | No | No | Si |
 | `impact --with-llm` | No; puede usar RAG si se pide `--include-rag` | Si | Si, usando Ollama local |
+| `spec create --no-llm` | Segun `--mode` | No | Si |
+| `spec create` | Segun `--mode` | No actualmente; la sintesis asistida queda subordinada a evidencia local | Si |
+| `spec validate` | No | No | Si |
 | `stats` | No | No | Si |
 | `generate-report` | No | No | Si |
 
@@ -460,6 +467,86 @@ barbarion impact order_total --relation-type calls --min-confidence medium
 ```
 
 Usalo para estimar consumidores, dependencias, cruces de tecnologia y riesgos. No modifica SQLite. No requiere embeddings salvo que el servicio use RAG por `--include-rag`; requiere LLM solo con `--with-llm`. Codigos de salida: `0`, `1` o `2` segun resultado.
+
+### Spec Mode
+
+#### Notas operativas Spec Mode
+
+Spec Mode genera una especificacion Markdown editable para un cambio funcional. No modifica codigo fuente, no ejecuta tareas y no reemplaza la revision humana. El pipeline operativo de `spec create` es:
+
+```text
+RequirementAnalyzer -> H3 -> H4 -> SpecSynthesizer -> Review -> Markdown -> SpecValidator -> SafeSpecWriter
+```
+
+La CLI solo interpreta argumentos y presenta resultados. H3 recupera evidencia documental; H4 aporta simbolos, relaciones e impacto; Review revisa el `SpecDraft` antes del render; `SpecValidator` valida archivos Markdown renderizados; `SafeSpecWriter` escribe sin sobrescribir por defecto.
+
+`--debug` escribe observabilidad en `stderr`: modo RAG, `top_k`, profundidad H4, etapas ejecutadas, estado de Review, conteos de errores/advertencias, evidencia, componentes, reglas, preguntas abiertas, documentos renderizados y archivos escritos. `stdout` queda reservado para el resumen normal.
+
+Errores operativos frecuentes:
+
+- Base SQLite ausente: ejecuta `doctor`, `ingest`, `index` y `analyze` antes de `spec create`.
+- Review fallido: no se escriben archivos; revisa los issues sobre evidencia, reglas detectadas y preguntas abiertas.
+- Validacion Markdown fallida: no se escriben archivos; corrige los issues de estructura, IDs, citas o trazabilidad.
+- Carpeta existente: `spec create` rechaza sobrescritura por defecto; usa `--overwrite` solo cuando quieras reemplazar los cuatro Markdown esperados.
+- Spec editada manualmente: ejecuta `spec validate` antes de usarla como entrada de revision humana.
+
+#### spec create
+
+Proposito: crear una spec Markdown H5 desde un requerimiento funcional.
+
+Sintaxis:
+
+```bash
+barbarion spec create "REQUERIMIENTO" [--name NOMBRE] [--output RUTA] [--mode semantic|keyword|hybrid] [--depth N] [--top-k N] [--no-llm] [--overwrite] [--debug]
+```
+
+Argumentos principales:
+
+- `REQUERIMIENTO`: cambio funcional a especificar.
+- `--name`: nombre logico para la carpeta de salida.
+- `--output`: directorio de salida; por defecto `output/specs/<slug>`.
+- `--mode`: modo RAG H3; por defecto `hybrid`.
+- `--depth`: profundidad de impacto H4 `0..5`; por defecto `1`.
+- `--top-k`: cantidad maxima de fuentes RAG.
+- `--no-llm`: fuerza sintesis deterministica.
+- `--overwrite`: permite reemplazar los cuatro Markdown esperados.
+- `--debug`: muestra observabilidad en `stderr`.
+
+Ejemplos:
+
+```bash
+barbarion spec create "Agregar validacion de limite de credito" --name limite-credito --mode keyword --no-llm
+barbarion spec create "Agregar validacion de limite de credito" --depth 2 --top-k 12
+barbarion spec create "Agregar validacion de limite de credito" --output specs/limite-credito --overwrite
+```
+
+Escribe `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` si Review y validacion pasan. Codigos de salida: `0` si escribe correctamente, `1` ante error operativo, Review fallido o validacion fallida, `2` si los argumentos son invalidos.
+
+#### spec validate
+
+Proposito: validar una spec Markdown H5 existente, generada o editada manualmente.
+
+Sintaxis:
+
+```bash
+barbarion spec validate RUTA [--strict] [--format text|json]
+```
+
+Argumentos principales:
+
+- `RUTA`: carpeta con `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`.
+- `--strict`: trata advertencias como salida fallida.
+- `--format`: reporte `text` o `json`.
+
+Ejemplos:
+
+```bash
+barbarion spec validate output/specs/limite-credito
+barbarion spec validate output/specs/limite-credito --format json
+barbarion spec validate output/specs/limite-credito --strict
+```
+
+No ejecuta H3, H4, Review ni sintesis; solo aplica `SpecValidator` sobre archivos existentes. Codigos de salida: `0` si la spec es valida, `1` si hay errores o advertencias en modo `--strict`, `2` si los argumentos son invalidos.
 
 ### Observabilidad
 

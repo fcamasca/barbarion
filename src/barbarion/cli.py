@@ -725,7 +725,8 @@ def _run_spec_create(args: argparse.Namespace) -> int:
     if not settings.database_path.exists():
         print(
             "No hay base SQLite de Barbarion. Ejecuta ingesta, indexacion RAG "
-            "y analyze antes de crear una spec.",
+            "y analyze antes de crear una spec. Flujo sugerido: doctor, ingest, "
+            "index, analyze y luego spec create.",
             file=sys.stderr,
         )
         return 1
@@ -753,13 +754,25 @@ def _run_spec_create(args: argparse.Namespace) -> int:
     except (FileExistsError, ValueError) as error:
         print(f"Error operativo: {error}", file=sys.stderr)
         return 1
+    if args.debug:
+        _render_spec_debug(result, spec_request)
     if not result.review.can_render:
         print("Review de SpecDraft fallo; no se escribieron archivos.", file=sys.stderr)
         _render_review_issues(result.review.issues)
+        print(
+            "Accion sugerida: revisa evidencia, reglas detectadas y preguntas "
+            "abiertas antes de reintentar.",
+            file=sys.stderr,
+        )
         return 1
     if not result.validation.valid:
         print("Validacion de Markdown fallo; no se escribieron archivos.", file=sys.stderr)
         print(result.validation.to_text(), file=sys.stderr)
+        print(
+            "Accion sugerida: corrige los issues estructurales reportados por "
+            "SpecValidator.",
+            file=sys.stderr,
+        )
         return 1
     _render_spec_create_summary(result)
     return 0
@@ -2125,6 +2138,9 @@ def _render_spec_create_summary(result) -> None:
     print(f"Documentos: {len(result.written_paths)}")
     for path in result.written_paths:
         print(f"- {path.name}")
+    review_status = "degradado" if result.review.degraded else "ok"
+    print(f"Review: {review_status}")
+    print("Validacion Markdown: ok")
     print(f"Evidencia: {len(result.draft.evidence)}")
     print(f"Componentes afectados: {len(result.draft.affected_components)}")
     print(f"Reglas detectadas: {len(result.draft.existing_rules)}")
@@ -2133,6 +2149,35 @@ def _render_spec_create_summary(result) -> None:
         print(f"Advertencias Review: {len(result.review.issues)}")
     if result.validation.warnings:
         print(f"Advertencias validacion: {len(result.validation.warnings)}")
+    print(f"Siguiente paso: barbarion spec validate {result.output_dir}")
+
+
+def _render_spec_debug(result, request: SpecRequest) -> None:
+    """Emite observabilidad de Spec Mode en stderr sin contaminar stdout."""
+    metrics = {
+        "comando": "spec create",
+        "mode": request.retrieval_mode,
+        "depth": request.depth,
+        "top_k": request.top_k,
+        "no_llm": request.no_llm,
+        "stages": (
+            "interpretacion,recuperacion_h3,impacto_h4,"
+            "specdraft,review,markdown,validacion,escritura"
+        ),
+        "review": "degradado" if result.review.degraded else "ok",
+        "review_issues": len(result.review.issues),
+        "validation_errors": len(result.validation.errors),
+        "validation_warnings": len(result.validation.warnings),
+        "evidence": len(result.draft.evidence),
+        "components": len(result.draft.affected_components),
+        "rules": len(result.draft.existing_rules),
+        "open_questions": len(result.draft.open_questions),
+        "documents": len(result.documents),
+        "written": len(result.written_paths),
+    }
+    print("Observabilidad spec mode:", file=sys.stderr)
+    for key, value in metrics.items():
+        print(f"- {key}={value}", file=sys.stderr)
 
 
 def _render_review_issues(issues) -> None:

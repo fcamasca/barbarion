@@ -106,13 +106,14 @@ Estados iniciales: `pendiente`.
 
 ### H5-T10 - Completar observabilidad, errores y documentacion operativa
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** consolidar mensajes, progreso, logs y documentacion de uso de Spec Mode.  
 **Descripcion:** Reportar etapas, conteos, limites, Review, sintesis asistida no disponible, evidencia insuficiente y sugerencias accionables. Actualizar README/docs de CLI solo si el flujo ya esta implementado.
 **Dependencias:** H5-T08, H5-T09.  
 **Resultado esperado:** usuario puede diagnosticar por que una spec quedo parcial o invalida, sin ver tracebacks en errores esperados.  
 **Requisitos:** H5-RF-010, H5-RNF-001, H5-RNF-008, H5-RNF-009.  
 **Checkpoint:** `python -m pytest tests/unit/test_h5_observability.py tests/unit/test_readme.py`.
+**Observacion previa a H5-T11:** en el entorno Codex actual, el Python empaquetado no tiene `pytest` instalado y la venv local apunta a un interprete removido. Antes de la aceptacion integral se debe cerrar esta brecha con una venv editable funcional y `--basetemp .pytest-tmp/h5`.
 
 ### H5-T11 - Validacion y aceptacion integral H5
 

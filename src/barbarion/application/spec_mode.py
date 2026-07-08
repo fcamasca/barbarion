@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from barbarion.application.reverse_engineering import ImpactRequest, ObjectRequest
 from barbarion.domain.rag import (
@@ -393,6 +394,103 @@ class SpecValidationResult:
                 for issue in self.issues
             ],
         }
+
+
+@dataclass(frozen=True, slots=True)
+class SpecCreateRequest:
+    """Solicitud de aplicacion para crear una spec H5 completa."""
+
+    spec_request: SpecRequest
+    output_dir: Path
+
+
+@dataclass(frozen=True, slots=True)
+class SpecCreateResult:
+    """Resultado del pipeline `spec create`."""
+
+    output_dir: Path
+    draft: SpecDraft
+    review: SpecReviewResult
+    validation: SpecValidationResult
+    documents: Mapping[str, str]
+    written_paths: tuple[Path, ...] = ()
+
+    @property
+    def written(self) -> bool:
+        """Indica si se escribieron artefactos."""
+        return bool(self.written_paths)
+
+
+@dataclass(frozen=True, slots=True)
+class SpecCreateService:
+    """Orquesta el pipeline H5 de creacion de specs.
+
+    La CLI solo debe construir esta clase, pasar argumentos y presentar el
+    resultado. La recuperacion H3, impacto H4, sintesis, Review, Markdown,
+    validacion y escritura viven en servicios dedicados.
+    """
+
+    analyzer: RequirementAnalyzer
+    evidence_collector: DocumentEvidenceCollector
+    impact_collector: TechnicalImpactCollector
+    synthesizer: SpecSynthesizer
+    reviewer: SpecReviewer
+    renderer: Callable[[SpecDraft], Mapping[str, str]]
+    validator: SpecValidator
+    writer: object
+
+    def create(self, request: SpecCreateRequest) -> SpecCreateResult:
+        """Ejecuta el pipeline completo y escribe si Review/validacion pasan."""
+        spec_request = request.spec_request
+        intent = self.analyzer.analyze(spec_request)
+        document_result = self.evidence_collector.collect(
+            DocumentEvidenceRequest(
+                intent=intent,
+                mode=RetrievalMode(spec_request.retrieval_mode),
+                top_k=spec_request.top_k,
+                candidate_k=max(spec_request.top_k, spec_request.top_k * 4),
+                debug=spec_request.debug,
+            )
+        )
+        impact_result = self.impact_collector.collect(
+            TechnicalImpactRequest(
+                intent=intent,
+                depth=spec_request.depth,
+                include_rag=False,
+            )
+        )
+        draft = self.synthesizer.synthesize(
+            SpecSynthesisRequest(
+                request=spec_request,
+                intent=intent,
+                document_evidence=document_result,
+                technical_impact=impact_result,
+                no_llm=spec_request.no_llm,
+            )
+        )
+        review = self.reviewer.review(draft)
+        documents: Mapping[str, str] = {}
+        validation = SpecValidationResult()
+        written_paths: tuple[Path, ...] = ()
+        if review.can_render:
+            documents = self.renderer(review.draft)
+            validation = self.validator.validate(documents)
+            if validation.valid:
+                written_paths = tuple(
+                    self.writer.write(
+                        request.output_dir,
+                        documents,
+                        overwrite=spec_request.overwrite,
+                    )
+                )
+        return SpecCreateResult(
+            output_dir=request.output_dir,
+            draft=draft,
+            review=review,
+            validation=validation,
+            documents=documents,
+            written_paths=written_paths,
+        )
 
 
 @dataclass(frozen=True, slots=True)

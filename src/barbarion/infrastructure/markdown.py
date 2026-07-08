@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -297,6 +300,54 @@ def write_text_artifact(
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
     return resolved
+
+
+class SafeSpecWriter:
+    """Escribe una spec H5 completa sin sobrescribir por defecto."""
+
+    def write(
+        self,
+        output_dir: Path,
+        documents: Mapping[str, str],
+        *,
+        overwrite: bool = False,
+    ) -> tuple[Path, ...]:
+        """Escribe documentos Markdown H5 en un directorio seguro.
+
+        La escritura hace preflight antes de crear archivos: valida nombres
+        esperados, directorio destino y no-overwrite. Con `overwrite=True` solo
+        reemplaza los cuatro archivos esperados; no elimina contenido extra.
+        """
+        resolved_dir = output_dir.expanduser().resolve(strict=False)
+        _validate_spec_output_dir(resolved_dir)
+        _validate_spec_documents_for_write(documents)
+        if resolved_dir.exists() and not resolved_dir.is_dir():
+            raise FileExistsError(f"La ruta de salida no es un directorio: {resolved_dir}")
+        if resolved_dir.exists() and not overwrite:
+            raise FileExistsError(
+                f"La spec ya existe en {resolved_dir}. Usa --overwrite para reemplazar."
+            )
+        targets = tuple((resolved_dir / filename) for filename in SPEC_MARKDOWN_FILES)
+        resolved_dir.mkdir(parents=True, exist_ok=True)
+        written: list[Path] = []
+        for path in targets:
+            path.write_text(documents[path.name], encoding="utf-8")
+            written.append(path)
+        return tuple(written)
+
+
+def safe_spec_slug(value: str) -> str:
+    """Construye un slug seguro para carpetas de spec."""
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_text = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", ascii_text.lower()).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug[:80].strip("-") or "spec"
 
 
 def safe_inventory_filename(filters: InventoryFilters) -> str:
@@ -645,6 +696,27 @@ def _inline_refs(evidence_ids: tuple[str, ...]) -> str:
     if not evidence_ids:
         return "por_confirmar"
     return " ".join(f"[{evidence_id}]" for evidence_id in evidence_ids)
+
+
+def _validate_spec_documents_for_write(documents: Mapping[str, str]) -> None:
+    names = tuple(documents)
+    if names != SPEC_MARKDOWN_FILES:
+        expected = ", ".join(SPEC_MARKDOWN_FILES)
+        received = ", ".join(names)
+        raise ValueError(
+            f"Los documentos H5 deben ser exactamente: {expected}. Recibido: {received}."
+        )
+    for filename, content in documents.items():
+        if "/" in filename or "\\" in filename or Path(filename).name != filename:
+            raise ValueError(f"Nombre de documento no permitido: {filename}.")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError(f"Documento H5 vacio: {filename}.")
+
+
+def _validate_spec_output_dir(output_dir: Path) -> None:
+    parts = output_dir.parts
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError(f"Ruta de salida no valida: {output_dir}.")
 
 
 def _filters_text(filters: InventoryFilters) -> str:

@@ -38,6 +38,16 @@ from barbarion.application.reverse_engineering import (
     ObjectRequest,
 )
 from barbarion.application.reporting import generate_rag_report
+from barbarion.application.spec_mode import (
+    DocumentEvidenceCollector,
+    SpecCreateRequest,
+    SpecCreateService,
+    SpecReviewer,
+    SpecSynthesizer,
+    SpecValidator,
+    TechnicalImpactCollector,
+    RequirementAnalyzer,
+)
 from barbarion.bootstrap import DirectoryResult, initialize_directories
 from barbarion.config import ConfigError, Settings, load_settings, settings_display_items
 from barbarion.database import DatabaseError, initialize_database
@@ -74,6 +84,7 @@ from barbarion.domain.reverse_engineering import (
     SymbolStatus,
     TechnicalSymbol,
 )
+from barbarion.domain.spec_mode import SpecRequest
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
 from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
@@ -92,12 +103,15 @@ from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.infrastructure.markdown import (
+    SafeSpecWriter,
     render_component_markdown,
     render_impact_markdown,
     render_inventory_markdown,
+    render_spec_markdown,
     safe_component_filename,
     safe_impact_filename,
     safe_inventory_filename,
+    safe_spec_slug,
     write_text_artifact,
 )
 from barbarion.logging_config import configure_logging
@@ -704,6 +718,52 @@ def _run_impact(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_spec_create(args: argparse.Namespace) -> int:
+    """Orquesta `barbarion spec create` sin alojar logica de Spec Mode."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print(
+            "No hay base SQLite de Barbarion. Ejecuta ingesta, indexacion RAG "
+            "y analyze antes de crear una spec.",
+            file=sys.stderr,
+        )
+        return 1
+    initialize_database(settings.database_path)
+    spec_request = SpecRequest(
+        requirement=args.requirement,
+        name=args.name,
+        retrieval_mode=args.mode,
+        depth=args.depth,
+        top_k=args.top_k,
+        no_llm=args.no_llm,
+        overwrite=args.overwrite,
+        output_path=args.output,
+        debug=args.debug,
+    )
+    output_dir = _spec_output_dir(settings, args.output, spec_request)
+    service = _build_spec_create_service(settings)
+    try:
+        result = service.create(
+            SpecCreateRequest(
+                spec_request=spec_request,
+                output_dir=output_dir,
+            )
+        )
+    except (FileExistsError, ValueError) as error:
+        print(f"Error operativo: {error}", file=sys.stderr)
+        return 1
+    if not result.review.can_render:
+        print("Review de SpecDraft fallo; no se escribieron archivos.", file=sys.stderr)
+        _render_review_issues(result.review.issues)
+        return 1
+    if not result.validation.valid:
+        print("Validacion de Markdown fallo; no se escribieron archivos.", file=sys.stderr)
+        print(result.validation.to_text(), file=sys.stderr)
+        return 1
+    _render_spec_create_summary(result)
+    return 0
+
+
 def _run_search(args: argparse.Namespace) -> int:
     """Ejecuta busqueda RAG desde CLI."""
     settings = load_settings(args.config)
@@ -1133,6 +1193,31 @@ def _build_impact_service(
         ),
         llm_provider=_build_llm_provider(settings) if with_llm else None,
         llm_timeout_seconds=settings.llm.timeout_seconds,
+    )
+
+
+def _build_spec_create_service(settings: Settings) -> SpecCreateService:
+    """Construye el orquestador H5 con dependencias locales existentes."""
+    context_builder = ContextBuilder(
+        token_budget=settings.rag.context_token_budget,
+        max_chunk_tokens=settings.rag.max_chunk_tokens,
+        dedupe_min_hash_prefix=settings.rag.dedupe_min_hash_prefix,
+        threshold=settings.retrieval.similarity_threshold,
+    )
+    return SpecCreateService(
+        analyzer=RequirementAnalyzer(),
+        evidence_collector=DocumentEvidenceCollector(
+            search_service=_build_search_service(settings),
+            context_builder=context_builder,
+        ),
+        impact_collector=TechnicalImpactCollector(
+            impact_service=_build_impact_service(settings, with_llm=False),
+        ),
+        synthesizer=SpecSynthesizer(),
+        reviewer=SpecReviewer(),
+        renderer=lambda draft: render_spec_markdown(draft),
+        validator=SpecValidator(),
+        writer=SafeSpecWriter(),
     )
 
 
@@ -1990,6 +2075,51 @@ def _impact_output_path(
     return settings.output_dir / requested
 
 
+def _spec_output_dir(
+    settings: Settings,
+    requested_output: str | None,
+    request: SpecRequest,
+) -> Path:
+    """Resuelve el directorio de salida de una spec H5."""
+    slug = safe_spec_slug(request.name or request.requirement)
+    if requested_output is None:
+        return settings.output_dir / "specs" / slug
+    requested = Path(requested_output).expanduser()
+    if requested.name in {"", ".", ".."}:
+        raise ValueError("La ruta de salida de spec no es valida.")
+    if requested.is_absolute():
+        return requested
+    return settings.output_dir / requested
+
+
+def _render_spec_create_summary(result) -> None:
+    """Presenta resumen de `spec create` sin recalcular validaciones."""
+    print(f"Spec escrita: {result.output_dir}")
+    print(f"Documentos: {len(result.written_paths)}")
+    for path in result.written_paths:
+        print(f"- {path.name}")
+    print(f"Evidencia: {len(result.draft.evidence)}")
+    print(f"Componentes afectados: {len(result.draft.affected_components)}")
+    print(f"Reglas detectadas: {len(result.draft.existing_rules)}")
+    print(f"Preguntas abiertas: {len(result.draft.open_questions)}")
+    if result.review.degraded:
+        print(f"Advertencias Review: {len(result.review.issues)}")
+    if result.validation.warnings:
+        print(f"Advertencias validacion: {len(result.validation.warnings)}")
+
+
+def _render_review_issues(issues) -> None:
+    """Presenta issues de Review en stderr."""
+    for issue in issues:
+        location = f" en {issue.draft_section}" if issue.draft_section else ""
+        related = f" ({', '.join(issue.related_ids)})" if issue.related_ids else ""
+        print(
+            f"- {issue.severity.value} {issue.code}{location}: "
+            f"{issue.message}{related}",
+            file=sys.stderr,
+        )
+
+
 def _description_json(description: ComponentDescription) -> dict[str, object]:
     return {
         "template_version": "component.v1",
@@ -2731,6 +2861,79 @@ def build_parser() -> argparse.ArgumentParser:
         help="muestra metricas operativas en stderr",
     )
     impact_parser.set_defaults(handler=_run_impact)
+
+    spec_parser = commands.add_parser(
+        "spec",
+        help="genera y valida specs Markdown H5",
+        description="Genera y valida specs Markdown H5.",
+        add_help=False,
+    )
+    _add_help_option(spec_parser)
+    spec_commands = spec_parser.add_subparsers(
+        dest="spec_command",
+        title="subcomandos",
+        metavar="SUBCOMANDO",
+        required=True,
+    )
+    spec_create_parser = spec_commands.add_parser(
+        "create",
+        help="crea una spec Markdown H5",
+        description="Crea una spec Markdown H5 desde un requerimiento funcional.",
+        add_help=False,
+    )
+    _add_help_option(spec_create_parser)
+    spec_create_parser.add_argument(
+        "requirement",
+        metavar="REQUERIMIENTO",
+        help="requerimiento funcional a especificar",
+    )
+    spec_create_parser.add_argument(
+        "--name",
+        metavar="NOMBRE",
+        help="nombre logico de la spec; si falta se genera desde el requerimiento",
+    )
+    spec_create_parser.add_argument(
+        "--output",
+        metavar="RUTA",
+        help="directorio de salida; por defecto output/specs/<nombre>",
+    )
+    spec_create_parser.add_argument(
+        "--mode",
+        choices=[mode.value for mode in RetrievalMode],
+        default="hybrid",
+        help="modo de recuperacion RAG",
+    )
+    spec_create_parser.add_argument(
+        "--depth",
+        type=int,
+        choices=range(0, 6),
+        default=1,
+        metavar="N",
+        help="profundidad de impacto H4 0..5",
+    )
+    spec_create_parser.add_argument(
+        "--top-k",
+        type=_positive_int,
+        default=12,
+        metavar="N",
+        help="cantidad maxima de fuentes RAG",
+    )
+    spec_create_parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="genera la spec con sintesis deterministica",
+    )
+    spec_create_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="permite reemplazar los cuatro Markdown esperados",
+    )
+    spec_create_parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="muestra metricas operativas en stderr",
+    )
+    spec_create_parser.set_defaults(handler=_run_spec_create)
 
     search_parser = commands.add_parser(
         "search",

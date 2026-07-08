@@ -86,7 +86,7 @@ Estados iniciales: `pendiente`.
 
 ### H5-T08 - Exponer CLI `spec create` con escritura segura
 
-**Estado:** pendiente.  
+**Estado:** completado.  
 **Objetivo:** permitir generar una spec desde la CLI local.  
 **Descripcion:** Agregar `barbarion spec create` con opciones `--name`, `--output`, `--mode`, `--depth`, `--top-k`, `--no-llm`, `--overwrite` y `--debug`. Validar rutas y no sobrescribir por defecto. Registrar artifact si el contrato existente lo permite.  
 **Dependencias:** H5-T07.  

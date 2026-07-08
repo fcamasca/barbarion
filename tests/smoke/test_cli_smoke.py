@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from barbarion import __version__
 from tests.support.h2_corpus import build_h2_corpus
 
 
@@ -140,7 +141,7 @@ def test_version_from_installed_cli_has_no_side_effects(tmp_path: Path) -> None:
     result = run_barbarion("--version", cwd=tmp_path)
 
     assert result.returncode == 0
-    assert result.stdout.strip() == "barbarion 0.4.0"
+    assert result.stdout.strip() == f"barbarion {__version__}"
     assert list(tmp_path.iterdir()) == []
 
 

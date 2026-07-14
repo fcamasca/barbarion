@@ -365,7 +365,7 @@ No forman parte del MVP una extensión de VS Code, UI web, autenticación, micro
 4. `H4-ReverseEngineering`
 5. `H5-SpecMode`
 
-El plan completo contempla aproximadamente 12 semanas y 120 horas de trabajo.
+El MVP se ejecutó en cinco hitos incrementales, desde Foundation hasta Spec Mode.
 
 ## Documentación
 

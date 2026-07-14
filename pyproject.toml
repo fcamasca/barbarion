@@ -11,7 +11,7 @@ requires-python = ">=3.12,<3.13"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    { name = "Barbarion contributors" },
+    { name = "Frankz Camasca" },
 ]
 dependencies = [
     "pypdf>=6.0,<7",

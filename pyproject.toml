@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "barbarion"
 dynamic = ["version"]
-description = "Agente AI on-premise para sistemas legacy Oracle/PLSQL y PowerBuilder"
+description = "Agente AI on-premise para sistemas legacy Oracle/PL/SQL y PowerBuilder"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
@@ -24,6 +24,12 @@ dev = [
     "pytest>=8,<9",
     "reportlab>=4,<5",
 ]
+
+
+[project.urls]
+Homepage = "https://github.com/fcamasca/barbarion"
+Repository = "https://github.com/fcamasca/barbarion"
+Issues = "https://github.com/fcamasca/barbarion/issues"
 
 [project.scripts]
 barbarion = "barbarion.cli:main"

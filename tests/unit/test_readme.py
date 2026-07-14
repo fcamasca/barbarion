@@ -1,18 +1,31 @@
 from pathlib import Path
 
 
-def test_quick_start_documents_ollama_model_and_list() -> None:
+def test_readme_documents_portfolio_overview_and_mvp_status() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
 
-    assert "ollama pull llama3.1:8b" in readme
-    assert "ollama list" in readme
-    assert 'barbarion doctor' in readme
-    assert 'barbarion search "consulta"' in readme
-    assert 'barbarion search "donde se calcula order_total"' in readme
-    assert 'barbarion ask "pregunta"' in readme
-    assert 'barbarion ask "que fuentes explican order_total?"' in readme
-    assert 'barbarion spec create "Agregar validacion de limite de credito"' in readme
-    assert 'barbarion spec validate output/specs/limite-credito' in readme
-    assert "`--mode keyword`: coincidencia textual" in readme
-    assert "`--mode semantic`: similitud por significado" in readme
-    assert "`--mode hybrid`: combina keyword y semantic" in readme
+    assert "## Problema que resuelve" in readme
+    assert "## ¿Qué puede hacer?" in readme
+    assert "## Cómo funciona" in readme
+    assert "## Ejemplo end-to-end" in readme
+    assert "## Estado del MVP" in readme
+    assert "Versión: `0.5.0`" in readme
+    assert "Hitos completados: `5/5`" in readme
+    assert "Suite de aceptación del MVP: `502 passed, 2 skipped`" in readme
+    assert "Smoke tests instalados: `10 passed`" in readme
+    assert "Integración continua: GitHub Actions" in readme
+
+
+def test_readme_documents_short_quick_start_and_demo_placeholders() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "python -m pip install -e \".[dev]\"" in readme
+    assert "barbarion doctor" in readme
+    assert "barbarion ingest" in readme
+    assert "barbarion index" in readme
+    assert "barbarion analyze" in readme
+    assert 'barbarion ask "Dónde se calcula order_total?" --mode hybrid' in readme
+    assert 'barbarion impact order_total --depth 2 --no-llm' in readme
+    assert 'barbarion spec create "Agregar validación de límite de crédito"' in readme
+    assert "docs/images/" in readme
+    assert "docs/CLI.md" in readme

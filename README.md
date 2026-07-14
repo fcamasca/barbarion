@@ -1,293 +1,125 @@
 # Barbarion
 
-Barbarion es un agente AI on-premise para análisis, documentación e ingeniería inversa asistida de sistemas legacy **Oracle/PLSQL + PowerBuilder**.
+[![CI](https://github.com/fcamasca/barbarion/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fcamasca/barbarion/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/fcamasca/barbarion)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](pyproject.toml)
 
-Su objetivo es ayudar a desarrolladores y analistas técnicos a comprender código existente, localizar dependencias y producir documentación trazable sin enviar el corpus a servicios cloud.
+Barbarion es un agente de IA on-premise para análisis, documentación e ingeniería inversa asistida de sistemas legacy **Oracle/PL/SQL + PowerBuilder**.
 
-> El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no forma parte del diseño público ni limita la arquitectura de Barbarion.
+Está pensado para equipos que necesitan comprender sistemas existentes sin enviar código, documentación ni contexto técnico a servicios cloud. Trabaja sobre un corpus local autorizado, lo transforma en evidencia consultable y genera salidas Markdown trazables.
 
-## Estado
+El MVP mantiene una arquitectura deliberadamente simple: aplicación Python modular de un solo proceso, CLI-first, SQLite + sqlite-vec, parsers heurísticos y Ollama opcional según el comando.
 
-`H1-Foundation` está completado y aceptado en la versión `0.1.0`.
-`H2-Ingestion` está completado y aceptado en la versión `0.2.0`.
-`H3-RAG` está completado y aceptado en la versión `0.3.0`.
-`H4-ReverseEngineering` está completado, revisado y aceptado en la versión `0.4.0`.
-`H5-SpecMode` está completado, revisado y aceptado en la versión `0.5.0`.
+## Problema que resuelve
 
-El MVP validado hasta H5 incluye:
+En sistemas legacy Oracle/PL/SQL y PowerBuilder, la lógica de negocio suele estar repartida entre packages, triggers, ventanas, DataWindows, SQL embebido y documentación incompleta. Ubicar una regla, estimar impacto o preparar una especificación puede requerir revisar muchos archivos sin una ruta clara.
 
-- paquete Python instalable;
-- CLI local en español;
-- configuración TOML validada;
-- inicialización segura de directorios;
-- logging local;
-- SQLite versionado;
-- diagnóstico reproducible mediante `barbarion doctor`;
-- ingesta local incremental de corpus autorizado;
-- parsers heurísticos para Oracle/PLSQL, PowerBuilder textual, Markdown, texto, configuración, PDF y DOCX;
-- métricas, stats e inventario consultable desde SQLite;
-- pruebas unitarias, de integración y smoke;
-- indexación RAG local sobre SQLite + sqlite-vec;
-- búsqueda `semantic`, `keyword` e `hybrid`;
-- `ask` con contexto trazable, citas y modo `--no-llm`;
-- benchmark RAG con `recall@5`, `recall@10`, `mrr`, latencia e historico local;
-- reportes de cierre RAG en `reports/rag`.
-- inventario técnico, fichas de componente e impacto H4 desde símbolos y relaciones persistidas;
-- Spec Mode para generar `requirements.md`, `design.md`, `tasks.md` y `test-plan.md`;
-- `barbarion spec create` como orquestador del pipeline H5;
-- `barbarion spec validate` para validar specs Markdown existentes.
+Barbarion reduce ese trabajo manual convirtiendo artefactos locales en un catálogo técnico consultable, con fuentes, relaciones y límites explícitos. No reemplaza la revisión humana: organiza evidencia para que esa revisión sea más rápida y verificable.
 
-Qdrant no es dependencia inicial del MVP; queda diferido como alternativa futura. Spec Mode genera especificaciones Markdown trazables, no modifica código fuente ni reemplaza la revisión humana.
+## ¿Qué puede hacer?
 
-## Requisitos
+Barbarion convierte código y documentación legacy en un catálogo técnico consultable.
 
-- CPython `3.12` (`>=3.12,<3.13`);
-- `pip`;
-- Ollama es opcional para H1/H2 y para consultas H3 sin LLM.
+Puede:
 
-Ollama no es necesario para instalar, probar ni ejecutar H2. En H3 se requiere para `index` real con embeddings Ollama y para `ask` con LLM; `index --dry-run`, `search --mode keyword` y `ask --no-llm --mode keyword` pueden ejecutarse sin modelo real. Cuando Ollama no está disponible, `doctor` informa `WARN` y conserva el código de salida `0` si todos los checks requeridos pasan.
+- localizar donde se implementa una regla o identificador;
+- relacionar componentes Oracle/PL/SQL y PowerBuilder;
+- identificar dependencias e impacto técnico;
+- responder preguntas con evidencia y citas;
+- generar especificaciones Markdown para cambios controlados.
+
+## Cómo funciona
+
+```text
+Corpus autorizado
+      |
+      v
+barbarion ingest        H2: prepara documentos, chunks y metadata
+      |
+      v
+barbarion index         H3: indexa evidencia recuperable con SQLite + sqlite-vec
+      |
+      v
+barbarion analyze       H4: genera inventario, símbolos y relaciones
+      |
+      v
+barbarion ask / describe / impact
+      |
+      v
+barbarion spec create   H5: produce specs Markdown trazables
+```
+
+Los comandos operan sobre archivos locales y SQLite. Ollama se usa solo cuando el comando necesita embeddings o LLM local; varias rutas de diagnóstico, ingesta, análisis, búsqueda keyword y salidas `--no-llm` no requieren un modelo real.
+
+## Ejemplo end-to-end
+
+```bash
+barbarion ingest
+barbarion index
+barbarion analyze
+barbarion ask "Dónde se calcula order_total?" --mode hybrid
+barbarion impact order_total --depth 2 --no-llm
+barbarion spec create "Agregar validación de límite de crédito" --name limite-credito --mode keyword --no-llm
+```
+
+El ejemplo usa nombres sanitizados. En un corpus real, las respuestas incluyen rutas, fragmentos, citas y advertencias cuando la evidencia no alcanza para sostener una conclusión.
+
+## Estado del MVP
+
+- Versión: `0.5.0`
+- Hitos completados: `5/5`
+- Suite de aceptación del MVP: `502 passed, 2 skipped`
+- Smoke tests instalados: `10 passed`
+- Runtime validado: Python `3.12`
+- Integración continua: GitHub Actions
+- Operación: local y on-premise
+
+La evidencia técnica está documentada en [`specs/H5-SpecMode/acceptance.md`](specs/H5-SpecMode/acceptance.md). Ese registro conserva además la nota de revisión humana pendiente para la spec piloto H5.
 
 ## Quick Start
 
-Este flujo deja una instalación local lista para hacer la primera consulta RAG sobre un corpus propio en pocos minutos.
-
-### 1. Crear entorno virtual
+Este recorrido deja el proyecto instalado y ejecuta el flujo principal sobre el corpus configurado en `barbarion.toml`.
 
 ```bash
 git clone https://github.com/fcamasca/barbarion.git
 cd barbarion
 python -m venv .venv
-```
-
-### 2. Activar entorno
-
-**Windows PowerShell:**
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Si PowerShell bloquea la ejecución de scripts con un error similar a:
-```text
-PSSecurityException: la ejecución de scripts está deshabilitada en este sistema
-```
-
-habilitar la ejecución únicamente para la sesión actual:
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
-Este cambio no modifica la política del sistema de forma permanente y solo afecta la ventana actual de PowerShell.
-
-**Linux o macOS:**
-```bash
-source .venv/bin/activate
-```
-
-### 3. Instalar Barbarion
-
-```bash
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
-```
-
-Comprobar la instalación:
-```bash
-barbarion --version
-barbarion --help
-```
-
-### 4. Instalar Ollama
-
-Descargarlo desde [ollama.com](https://ollama.com/) e iniciar el servicio local. Verificar:
-
-```bash
-ollama --version
-```
-
-### 5. Descargar modelos locales
-
-```bash
-ollama pull nomic-embed-text
-ollama pull llama3.1:8b
-ollama list
-```
-
-`nomic-embed-text` se usa para embeddings. `llama3.1:8b` es una opción local para `ask`; puedes cambiarlo en `[llm]`.
-
-### 6. Configurar barbarion.toml
-
-```bash
 cp barbarion.example.toml barbarion.toml
-```
-
-```powershell
-# Windows PowerShell
-Copy-Item barbarion.example.toml barbarion.toml
-```
-
-Editar `barbarion.toml` y apuntar `[ingestion].paths` a una carpeta local autorizada, por ejemplo:
-
-```toml
-[ingestion]
-paths = ["./sources"]
-```
-
-### 7. Ejecutar doctor
-
-```bash
 barbarion doctor
-```
-
-Salida esperada resumida:
-```text
-PASS  Python
-PASS  Configuracion
-PASS  Directorio de datos
-PASS  Directorio de salida
-PASS  Directorio de logs
-PASS  Directorio de fuentes
-PASS  SQLite
-PASS  Ollama
-
-Resumen: 8 PASS, 0 WARN, 0 FAIL
-```
-
-### 8. Ingestar documentos
-
-```bash
 barbarion ingest
-```
-
-### 9. Indexar
-
-```bash
-barbarion index --dry-run
 barbarion index
-```
-
-### 10. Primera búsqueda
-
-```bash
-barbarion search "consulta" --mode hybrid
-barbarion search "donde se calcula order_total" --mode hybrid
-```
-
-Si todavía no tienes embeddings o modelo disponible, puedes probar keyword:
-```bash
-barbarion search "calculate_discount" --mode keyword
-```
-
-Como regla practica:
-
-- `--mode keyword`: coincidencia textual; usalo para nombres exactos de variables, tablas, procedimientos o codigos de negocio.
-- `--mode semantic`: similitud por significado; usalo para explorar conceptos aunque no conozcas los nombres exactos.
-- `--mode hybrid`: combina keyword y semantic; es el modo recomendado para preguntas naturales.
-
-Salida esperada resumida:
-```text
-Busqueda RAG: hybrid
-Query: 1
-- score=0.842 chunk=... sources/oracle/orders.sql lineas=10-32
-```
-
-### 11. Primera pregunta
-
-```bash
-barbarion ask "pregunta" --mode hybrid
-barbarion ask "que fuentes explican order_total?" --mode hybrid
-```
-
-Para inspeccionar contexto sin invocar LLM:
-```bash
-barbarion ask "que fuentes explican order_total?" --mode keyword --no-llm
-```
-
-Salida esperada resumida:
-```text
-## Conclusion
-Respuesta basada en la evidencia recuperada. [F1]
-
-## Evidencia
-- [F1] ...
-
-## Supuestos y limites
-- ...
-```
-
-### 12. Primer analisis reverse engineering
-
-```bash
-barbarion analyze --dry-run
 barbarion analyze
+barbarion ask "Dónde se calcula order_total?" --mode hybrid
 ```
 
-### 13. Inventario tecnico
+En Windows PowerShell, activa el entorno con `.\.venv\Scripts\Activate.ps1` y copia la configuración con `Copy-Item barbarion.example.toml barbarion.toml`. Antes de ingestar, edita `barbarion.toml` para apuntar `[ingestion].paths` a una carpeta local autorizada.
 
-```bash
-barbarion inventory --format text
-```
+Los detalles de instalación de Ollama, políticas de ejecución de PowerShell, modos `keyword`, `semantic` e `hybrid`, códigos de salida y ejemplos avanzados están en la [referencia CLI](docs/CLI.md).
 
-### 14. Ficha de componente
+## Demostración
 
-```bash
-barbarion describe order_total --no-llm
-```
+Las capturas reproducibles deben mantenerse en `docs/images/`.
 
-### 15. Impacto tecnico
+Capturas recomendadas:
 
-```bash
-barbarion impact order_total --depth 2 --no-llm
-```
+- salida de `barbarion ask`;
+- salida de `barbarion impact`;
+- archivos generados por `barbarion spec create`.
 
-### 16. Primera spec
+<!--
+Pendiente: agregar capturas reales en docs/images/ cuando exista una corrida pública reproducible.
+No enlazar imágenes hasta que los archivos estén versionados.
+-->
 
-```bash
-barbarion spec create "Agregar validacion de limite de credito" --name limite-credito --mode keyword --no-llm
-barbarion spec validate output/specs/limite-credito
-```
+## Requisitos
 
-`spec create` genera `requirements.md`, `design.md`, `tasks.md` y `test-plan.md` si Review y validacion pasan. `spec validate` revisa archivos existentes; no vuelve a ejecutar RAG, H4 ni Review. Para opciones como `--depth`, `--top-k`, `--overwrite`, `--strict` y `--format json`, ver [Referencia CLI](docs/CLI.md#spec-mode).
+- CPython `3.12` (`>=3.12,<3.13`);
+- `pip`;
+- Ollama local solo para comandos que usan embeddings o LLM.
 
-### 17. Estadisticas locales
-
-```bash
-barbarion stats
-```
-
-## Configuración
-
-El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta todas las claves disponibles para la base local, la ingesta H2 y la configuración base H3. Para crear una configuración local:
-
-```powershell
-# Windows PowerShell
-Copy-Item barbarion.example.toml barbarion.toml
-```
-
-```bash
-# Linux o macOS
-cp barbarion.example.toml barbarion.toml
-```
-
-`barbarion.toml` está excluido de Git. No deben versionarse rutas personales, credenciales ni endpoints privados.
-
-La configuración se resuelve en este orden:
-
-1. opción global `--config RUTA`;
-2. variable de entorno `BARBARION_CONFIG`;
-3. `./barbarion.toml`;
-4. valores predeterminados.
-
-Las rutas relativas se resuelven desde el directorio del archivo TOML. Sin archivo, se resuelven desde el directorio de trabajo.
-
-Para inspeccionar los valores efectivos sin crear recursos:
-
-```bash
-barbarion config show
-barbarion --config ruta/al/archivo.toml config show
-```
-
-Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[llm]` ya pueden validarse y mostrarse con `config show`. `vector_store.provider = "sqlite_vec"` es el valor soportado para el MVP; Qdrant queda diferido como alternativa futura.
+Las pruebas automatizadas no requieren un Ollama real ni acceso a servicios externos: usan directorios temporales y un endpoint falso en loopback.
 
 ## Comandos disponibles
 
@@ -298,32 +130,50 @@ Las secciones H3 `[embeddings]`, `[vector_store]`, `[retrieval]`, `[rag]` y `[ll
 | `barbarion config show` | Valida y muestra la configuración efectiva | Ninguno |
 | `barbarion doctor` | Inicializa recursos y diagnostica el entorno | Crea directorios, SQLite y log si faltan |
 | `barbarion ingest` | Ejecuta ingesta incremental del corpus configurado | Lee corpus y escribe metadata/chunks en SQLite |
-| `barbarion index` | Indexa chunks vigentes para RAG con progreso por etapas | Escribe manifests, estados y vectores locales |
-| `barbarion reindex` | Reconstruye total o parcialmente el indice RAG | Escribe estados y vectores locales |
+| `barbarion index` | Indexa chunks vigentes para RAG | Escribe manifests, estados y vectores locales |
 | `barbarion search "consulta"` | Recupera evidencia RAG | Registra métricas de consulta |
 | `barbarion ask "pregunta"` | Responde con evidencia y citas | Registra métricas de consulta/contexto |
-| `barbarion embeddings` | Muestra manifests, versiones y conteos | Ninguno |
-| `barbarion analyze` | Actualiza simbolos y relaciones de reverse engineering desde chunks vigentes | Escribe catalogo tecnico y runs en SQLite |
-| `barbarion inventory` | Consulta inventario tecnico persistido | Ninguno |
-| `barbarion describe OBJETO` | Genera ficha tecnica de un componente | Ninguno |
-| `barbarion impact OBJETO` | Analiza impacto tecnico desde relaciones persistidas | Ninguno |
-| `barbarion spec create "REQUERIMIENTO"` | Genera una spec Markdown H5 desde evidencia H3/H4 | Escribe cuatro archivos Markdown si Review y validacion pasan |
+| `barbarion analyze` | Actualiza símbolos y relaciones de reverse engineering | Escribe catálogo técnico y runs en SQLite |
+| `barbarion inventory` | Consulta inventario técnico persistido | Ninguno |
+| `barbarion describe OBJETO` | Genera ficha técnica de un componente | Ninguno |
+| `barbarion impact OBJETO` | Analiza impacto técnico desde relaciones persistidas | Ninguno |
+| `barbarion spec create "REQUERIMIENTO"` | Genera una spec Markdown H5 desde evidencia H3/H4 | Escribe cuatro archivos Markdown si Review y validación pasan |
 | `barbarion spec validate RUTA` | Valida una spec Markdown existente | Ninguno |
-| `barbarion stats` | Muestra estadísticas de ingesta + RAG + reverse engineering | Ninguno |
+| `barbarion stats` | Muestra estadísticas de ingesta, RAG y reverse engineering | Ninguno |
 | `barbarion generate-report` | Genera evidencia técnica RAG en `reports/rag` | Escribe reportes locales |
 
-La referencia completa de la CLI esta en [`docs/CLI.md`](docs/CLI.md).
+La referencia completa de la CLI está en [`docs/CLI.md`](docs/CLI.md).
 
-## Directorios y archivos locales
+## Configuración
+
+El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta las claves disponibles para rutas locales, ingesta, RAG, Ollama, SQLite y salida.
+
+`barbarion.toml` está excluido de Git. No deben versionarse rutas personales, credenciales ni endpoints privados.
+
+La configuración se resuelve en este orden:
+
+1. opción global `--config RUTA`;
+2. variable de entorno `BARBARION_CONFIG`;
+3. `./barbarion.toml`;
+4. valores predeterminados.
+
+Para inspeccionar los valores efectivos:
+
+```bash
+barbarion config show
+barbarion --config ruta/al/archivo.toml config show
+```
+
+## Directorios locales
 
 Con la configuración predeterminada, `barbarion doctor` inicializa:
 
 ```text
 data/
-└── barbarion.db
+  barbarion.db
 output/
 logs/
-└── barbarion.log
+  barbarion.log
 ```
 
 `data/`, `output/`, `logs/`, `barbarion.toml`, bases SQLite y `.venv/` están excluidos de Git.
@@ -342,22 +192,22 @@ Ejecutar únicamente los smoke tests contra el entry point instalado:
 python -m pytest tests/smoke
 ```
 
-Las pruebas usan directorios temporales y un endpoint Ollama falso en loopback. No necesitan un Ollama real ni acceso a internet.
-
 ## Alcance y principios
 
 - local y on-premise por diseño;
 - CLI-first;
 - monolito Python modular de un solo proceso;
-- biblioteca estándar para el runtime de H1;
+- SQLite + sqlite-vec;
+- parsers heurísticos;
 - evidencia antes que elocuencia;
-- un solo dominio configurado durante la validación inicial;
-- entregables pequeños y verificables;
-- revisión humana de resultados futuros.
+- entregables Markdown pequeños y verificables;
+- revisión humana de resultados.
 
-No forman parte del MVP una extensión de VS Code, UI web, autenticación, microservicios, Kubernetes, base de datos empresarial ni grafo avanzado. `docs/EVOLUTION.md` documenta ideas posteriores y no forma parte del alcance MVP.
+No forman parte del MVP una extensión de VS Code, UI web, autenticación, microservicios, Kubernetes, base de datos empresarial ni grafo avanzado. [`docs/EVOLUTION.md`](docs/EVOLUTION.md) documenta ideas posteriores y no forma parte del alcance MVP.
 
 ## Roadmap
+
+El MVP se ejecutó en cinco hitos incrementales, desde Foundation hasta Spec Mode:
 
 1. `H1-Foundation`
 2. `H2-Ingestion`
@@ -365,7 +215,7 @@ No forman parte del MVP una extensión de VS Code, UI web, autenticación, micro
 4. `H4-ReverseEngineering`
 5. `H5-SpecMode`
 
-El MVP se ejecutó en cinco hitos incrementales, desde Foundation hasta Spec Mode.
+La estimación histórica de 12 semanas y 120 horas se conserva en [`docs/ROADMAP.md`](docs/ROADMAP.md) como registro del plan original.
 
 ## Documentación
 

@@ -30,6 +30,68 @@ stats
 
 `spec create` coordina Spec Mode sobre la evidencia ya disponible: H3 para evidencia documental, H4 para impacto tecnico, Review interno, render Markdown, validacion estructural y escritura segura. `spec validate` revisa una carpeta Markdown existente sin regenerarla.
 
+
+## Preparación del entorno
+
+Instalación local recomendada:
+
+```bash
+git clone https://github.com/fcamasca/barbarion.git
+cd barbarion
+python -m venv .venv
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+Activación del entorno:
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# Linux o macOS
+source .venv/bin/activate
+```
+
+Si PowerShell bloquea la ejecución de scripts con `PSSecurityException`, habilita la ejecución solo para la sesión actual:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+Configuración local:
+
+```powershell
+# Windows PowerShell
+Copy-Item barbarion.example.toml barbarion.toml
+```
+
+```bash
+# Linux o macOS
+cp barbarion.example.toml barbarion.toml
+```
+
+Edita `barbarion.toml` y apunta `[ingestion].paths` a una carpeta local autorizada, por ejemplo:
+
+```toml
+[ingestion]
+paths = ["./sources"]
+```
+
+Ollama es opcional para comandos que no usan embeddings ni LLM. Para ejecuciones RAG con embeddings o LLM local, instala Ollama desde `https://ollama.com/` y descarga modelos locales:
+
+```bash
+ollama --version
+ollama pull nomic-embed-text
+ollama pull llama3.1:8b
+ollama list
+```
+
+`nomic-embed-text` se usa para embeddings. `llama3.1:8b` es una opción local para `ask`; puede cambiarse en `[llm]`.
+
 ## Operacion con y sin Ollama
 
 | Comando | Requiere embeddings | Requiere LLM | Funciona offline |
@@ -202,7 +264,7 @@ Regla rapida:
 - usa `semantic` para conceptos amplios;
 - usa `hybrid` cuando la pregunta esta en lenguaje natural o no sabes si las palabras coinciden con el codigo.
 
-`index` y `reindex` manejan Ctrl+C de forma cooperativa. Al interrumpir, Barbarion termina la unidad minima en curso para no separar vector y metadata, cierra la corrida como `interrupted` y muestra un resumen con procesados, pendientes, embeddings generados y vectores persistidos. Una nueva ejecucion puede continuar desde el ultimo estado consistente mediante la logica incremental existente.
+`index` y `reindex` manejan Ctrl+C de forma cooperativa. Al interrumpir, Barbarion termina la unidad minima en curso para no separar vector y metadata, cierra la corrida como `interrupted` y muestra un resumen con procesados, pendientes, embeddings generados y vectores persistidos. Una nueva ejecución puede continuar desde el ultimo estado consistente mediante la logica incremental existente.
 
 Cambiar proveedor, modelo, dimension, distancia o normalizacion de embeddings produce una version de embeddings distinta y exige reindexar.
 
@@ -239,7 +301,7 @@ barbarion index --dry-run
 barbarion index
 ```
 
-Usalo despues de `ingest`. Modifica SQLite y el almacenamiento vectorial, salvo en `--dry-run`. Requiere embeddings en ejecucion real; no requiere LLM. Codigos de salida: `0` si termina sin errores, `1` ante error operativo o chunks fallidos, `130` si se interrumpe.
+Usalo despues de `ingest`. Modifica SQLite y el almacenamiento vectorial, salvo en `--dry-run`. Requiere embeddings en ejecución real; no requiere LLM. Codigos de salida: `0` si termina sin errores, `1` ante error operativo o chunks fallidos, `130` si se interrumpe.
 
 ### reindex
 
@@ -269,7 +331,7 @@ barbarion reindex --document 12
 barbarion reindex --chunk-id chunk-abc
 ```
 
-Usalo cuando cambia el modelo de embeddings, la version de indice o quieres reconstruir un subconjunto. Requiere al menos uno de `--full`, `--path`, `--document` o `--chunk-id`. Modifica SQLite y vectores salvo en `--dry-run`. Requiere embeddings en ejecucion real; no requiere LLM. Codigos de salida: `0`, `1`, `2` o `130` segun resultado.
+Usalo cuando cambia el modelo de embeddings, la version de indice o quieres reconstruir un subconjunto. Requiere al menos uno de `--full`, `--path`, `--document` o `--chunk-id`. Modifica SQLite y vectores salvo en `--dry-run`. Requiere embeddings en ejecución real; no requiere LLM. Codigos de salida: `0`, `1`, `2` o `130` segun resultado.
 
 ### search
 

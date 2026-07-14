@@ -267,7 +267,9 @@ def _build_discovered_file(
 
 
 def _relative_posix_path(file_path: Path, root: Path) -> PurePosixPath:
-    relative = file_path.resolve(strict=False).relative_to(root.resolve(strict=False))
+    file_absolute = Path(os.path.abspath(file_path))
+    root_absolute = Path(os.path.abspath(root))
+    relative = file_absolute.relative_to(root_absolute)
     return PurePosixPath(relative.as_posix())
 
 

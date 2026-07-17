@@ -520,6 +520,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
                 break
     for summary in summaries:
         _render_analyze_summary(summary)
+        _log_data_driven_analyze_summary(settings, summary)
     return _analyze_exit_code(tuple(summaries))
 
 
@@ -1080,6 +1081,14 @@ def _rag_stats_json(stats) -> dict[str, object]:
 
 
 def _reverse_engineering_stats_json(stats) -> dict[str, object]:
+    """Serializa estadisticas tecnicas con una seccion Data-Driven aditiva.
+
+    Args:
+        stats: Metricas persistidas devueltas por el repositorio SQLite.
+
+    Returns:
+        Contrato JSON compatible con conteos generales y de configuracion.
+    """
     return {
         "latest_run_id": stats.latest_run_id,
         "latest_run_status": stats.latest_run_status,
@@ -1099,10 +1108,27 @@ def _reverse_engineering_stats_json(stats) -> dict[str, object]:
             "dynamic": stats.relations_dynamic,
             "external": stats.relations_external,
         },
+        "data_driven": {
+            "files": stats.configuration_files,
+            "symbols_active": stats.configuration_symbols_active,
+            "references_active": stats.configuration_references_active,
+            "relations": {
+                "resolved": stats.configuration_relations_resolved,
+                "ambiguous": stats.configuration_relations_ambiguous,
+                "unresolved": stats.configuration_relations_unresolved,
+                "dynamic": stats.configuration_relations_dynamic,
+                "external": stats.configuration_relations_external,
+            },
+        },
     }
 
 
 def _render_reverse_engineering_stats(stats) -> None:
+    """Presenta estadisticas generales y Data-Driven cuando existen.
+
+    Args:
+        stats: Metricas persistidas devueltas por el repositorio SQLite.
+    """
     latest = (
         "ninguno"
         if stats.latest_run_id is None
@@ -1121,6 +1147,39 @@ def _render_reverse_engineering_stats(stats) -> None:
     print(f"relaciones_unresolved = {stats.relations_unresolved}")
     print(f"relaciones_dynamic = {stats.relations_dynamic}")
     print(f"relaciones_external = {stats.relations_external}")
+    if any(
+        (
+            stats.configuration_files,
+            stats.configuration_symbols_active,
+            stats.configuration_references_active,
+        )
+    ):
+        print(f"data_driven.archivos = {stats.configuration_files}")
+        print(f"data_driven.simbolos_active = {stats.configuration_symbols_active}")
+        print(
+            "data_driven.referencias_active = "
+            f"{stats.configuration_references_active}"
+        )
+        print(
+            "data_driven.relaciones_resolved = "
+            f"{stats.configuration_relations_resolved}"
+        )
+        print(
+            "data_driven.relaciones_ambiguous = "
+            f"{stats.configuration_relations_ambiguous}"
+        )
+        print(
+            "data_driven.relaciones_unresolved = "
+            f"{stats.configuration_relations_unresolved}"
+        )
+        print(
+            "data_driven.relaciones_dynamic = "
+            f"{stats.configuration_relations_dynamic}"
+        )
+        print(
+            "data_driven.relaciones_external = "
+            f"{stats.configuration_relations_external}"
+        )
 
 
 def _index_scope(args: argparse.Namespace) -> IndexScope | None:
@@ -1792,6 +1851,11 @@ def _render_index_summary(summary: IndexRunSummary) -> None:
 
 
 def _render_analyze_summary(summary: AnalyzeSummary) -> None:
+    """Presenta conteos generales y Data-Driven de una corrida de analisis.
+
+    Args:
+        summary: Resultado estructurado devuelto por `AnalyzeService`.
+    """
     prefix = "Dry-run de analisis tecnico" if summary.dry_run else "Analisis tecnico"
     print(f"{prefix}: {summary.status.value}")
     print(f"Run: {summary.run_id if summary.run_id is not None else 'ninguno'}")
@@ -1802,7 +1866,116 @@ def _render_analyze_summary(summary: AnalyzeSummary) -> None:
     print(f"Relaciones resueltas: {summary.relations_resolved}")
     print(f"Relaciones ambiguas: {summary.relations_ambiguous}")
     print(f"Relaciones no resueltas: {summary.relations_unresolved}")
+    metrics = summary.data_driven
+    if metrics.files_identified:
+        print("Configuraciones Data-Driven:")
+        print(f"Archivos DML identificados: {metrics.files_identified}")
+        print(f"Sentencias procesadas: {metrics.statements_processed}")
+        print(f"Sentencias soportadas: {metrics.statements_supported}")
+        print(f"Sentencias omitidas: {metrics.statements_omitted}")
+        print(f"Sentencias con error: {metrics.statements_failed}")
+        print(f"Registros extraidos: {metrics.records_extracted}")
+        print(f"Simbolos Data-Driven: {metrics.symbols_generated}")
+        print(f"Referencias Data-Driven: {metrics.references_detected}")
+        print(f"Configuraciones reconciliadas: {metrics.configurations_reconciled}")
+        print(f"Relaciones Data-Driven resueltas: {metrics.relations_resolved}")
+        print(f"Relaciones Data-Driven ambiguas: {metrics.relations_ambiguous}")
+        print(f"Relaciones Data-Driven dinamicas: {metrics.relations_dynamic}")
+        print(f"Relaciones Data-Driven externas: {metrics.relations_external}")
+        print(f"Relaciones Data-Driven no resueltas: {metrics.relations_unresolved}")
+        print(f"Advertencias Data-Driven: {metrics.warning_count}")
+        print(f"Diagnosticos Data-Driven: {len(metrics.diagnostics)}")
+        for diagnostic in metrics.diagnostics:
+            print(
+                f"- {diagnostic.severity} {diagnostic.relative_path} "
+                f"lineas={diagnostic.start_line}-{diagnostic.end_line} "
+                f"motivo={diagnostic.reason} "
+                f"accion={_data_driven_diagnostic_action(diagnostic.reason)}"
+            )
+    if summary.stage_durations_ms:
+        stages = ", ".join(
+            f"{name}={duration} ms"
+            for name, duration in summary.stage_durations_ms
+        )
+        print(f"Duracion por etapa: {stages}")
     print(f"Duracion: {summary.duration_ms} ms")
+
+
+def _data_driven_diagnostic_action(reason: str) -> str:
+    """Devuelve una accion operativa breve para un diagnostico DML.
+
+    Args:
+        reason: Codigo estable emitido por el parser Data-Driven.
+
+    Returns:
+        Sugerencia en espanol apta para mostrarse en una sola linea de CLI.
+    """
+    actions = {
+        "column_value_mismatch": "alinear columnas y valores",
+        "malformed_insert": "corregir la estructura INSERT VALUES",
+        "malformed_update": "corregir la estructura UPDATE SET WHERE",
+        "max_literal_chars": "revisar el literal o el limite configurado",
+        "max_statements_per_file": "dividir el archivo o revisar el limite",
+        "missing_default_column_order": "declarar columnas o default_column_order",
+        "missing_identity": "agregar las columnas de identidad requeridas",
+        "missing_identity_where": "agregar la identidad completa al WHERE",
+        "undeclared_table": "declarar la tabla o corregir el patron del archivo",
+        "unsupported_statement": "usar INSERT VALUES o UPDATE SET WHERE soportado",
+    }
+    return actions.get(reason, "revisar la sentencia y la declaracion TOML")
+
+
+def _log_data_driven_analyze_summary(
+    settings: Settings,
+    summary: AnalyzeSummary,
+) -> None:
+    """Registra metricas y diagnosticos Data-Driven sin incluir contenido DML.
+
+    Args:
+        settings: Configuracion efectiva que define el archivo de log local.
+        summary: Resultado estructurado devuelto por `AnalyzeService`.
+    """
+    metrics = summary.data_driven
+    if not metrics.files_identified:
+        return
+    logger = configure_logging(settings)
+    logger.info(
+        "analyze_data_driven run_id=%s status=%s files=%s statements=%s "
+        "supported=%s omitted=%s failed=%s records=%s symbols=%s references=%s "
+        "reconciled=%s resolved=%s ambiguous=%s dynamic=%s external=%s "
+        "unresolved=%s warnings=%s duration_ms=%s stages=%s",
+        summary.run_id,
+        summary.status.value,
+        metrics.files_identified,
+        metrics.statements_processed,
+        metrics.statements_supported,
+        metrics.statements_omitted,
+        metrics.statements_failed,
+        metrics.records_extracted,
+        metrics.symbols_generated,
+        metrics.references_detected,
+        metrics.configurations_reconciled,
+        metrics.relations_resolved,
+        metrics.relations_ambiguous,
+        metrics.relations_dynamic,
+        metrics.relations_external,
+        metrics.relations_unresolved,
+        metrics.warning_count,
+        summary.duration_ms,
+        dict(summary.stage_durations_ms),
+    )
+    for diagnostic in metrics.diagnostics:
+        log_diagnostic = (
+            logger.error if diagnostic.severity == "error" else logger.warning
+        )
+        log_diagnostic(
+            "analyze_data_driven_diagnostic severity=%s path=%s lines=%s-%s reason=%s",
+            diagnostic.severity,
+            diagnostic.relative_path,
+            diagnostic.start_line,
+            diagnostic.end_line,
+            diagnostic.reason,
+        )
 
 
 def _inventory_filters(args: argparse.Namespace) -> InventoryFilters:

@@ -29,3 +29,14 @@ def test_readme_documents_short_quick_start_and_demo_placeholders() -> None:
     assert 'barbarion spec create "Agregar validación de límite de crédito"' in readme
     assert "docs/images/" in readme
     assert "docs/CLI.md" in readme
+
+
+def test_readme_documents_data_driven_operation() -> None:
+    """Comprueba que README enlaza el flujo operativo Data-Driven."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "## Configuraciones Data-Driven" in readme
+    assert "data_driven.enabled" in readme
+    assert "barbarion analyze --dry-run" in readme
+    assert "barbarion inventory --technology configuration" in readme
+    assert "barbarion stats --format json" in readme

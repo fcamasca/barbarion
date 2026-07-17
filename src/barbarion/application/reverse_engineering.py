@@ -58,7 +58,10 @@ from barbarion.infrastructure.sqlite import (
     SQLiteReverseEngineeringRepository,
 )
 from barbarion.infrastructure.parsers.oracle import extract_oracle_references
-from barbarion.infrastructure.parsers.data_driven_dml import parse_dml_configurations
+from barbarion.infrastructure.parsers.data_driven_dml import (
+    parse_dml_configurations,
+    split_dml_statements,
+)
 from barbarion.infrastructure.parsers.powerbuilder import extract_powerbuilder_references
 
 
@@ -101,6 +104,66 @@ class RelationResolutionSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class DataDrivenDiagnosticSummary:
+    """Diagnostico Data-Driven trazable presentado por `analyze`.
+
+    Attributes:
+        relative_path: Ruta persistida del documento diagnosticado.
+        start_line: Primera linea de la sentencia afectada.
+        end_line: Ultima linea de la sentencia afectada.
+        reason: Codigo estable producido por el parser.
+        severity: Severidad operativa `warning` o `error`.
+    """
+
+    relative_path: str
+    start_line: int
+    end_line: int
+    reason: str
+    severity: str
+
+
+@dataclass(frozen=True, slots=True)
+class DataDrivenAnalyzeMetrics:
+    """Metricas verificables del procesamiento Data-Driven.
+
+    Attributes:
+        files_identified: Documentos clasificados como configuracion.
+        statements_processed: Sentencias separadas en documentos candidatos.
+        statements_supported: Sentencias convertidas en registros canonicos.
+        statements_omitted: Sentencias no soportadas omitidas de forma segura.
+        statements_failed: Sentencias rechazadas por estructura o limites.
+        records_extracted: Registros canonicos extraidos.
+        symbols_generated: Simbolos de configuracion deduplicados.
+        references_detected: Referencias originadas en configuraciones.
+        configurations_reconciled: Configuraciones declaradas presentes en el alcance.
+        relations_resolved: Referencias Data-Driven resueltas de forma unica.
+        relations_ambiguous: Referencias con multiples candidatos.
+        relations_unresolved: Referencias sin destino disponible.
+        relations_dynamic: Referencias conservadas como dinamicas.
+        relations_external: Referencias declaradas como externas.
+        warning_count: Cantidad de diagnosticos recuperables.
+        diagnostics: Diagnosticos trazables por archivo y lineas.
+    """
+
+    files_identified: int = 0
+    statements_processed: int = 0
+    statements_supported: int = 0
+    statements_omitted: int = 0
+    statements_failed: int = 0
+    records_extracted: int = 0
+    symbols_generated: int = 0
+    references_detected: int = 0
+    configurations_reconciled: int = 0
+    relations_resolved: int = 0
+    relations_ambiguous: int = 0
+    relations_unresolved: int = 0
+    relations_dynamic: int = 0
+    relations_external: int = 0
+    warning_count: int = 0
+    diagnostics: tuple[DataDrivenDiagnosticSummary, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class AnalyzeSummary:
     """Resume la ejecucion completa de `barbarion analyze`.
 
@@ -119,6 +182,8 @@ class AnalyzeSummary:
     relations_unresolved: int
     dry_run: bool = False
     duration_ms: int = 0
+    stage_durations_ms: tuple[tuple[str, int], ...] = ()
+    data_driven: DataDrivenAnalyzeMetrics = DataDrivenAnalyzeMetrics()
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +357,7 @@ class AnalyzeService:
             interrumpida antes de persistir conocimiento parcial.
         """
         started = time.monotonic()
+        stage_started = started
         scope = scope or AnalyzeScope()
         stages = _analyze_stages()
         if progress is not None:
@@ -305,6 +371,9 @@ class AnalyzeService:
             files_scanned=len(file_ids),
             chunks_scanned=len(sources),
         )
+        stage_durations: list[tuple[str, int]] = [
+            ("discover", _duration_ms(stage_started))
+        ]
         _report(progress, "discover", stages, 1, 1, counters)
         if _is_cancelled(cancellation):
             return _interrupted_analyze_summary(counters, started, dry_run=dry_run)
@@ -320,12 +389,20 @@ class AnalyzeService:
                 },
             )
 
+        stage_started = time.monotonic()
         symbols = _symbols_from_sources(sources, settings=self.settings)
         references = _references_from_sources(
             sources,
             symbols,
             settings=self.settings,
         )
+        data_driven = _data_driven_analyze_metrics(
+            sources,
+            symbols,
+            references,
+            settings=self.settings,
+        )
+        stage_durations.append(("extract", _duration_ms(stage_started)))
         counters = replace(
             counters,
             symbols_detected=len(symbols),
@@ -341,15 +418,19 @@ class AnalyzeService:
                     status=AnalysisRunStatus.INTERRUPTED,
                     symbols_detected=counters.symbols_detected,
                     references_detected=counters.references_detected,
+                    warning_count=data_driven.warning_count,
+                    error_count=data_driven.statements_failed,
                     duration_ms=_duration_ms(started),
                 )
             return _interrupted_analyze_summary(counters, started, dry_run=dry_run)
 
         if dry_run:
+            stage_started = time.monotonic()
             resolved, ambiguous, unresolved = _resolution_counts(
                 references,
                 symbols,
             )
+            stage_durations.append(("resolve", _duration_ms(stage_started)))
             counters = replace(
                 counters,
                 relations_resolved=resolved,
@@ -376,20 +457,29 @@ class AnalyzeService:
                 relations_unresolved=unresolved,
                 dry_run=True,
                 duration_ms=_duration_ms(started),
+                stage_durations_ms=tuple(stage_durations),
+                data_driven=_with_data_driven_resolution_counts(
+                    data_driven,
+                    references,
+                    symbols,
+                ),
             )
             if progress is not None:
                 progress.finish(summary.status.value)
             return summary
 
         assert run_id is not None
+        stage_started = time.monotonic()
         for symbol in symbols:
             self.repository.upsert_symbol(run_id=run_id, symbol=symbol)
         for reference in references:
             self.repository.upsert_reference(run_id=run_id, reference=reference)
         self.repository.reconcile_analysis_scope(run_id=run_id, file_ids=file_ids)
         self.repository.reconcile_deleted_files()
+        stage_durations.append(("persist", _duration_ms(stage_started)))
         _report(progress, "persist", stages, 1, 1, counters)
 
+        stage_started = time.monotonic()
         all_symbols = self.repository.active_symbols()
         all_references = self.repository.active_references()
         resolved, ambiguous, unresolved = self._resolve_references(
@@ -403,6 +493,12 @@ class AnalyzeService:
             relations_ambiguous=ambiguous,
             relations_unresolved=unresolved,
         )
+        stage_durations.append(("resolve", _duration_ms(stage_started)))
+        data_driven = _with_data_driven_resolution_counts(
+            data_driven,
+            references,
+            all_symbols,
+        )
         _report(progress, "resolve", stages, len(all_references), len(all_references), counters)
         status = AnalysisRunStatus.COMPLETED
         duration_ms = _duration_ms(started)
@@ -414,6 +510,8 @@ class AnalyzeService:
             relations_resolved=resolved,
             relations_unresolved=unresolved,
             relations_ambiguous=ambiguous,
+            warning_count=data_driven.warning_count,
+            error_count=data_driven.statements_failed,
             duration_ms=duration_ms,
         )
         if progress is not None:
@@ -429,6 +527,8 @@ class AnalyzeService:
             relations_ambiguous=ambiguous,
             relations_unresolved=unresolved,
             duration_ms=duration_ms,
+            stage_durations_ms=tuple(stage_durations),
+            data_driven=data_driven,
         )
 
     def _resolve_references(
@@ -1045,6 +1145,146 @@ class _AnalyzeCounters:
             "delete": self.relations_ambiguous,
             "errores": self.relations_unresolved,
         }
+
+
+def _data_driven_analyze_metrics(
+    sources: tuple[SymbolSource, ...],
+    symbols: tuple[TechnicalSymbol, ...],
+    references: tuple[TechnicalReference, ...],
+    *,
+    settings: Settings,
+) -> DataDrivenAnalyzeMetrics:
+    """Calcula metricas Data-Driven desde documentos completos del alcance.
+
+    Args:
+        sources: Chunks seleccionados por `analyze` con contenido documental.
+        symbols: Simbolos deduplicados extraidos en la corrida.
+        references: Referencias deduplicadas extraidas en la corrida.
+        settings: Configuracion efectiva con declaraciones y limites DML.
+
+    Returns:
+        Metricas de archivos, sentencias, registros y diagnosticos trazables.
+    """
+    documents: dict[int, SymbolSource] = {}
+    for source in sources:
+        if _is_data_driven_configuration_source(source, settings):
+            documents.setdefault(source.document_id, source)
+
+    statements_processed = 0
+    records_extracted = 0
+    omitted = 0
+    failed = 0
+    diagnostics: list[DataDrivenDiagnosticSummary] = []
+    configuration_names: set[str] = set()
+    for source in sorted(documents.values(), key=lambda item: item.relative_path):
+        statements_processed += len(split_dml_statements(source.document_content))
+        parse_result = parse_dml_configurations(
+            source.document_content,
+            settings.data_driven.configurations,
+            max_statements_per_file=settings.data_driven.max_statements_per_file,
+            max_literal_chars=settings.data_driven.max_literal_chars,
+        )
+        records_extracted += len(parse_result.records)
+        configuration_names.update(
+            record.configuration_name for record in parse_result.records
+        )
+        for diagnostic in parse_result.diagnostics:
+            severity = _data_driven_diagnostic_severity(diagnostic.reason)
+            if severity == "error":
+                failed += 1
+            else:
+                omitted += 1
+            diagnostics.append(
+                DataDrivenDiagnosticSummary(
+                    relative_path=source.relative_path,
+                    start_line=diagnostic.start_line,
+                    end_line=diagnostic.end_line,
+                    reason=diagnostic.reason,
+                    severity=severity,
+                )
+            )
+
+    configuration_symbols = tuple(
+        symbol for symbol in symbols if symbol.technology == "configuration"
+    )
+    configuration_references = tuple(
+        reference
+        for reference in references
+        if reference.detection_method.startswith("data_driven")
+    )
+    return DataDrivenAnalyzeMetrics(
+        files_identified=len(documents),
+        statements_processed=statements_processed,
+        statements_supported=records_extracted,
+        statements_omitted=omitted,
+        statements_failed=failed,
+        records_extracted=records_extracted,
+        symbols_generated=len(configuration_symbols),
+        references_detected=len(configuration_references),
+        configurations_reconciled=len(configuration_names),
+        warning_count=omitted,
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def _data_driven_diagnostic_severity(reason: str) -> str:
+    """Clasifica un diagnostico DML como omision segura o error recuperable.
+
+    Args:
+        reason: Codigo estable emitido por el parser DML.
+
+    Returns:
+        `error` para limites o estructuras invalidas; `warning` para formas no
+        soportadas u objetos fuera de las declaraciones.
+    """
+    error_reasons = {
+        "column_value_mismatch",
+        "malformed_insert",
+        "malformed_update",
+        "max_literal_chars",
+        "max_statements_per_file",
+        "missing_default_column_order",
+        "missing_identity",
+        "missing_identity_where",
+        "missing_set",
+    }
+    return "error" if reason in error_reasons else "warning"
+
+
+def _with_data_driven_resolution_counts(
+    metrics: DataDrivenAnalyzeMetrics,
+    references: tuple[TechnicalReference, ...],
+    symbols: tuple[TechnicalSymbol, ...],
+) -> DataDrivenAnalyzeMetrics:
+    """Completa estados de resolucion para referencias Data-Driven del alcance.
+
+    Args:
+        metrics: Metricas de extraccion que deben conservarse.
+        references: Referencias extraidas dentro del alcance solicitado.
+        symbols: Catalogo de simbolos usado para resolver destinos.
+
+    Returns:
+        Copia de las metricas con conteos por estado de resolucion.
+    """
+    counts = {status: 0 for status in ResolutionStatus}
+    for reference in references:
+        if not reference.detection_method.startswith("data_driven"):
+            continue
+        decision = relation_from_reference(reference, symbols)
+        status = (
+            ResolutionStatus.UNRESOLVED
+            if decision is None
+            else decision[0].resolution_status
+        )
+        counts[status] += 1
+    return replace(
+        metrics,
+        relations_resolved=counts[ResolutionStatus.RESOLVED],
+        relations_ambiguous=counts[ResolutionStatus.AMBIGUOUS],
+        relations_unresolved=counts[ResolutionStatus.UNRESOLVED],
+        relations_dynamic=counts[ResolutionStatus.DYNAMIC],
+        relations_external=counts[ResolutionStatus.EXTERNAL],
+    )
 
 
 def _symbols_from_sources(

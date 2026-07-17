@@ -154,7 +154,8 @@ configuraciones.
 
 ### H4.1-T10 - Validar integracion minima con H3 y H5
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** comprobar que RAG y Spec Mode consumen conocimiento Data-Driven
 por contratos existentes.  
 **Descripcion:** Cubrir busqueda keyword/hybrid de DML, evidencia en `ask` y

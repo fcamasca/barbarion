@@ -164,6 +164,36 @@ barbarion config show
 barbarion --config ruta/al/archivo.toml config show
 ```
 
+## Configuraciones Data-Driven
+
+Barbarion puede tratar archivos `.sql` declarados como configuracion sin
+ejecutar el DML. Para habilitarlo, configura `data_driven.enabled = true`, los
+`file_patterns`, tablas, columnas de identidad y columnas semanticas en
+`barbarion.toml`. El ejemplo completo y comentado esta en
+[`barbarion.example.toml`](barbarion.example.toml).
+
+Flujo operativo recomendado:
+
+```bash
+barbarion ingest
+barbarion analyze --dry-run
+barbarion analyze
+barbarion inventory --technology configuration
+barbarion stats --format json
+```
+
+`analyze --dry-run` informa archivos DML candidatos, sentencias soportadas,
+omitidas o con error, registros, simbolos, referencias, estados de relacion,
+advertencias por archivo/linea y duracion por etapa. No escribe conocimiento.
+La ejecucion normal reconcilia el alcance y publica los resultados consistentes
+en SQLite. `stats` agrega una seccion `reverse_engineering.data_driven` cuando
+se solicita JSON.
+
+Las sentencias no soportadas y los registros malformados se diagnostican sin
+impedir que otros documentos validos del alcance sean procesados. Ante un
+diagnostico, revisa `motivo`, ruta y rango de lineas; corrige el DML o ajusta la
+declaracion TOML y vuelve a ejecutar `ingest` seguido de `analyze`.
+
 ## Directorios locales
 
 Con la configuración predeterminada, `barbarion doctor` inicializa:

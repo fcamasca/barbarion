@@ -1294,7 +1294,7 @@ class RagInventoryStats:
 
 @dataclass(frozen=True, slots=True)
 class ReverseEngineeringStats:
-    """Metricas persistidas de reverse engineering para CLI stats."""
+    """Metricas persistidas generales y Data-Driven para CLI stats."""
 
     latest_run_id: int | None
     latest_run_status: str | None
@@ -1310,6 +1310,14 @@ class ReverseEngineeringStats:
     relations_unresolved: int
     relations_dynamic: int
     relations_external: int
+    configuration_files: int
+    configuration_symbols_active: int
+    configuration_references_active: int
+    configuration_relations_resolved: int
+    configuration_relations_ambiguous: int
+    configuration_relations_unresolved: int
+    configuration_relations_dynamic: int
+    configuration_relations_external: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -2115,10 +2123,59 @@ class SQLiteReverseEngineeringRepository:
                 GROUP BY resolution_status
                 """
             ).fetchall()
+            configuration_files = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM files
+                WHERE artifact_kind = 'configuration'
+                  AND status = 'processed'
+                """
+            ).fetchone()
+            configuration_symbols = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM symbols
+                WHERE technology = 'configuration'
+                  AND status = 'active'
+                """
+            ).fetchone()
+            configuration_references = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM symbol_references
+                JOIN symbols ON symbols.id = symbol_references.source_symbol_id
+                WHERE symbols.technology = 'configuration'
+                  AND symbols.status = 'active'
+                """
+            ).fetchone()
+            configuration_unresolved = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM symbol_references
+                JOIN symbols ON symbols.id = symbol_references.source_symbol_id
+                WHERE symbols.technology = 'configuration'
+                  AND symbols.status = 'active'
+                  AND symbol_references.resolution_status = 'unresolved'
+                """
+            ).fetchone()
+            configuration_relation_rows = connection.execute(
+                """
+                SELECT relations.resolution_status, COUNT(*) AS count
+                FROM relations
+                JOIN symbols ON symbols.id = relations.source_symbol_id
+                WHERE symbols.technology = 'configuration'
+                  AND relations.status = 'active'
+                GROUP BY relations.resolution_status
+                """
+            ).fetchall()
         symbols = {str(row["status"]): int(row["count"]) for row in symbol_rows}
         relations = {
             str(row["resolution_status"]): int(row["count"])
             for row in relation_rows
+        }
+        configuration_relations = {
+            str(row["resolution_status"]): int(row["count"])
+            for row in configuration_relation_rows
         }
         return ReverseEngineeringStats(
             latest_run_id=None if latest_run is None else int(latest_run["id"]),
@@ -2138,6 +2195,22 @@ class SQLiteReverseEngineeringRepository:
             relations_unresolved=relations.get(ResolutionStatus.UNRESOLVED.value, 0),
             relations_dynamic=relations.get(ResolutionStatus.DYNAMIC.value, 0),
             relations_external=relations.get(ResolutionStatus.EXTERNAL.value, 0),
+            configuration_files=int(configuration_files["count"]),
+            configuration_symbols_active=int(configuration_symbols["count"]),
+            configuration_references_active=int(configuration_references["count"]),
+            configuration_relations_resolved=configuration_relations.get(
+                ResolutionStatus.RESOLVED.value, 0
+            ),
+            configuration_relations_ambiguous=configuration_relations.get(
+                ResolutionStatus.AMBIGUOUS.value, 0
+            ),
+            configuration_relations_unresolved=int(configuration_unresolved["count"]),
+            configuration_relations_dynamic=configuration_relations.get(
+                ResolutionStatus.DYNAMIC.value, 0
+            ),
+            configuration_relations_external=configuration_relations.get(
+                ResolutionStatus.EXTERNAL.value, 0
+            ),
         )
 
     def symbol_sources(

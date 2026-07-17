@@ -415,6 +415,34 @@ Usalo para diagnosticar el estado del indice. No modifica SQLite, no requiere em
 
 ### Reverse Engineering
 
+### Notas operativas Data-Driven
+
+Cuando `data_driven.enabled = true`, `ingest` clasifica como `configuration`
+solo los `.sql` que coinciden con los patrones declarados y afectan una tabla
+configurada. `analyze` procesa cada documento completo; los chunks se conservan
+como evidencia y ubicacion, no como unidad de parsing DML.
+
+Antes de publicar cambios, usa `barbarion analyze --dry-run`. El resumen muestra
+archivos DML identificados, sentencias procesadas/soportadas/omitidas/con error,
+registros, simbolos, referencias, configuraciones reconciliadas, relaciones por
+estado, advertencias trazables y duracion por etapa. Las advertencias incluyen
+ruta, lineas y un `motivo` estable.
+
+Diagnosticos frecuentes:
+
+- `unsupported_statement`: la sentencia queda omitida; conviertela a un
+  `INSERT ... VALUES` o `UPDATE ... SET ... WHERE` soportado si debe analizarse.
+- `undeclared_table`: declara la tabla en la configuracion correcta o revisa el
+  patron del archivo.
+- `missing_identity` o `missing_identity_where`: agrega todas las columnas de
+  identidad requeridas.
+- `column_value_mismatch`: corrige la cantidad de columnas y valores.
+- `max_statements_per_file` o `max_literal_chars`: revisa el archivo y ajusta el
+  limite solo si el corpus autorizado lo requiere.
+
+Un diagnostico recuperable no impide procesar otros documentos validos. Una
+interrupcion devuelve `130` y no publica conocimiento parcial del alcance.
+
 ### analyze
 
 Proposito: extraer simbolos y relaciones desde chunks vigentes.
@@ -438,6 +466,7 @@ barbarion analyze --dry-run
 barbarion analyze
 barbarion analyze --full
 barbarion analyze --path sources/oracle --path sources/powerbuilder
+barbarion analyze --path config/pricing --dry-run
 ```
 
 Usalo despues de `ingest` para poblar el catalogo tecnico H4. Modifica SQLite salvo con `--dry-run`. No requiere embeddings ni LLM. Codigos de salida: `0`, `1` o `130` segun resultado.
@@ -449,7 +478,7 @@ Proposito: consultar inventario tecnico persistido.
 Sintaxis:
 
 ```bash
-barbarion inventory [--technology oracle|powerbuilder|document|unknown] [--type TIPO] [--name TEXTO] [--path PREFIJO] [--status active|stale|deleted|ambiguous] [--confidence high|medium|low] [--format text|json|markdown] [--output RUTA] [--overwrite] [--debug]
+barbarion inventory [--technology oracle|powerbuilder|configuration|document|unknown] [--type TIPO] [--name TEXTO] [--path PREFIJO] [--status active|stale|deleted|ambiguous] [--confidence high|medium|low] [--format text|json|markdown] [--output RUTA] [--overwrite] [--debug]
 ```
 
 Argumentos principales:
@@ -463,6 +492,7 @@ Ejemplos:
 ```bash
 barbarion inventory
 barbarion inventory --technology oracle --format markdown
+barbarion inventory --technology configuration --format markdown
 barbarion inventory --name order --output reports/inventory.md --overwrite
 ```
 
@@ -633,7 +663,12 @@ barbarion stats
 barbarion stats --format json
 ```
 
-Usalo para revisar estado general sin mutar la base. No modifica SQLite, no requiere embeddings ni LLM. Si no existe SQLite, informa el estado y devuelve `0`.
+Usalo para revisar estado general sin mutar la base. Cuando existen
+configuraciones, la salida de texto agrega claves `data_driven.*` y JSON agrega
+`reverse_engineering.data_driven` con archivos, simbolos, referencias y
+relaciones `resolved`, `ambiguous`, `unresolved`, `dynamic` y `external`. No
+modifica SQLite, no requiere embeddings ni LLM. Si no existe SQLite, informa el
+estado y devuelve `0`.
 
 ### generate-report
 

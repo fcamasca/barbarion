@@ -288,6 +288,8 @@ class AnalyzeService:
         Note:
             En modo real, la persistencia por archivo y la re-resolucion global
             se ejecutan despues de reconciliar simbolos y referencias obsoletos.
+            Si se cancela despues de extraer, la corrida se cierra como
+            interrumpida antes de persistir conocimiento parcial.
         """
         started = time.monotonic()
         scope = scope or AnalyzeScope()
@@ -333,6 +335,14 @@ class AnalyzeService:
         if _is_cancelled(cancellation):
             if progress is not None:
                 progress.finish(AnalysisRunStatus.INTERRUPTED.value)
+            if run_id is not None:
+                self.repository.finish_analysis_run(
+                    run_id=run_id,
+                    status=AnalysisRunStatus.INTERRUPTED,
+                    symbols_detected=counters.symbols_detected,
+                    references_detected=counters.references_detected,
+                    duration_ms=_duration_ms(started),
+                )
             return _interrupted_analyze_summary(counters, started, dry_run=dry_run)
 
         if dry_run:
@@ -379,22 +389,6 @@ class AnalyzeService:
         self.repository.reconcile_analysis_scope(run_id=run_id, file_ids=file_ids)
         self.repository.reconcile_deleted_files()
         _report(progress, "persist", stages, 1, 1, counters)
-        if _is_cancelled(cancellation):
-            self.repository.finish_analysis_run(
-                run_id=run_id,
-                status=AnalysisRunStatus.INTERRUPTED,
-                symbols_detected=counters.symbols_detected,
-                references_detected=counters.references_detected,
-                duration_ms=_duration_ms(started),
-            )
-            if progress is not None:
-                progress.finish(AnalysisRunStatus.INTERRUPTED.value)
-            return _interrupted_analyze_summary(
-                counters,
-                started,
-                run_id=run_id,
-                dry_run=dry_run,
-            )
 
         all_symbols = self.repository.active_symbols()
         all_references = self.repository.active_references()

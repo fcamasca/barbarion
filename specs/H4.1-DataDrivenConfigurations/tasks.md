@@ -109,7 +109,7 @@ correctos.
 
 ### H4.1-T07 - Analizar formulas, reglas y tokens
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** extraer tokens y dependencias desde columnas de formula/regla sin
 evaluarlas.  
 **Descripcion:** Aplicar `token_patterns`, detectar variables, parametros y

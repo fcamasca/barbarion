@@ -84,6 +84,7 @@ rule_columns = ["RULE_SQL"]
 formula_columns = ["FORMULA"]
 variable_columns = ["VARIABLE_NAME"]
 parameter_columns = ["PARAMETER_NAME"]
+mapping_columns = ["MAPPING_NAME"]
 reference_columns = [
   { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },
   { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }

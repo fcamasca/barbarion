@@ -108,8 +108,9 @@ que archivos, tablas y columnas representan configuraciones.
 - cada entrada exige `name`, `tables`, `identity_columns` y `symbol_type`;
 - puede declarar columnas opcionales `name_columns`, `description_columns`,
   `rule_columns`, `formula_columns`, `variable_columns`, `parameter_columns`,
-  `reference_columns`, `parent_columns`, `sequence_columns`, `status_columns`,
-  `effective_from_columns`, `effective_to_columns` y `metadata_columns`;
+  `mapping_columns`, `reference_columns`, `parent_columns`, `sequence_columns`,
+  `status_columns`, `effective_from_columns`, `effective_to_columns` y
+  `metadata_columns`;
 - rechaza claves desconocidas y configuraciones incompletas con mensajes en
   espanol;
 - no expone un separador configurable; `;` es una regla interna fija del

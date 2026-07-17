@@ -142,6 +142,7 @@ _ALLOWED_DATA_DRIVEN_CONFIGURATION_KEYS = frozenset(
         "formula_columns",
         "variable_columns",
         "parameter_columns",
+        "mapping_columns",
         "reference_columns",
         "parent_columns",
         "sequence_columns",
@@ -279,6 +280,7 @@ class DataDrivenConfiguration:
     formula_columns: tuple[str, ...]
     variable_columns: tuple[str, ...]
     parameter_columns: tuple[str, ...]
+    mapping_columns: tuple[str, ...]
     reference_columns: tuple[DataDrivenReferenceColumn, ...]
     parent_columns: tuple[DataDrivenParentColumn, ...]
     sequence_columns: tuple[str, ...]
@@ -953,6 +955,10 @@ def _build_data_driven_configuration(
         parameter_columns=_validate_column_list(
             value.get("parameter_columns", ()),
             f"{key}.parameter_columns",
+        ),
+        mapping_columns=_validate_column_list(
+            value.get("mapping_columns", ()),
+            f"{key}.mapping_columns",
         ),
         reference_columns=_validate_reference_columns(
             value.get("reference_columns", ()),

@@ -49,7 +49,7 @@ declarados conservan comportamiento previo.
 
 ### H4.1-T03 - Implementar splitter y parser DML acotado
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** parsear `INSERT` y `UPDATE` soportados como texto estatico.  
 **Descripcion:** Crear separador de sentencias con `;` interno fuera de strings
 y comentarios, aceptar EOF sin `;` solo cuando sea seguro, parser de valores,
@@ -63,7 +63,7 @@ sentencias no soportadas generan warnings recuperables.
 
 ### H4.1-T04 - Construir registros y simbolos de configuracion
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** convertir registros canonicos en simbolos `configuration_*`.  
 **Descripcion:** Implementar identidad estable, entidad padre, registro,
 simbolos derivados de reglas/formulas/variables/parametros/mappings/pasos,

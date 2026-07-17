@@ -508,6 +508,7 @@ def test_data_driven_values_are_loaded(tmp_path: Path) -> None:
                 'formula_columns = ["FORMULA"]',
                 'variable_columns = ["VARIABLE_NAME"]',
                 'parameter_columns = ["PARAMETER_NAME"]',
+                'mapping_columns = ["MAPPING_NAME"]',
                 'reference_columns = [',
                 '  { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },',
                 '  { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }',
@@ -548,6 +549,7 @@ def test_data_driven_values_are_loaded(tmp_path: Path) -> None:
                 formula_columns=("FORMULA",),
                 variable_columns=("VARIABLE_NAME",),
                 parameter_columns=("PARAMETER_NAME",),
+                mapping_columns=("MAPPING_NAME",),
                 reference_columns=(
                     DataDrivenReferenceColumn(
                         column="FUNCTION_NAME",

@@ -123,6 +123,7 @@ def test_data_driven_declaration_changes_processing_signature(tmp_path: Path) ->
                 formula_columns=(),
                 variable_columns=(),
                 parameter_columns=(),
+                mapping_columns=(),
                 reference_columns=(),
                 parent_columns=(),
                 sequence_columns=(),

@@ -740,23 +740,54 @@ def _contains_unsupported_insert_shape(text: str) -> bool:
     upper = text.upper()
     return (
         upper.startswith("INSERT ALL")
-        or " RETURNING " in upper
-        or re.search(r"\bINSERT\s+INTO\b.*\bSELECT\b", upper, re.DOTALL) is not None
+        or _contains_keyword_outside_literals(text, "RETURNING")
+        or _contains_keyword_outside_literals(text, "SELECT")
     )
 
 
 def _contains_unsupported_update_shape(text: str) -> bool:
-    upper = text.upper()
     return (
-        " RETURNING " in upper
-        or " FROM " in upper
-        or re.search(r"\b(OR|IN|LIKE)\b", upper) is not None
+        _contains_keyword_outside_literals(text, "RETURNING")
+        or _contains_keyword_outside_literals(text, "FROM")
+        or _contains_keyword_outside_literals(text, "OR")
+        or _contains_keyword_outside_literals(text, "IN")
+        or _contains_keyword_outside_literals(text, "LIKE")
         or _contains_subquery(text)
     )
 
 
 def _contains_subquery(text: str) -> bool:
-    return re.search(r"\(\s*SELECT\b", text, re.IGNORECASE | re.DOTALL) is not None
+    scrubbed = _scrub_literals(text)
+    return re.search(r"\(\s*SELECT\b", scrubbed, re.IGNORECASE | re.DOTALL) is not None
+
+
+def _contains_keyword_outside_literals(text: str, keyword: str) -> bool:
+    scrubbed = _scrub_literals(text)
+    return re.search(rf"\b{re.escape(keyword)}\b", scrubbed, re.IGNORECASE) is not None
+
+
+def _scrub_literals(text: str) -> str:
+    output: list[str] = []
+    state = "normal"
+    index = 0
+    while index < len(text):
+        character = text[index]
+        next_character = text[index + 1] if index + 1 < len(text) else ""
+        if state == "normal":
+            if character == "'":
+                output.append(" ")
+                state = "single_quote"
+            else:
+                output.append(character)
+        elif state == "single_quote":
+            output.append(" ")
+            if character == "'" and next_character == "'":
+                output.append(" ")
+                index += 1
+            elif character == "'":
+                state = "normal"
+        index += 1
+    return "".join(output)
 
 
 def _statement_type(text: str) -> str:

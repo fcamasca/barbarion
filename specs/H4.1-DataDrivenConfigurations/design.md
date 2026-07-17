@@ -75,6 +75,7 @@ description_columns = ["DESCRIPTION"]
 formula_columns = ["FORMULA"]
 variable_columns = ["VARIABLE_CODE"]
 parameter_columns = ["PARAMETER_CODE"]
+mapping_columns = ["MAPPING_CODE"]
 reference_columns = [
   { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },
   { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }

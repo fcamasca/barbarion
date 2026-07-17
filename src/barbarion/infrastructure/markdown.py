@@ -767,11 +767,13 @@ def _filters_text(filters: InventoryFilters) -> str:
 def _inventory_item_line(item: InventoryItem) -> str:
     symbol = item.symbol
     location = _location(item)
+    configuration = _configuration_suffix(symbol)
+    suffix = f" {configuration}" if configuration else ""
     return (
         f"- `{symbol.normalized_name}` tipo={symbol.symbol_type} "
         f"tecnologia={symbol.technology} estado={symbol.status.value} "
         f"confianza={symbol.confidence.value} refs={item.reference_count} "
-        f"out={item.outgoing_relations} in={item.incoming_relations} {location}"
+        f"out={item.outgoing_relations} in={item.incoming_relations} {location}{suffix}"
     )
 
 
@@ -803,7 +805,7 @@ def _resolution_lines(status: str, candidates: tuple[TechnicalSymbol, ...]) -> l
 
 
 def _symbol_lines(symbol: TechnicalSymbol) -> list[str]:
-    return [
+    lines = [
         f"- nombre: {symbol.normalized_name}",
         f"- nombre_original: {symbol.original_name}",
         f"- tipo: {symbol.symbol_type}",
@@ -815,6 +817,94 @@ def _symbol_lines(symbol: TechnicalSymbol) -> list[str]:
         f"- lineas: {_line_range(symbol.start_line, symbol.end_line)}",
         f"- symbol_id: {symbol.symbol_id}",
     ]
+    lines.extend(_configuration_symbol_lines(symbol))
+    return lines
+
+
+def _configuration_symbol_lines(symbol: TechnicalSymbol) -> list[str]:
+    """Renderiza metadata Data-Driven en secciones de identificacion.
+
+    Args:
+        symbol: Simbolo reverse engineering que puede provenir de configuracion.
+
+    Returns:
+        Lineas Markdown adicionales o lista vacia para otras tecnologias.
+    """
+    if symbol.technology != "configuration":
+        return []
+    lines = []
+    for label, key in (
+        ("configuracion", "configuration_name"),
+        ("tabla", "table"),
+        ("operacion", "operation"),
+        ("registro", "record_id"),
+    ):
+        value = symbol.metadata.get(key)
+        if isinstance(value, str) and value:
+            lines.append(f"- {label}: {value}")
+    for label, key in (
+        ("identidad", "identity_values"),
+        ("valores", "display_values"),
+        ("columnas_declaradas", "declared_columns"),
+    ):
+        values = _metadata_sequence(symbol, key)
+        if values:
+            lines.append(
+                f"- {label}: {', '.join(_truncate_visual_value(value) for value in values)}"
+            )
+    return lines
+
+
+def _configuration_suffix(symbol: TechnicalSymbol) -> str:
+    """Construye contexto Data-Driven compacto para lineas de inventario.
+
+    Args:
+        symbol: Simbolo reverse engineering que puede provenir de configuracion.
+
+    Returns:
+        Sufijo textual o cadena vacia para otras tecnologias.
+    """
+    if symbol.technology != "configuration":
+        return ""
+    parts = []
+    configuration_name = symbol.metadata.get("configuration_name")
+    table = symbol.metadata.get("table")
+    if isinstance(configuration_name, str) and configuration_name:
+        parts.append(f"configuracion={configuration_name}")
+    if isinstance(table, str) and table:
+        parts.append(f"tabla={table}")
+    return " ".join(parts)
+
+
+def _metadata_sequence(symbol: TechnicalSymbol, key: str) -> tuple[str, ...]:
+    """Obtiene una secuencia de metadata para Markdown.
+
+    Args:
+        symbol: Simbolo que contiene metadata persistida.
+        key: Clave de metadata esperada.
+
+    Returns:
+        Valores convertidos a texto en orden estable.
+    """
+    value = symbol.metadata.get(key)
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value if str(item).strip())
+
+
+def _truncate_visual_value(value: str, *, limit: int = 80) -> str:
+    """Trunca metadata extensa solo para render Markdown.
+
+    Args:
+        value: Valor completo almacenado en el simbolo.
+        limit: Longitud maxima visible antes del indicador de truncamiento.
+
+    Returns:
+        Valor original o abreviado con marcador `truncado`.
+    """
+    if len(value) <= limit:
+        return value
+    return value[: limit - 15].rstrip() + "... (truncado)"
 
 
 def _component_detected_lines(description: ComponentDescription) -> list[str]:

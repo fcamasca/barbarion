@@ -1262,14 +1262,43 @@ def _component_responsibilities(
     incoming: DependencyWalk,
 ) -> tuple[str, ...]:
     """Deriva responsabilidades descriptivas desde relaciones visibles."""
-    responsibilities = [
-        f"{symbol.symbol_type} {symbol.normalized_name} en tecnologia {symbol.technology}",
-    ]
+    if symbol.technology == "configuration":
+        responsibilities = _configuration_responsibilities(symbol)
+    else:
+        responsibilities = [
+            f"{symbol.symbol_type} {symbol.normalized_name} en tecnologia {symbol.technology}",
+        ]
     if outgoing.edges:
         responsibilities.append(f"declara {len(outgoing.edges)} dependencias salientes")
     if incoming.edges:
         responsibilities.append(f"tiene {len(incoming.edges)} consumidores detectados")
     return tuple(responsibilities)
+
+
+def _configuration_responsibilities(symbol: TechnicalSymbol) -> list[str]:
+    """Describe responsabilidades propias de simbolos Data-Driven.
+
+    Args:
+        symbol: Simbolo de tecnologia `configuration`.
+
+    Returns:
+        Lista mutable de responsabilidades base para completar con relaciones.
+    """
+    configuration_name = _metadata_text(symbol, "configuration_name")
+    table_name = _metadata_text(symbol, "table")
+    if symbol.symbol_type == "configuration_record":
+        label = configuration_name or symbol.container_name or "configuracion"
+        responsibilities = [f"registro Data-Driven {symbol.normalized_name} de {label}"]
+    elif symbol.symbol_type == "configuration_entity":
+        responsibilities = [f"entidad Data-Driven {symbol.normalized_name}"]
+    else:
+        responsibilities = [f"{symbol.symbol_type} Data-Driven {symbol.normalized_name}"]
+    if table_name is not None:
+        responsibilities.append(f"proviene de la tabla {table_name}")
+    display_values = _metadata_sequence(symbol, "display_values")
+    if display_values:
+        responsibilities.append(f"expone valores declarados: {', '.join(display_values)}")
+    return responsibilities
 
 
 def _description_inferences(
@@ -1363,6 +1392,13 @@ def _describe_summary(
     incoming: DependencyWalk,
 ) -> str:
     """Construye una sintesis determinista para describe."""
+    if symbol.technology == "configuration":
+        label = _configuration_label(symbol)
+        return (
+            f"{symbol.normalized_name} es {label}. "
+            f"Dependencias salientes: {len(outgoing.edges)}. "
+            f"Consumidores: {len(incoming.edges)}."
+        )
     return (
         f"{symbol.normalized_name} es un {symbol.symbol_type} {symbol.technology}. "
         f"Dependencias salientes: {len(outgoing.edges)}. "
@@ -1372,11 +1408,67 @@ def _describe_summary(
 
 def _impact_summary(symbol: TechnicalSymbol, walk: DependencyWalk) -> str:
     """Construye una sintesis determinista para impact."""
+    if symbol.technology == "configuration":
+        return (
+            f"Impacto Data-Driven de {symbol.normalized_name}: "
+            f"{len(walk.nodes)} nodos y {len(walk.edges)} relaciones evaluadas "
+            f"hasta profundidad {walk.max_depth}."
+        )
     return (
         f"Impacto basico de {symbol.normalized_name}: "
         f"{len(walk.nodes)} nodos y {len(walk.edges)} relaciones evaluadas "
         f"hasta profundidad {walk.max_depth}."
     )
+
+
+def _configuration_label(symbol: TechnicalSymbol) -> str:
+    """Construye una etiqueta breve para simbolos Data-Driven.
+
+    Args:
+        symbol: Simbolo de tecnologia `configuration`.
+
+    Returns:
+        Etiqueta legible usada en resumenes deterministas.
+    """
+    configuration_name = _metadata_text(symbol, "configuration_name")
+    if symbol.symbol_type == "configuration_record":
+        suffix = f" de {configuration_name}" if configuration_name else ""
+        return f"un registro Data-Driven{suffix}"
+    if symbol.symbol_type == "configuration_entity":
+        return "una entidad Data-Driven"
+    return f"un {symbol.symbol_type} Data-Driven"
+
+
+def _metadata_text(symbol: TechnicalSymbol, key: str) -> str | None:
+    """Obtiene un valor textual no vacio desde metadata de simbolo.
+
+    Args:
+        symbol: Simbolo que contiene metadata congelada.
+        key: Clave de metadata solicitada.
+
+    Returns:
+        Texto normalizado o `None` cuando no existe un valor simple.
+    """
+    value = symbol.metadata.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _metadata_sequence(symbol: TechnicalSymbol, key: str) -> tuple[str, ...]:
+    """Obtiene una secuencia textual desde metadata de simbolo.
+
+    Args:
+        symbol: Simbolo que contiene metadata congelada.
+        key: Clave de metadata solicitada.
+
+    Returns:
+        Valores textuales no vacios en el orden persistido.
+    """
+    value = symbol.metadata.get(key)
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in value if str(item).strip())
 
 
 def _rag_sources(

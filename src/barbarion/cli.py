@@ -1905,7 +1905,7 @@ def _inventory_json(inventory: Inventory) -> dict[str, object]:
 
 def _inventory_item_json(item: InventoryItem) -> dict[str, object]:
     symbol = item.symbol
-    return {
+    payload: dict[str, object] = {
         "symbol_id": symbol.symbol_id,
         "original_name": symbol.original_name,
         "normalized_name": symbol.normalized_name,
@@ -1925,18 +1925,24 @@ def _inventory_item_json(item: InventoryItem) -> dict[str, object]:
             "incoming_relations": item.incoming_relations,
         },
     }
+    configuration = _configuration_symbol_json(symbol)
+    if configuration:
+        payload["configuration"] = configuration
+    return payload
 
 
 def _inventory_item_text(item: InventoryItem) -> str:
     symbol = item.symbol
     line_range = _inventory_line_range(symbol.start_line, symbol.end_line)
+    configuration = _configuration_symbol_text(symbol)
+    suffix = f" {configuration}" if configuration else ""
     return (
         f"- {symbol.normalized_name} tipo={symbol.symbol_type} "
         f"tecnologia={symbol.technology} estado={symbol.status.value} "
         f"confianza={symbol.confidence.value} archivo={item.relative_path or 'n/a'} "
         f"chunk={symbol.chunk_id or 'n/a'} lineas={line_range} "
         f"refs={item.reference_count} out={item.outgoing_relations} "
-        f"in={item.incoming_relations}"
+        f"in={item.incoming_relations}{suffix}"
     )
 
 
@@ -2066,6 +2072,10 @@ def _render_impact(impact: ImpactAnalysis, output_format: str) -> str:
     if impact.to_confirm:
         lines.append("por_confirmar:")
         lines.extend(f"- {value}" for value in impact.to_confirm)
+    data_driven_edges = _data_driven_impact_edges(impact)
+    if data_driven_edges:
+        lines.append("relaciones:")
+        lines.extend(_impact_edge_text(edge) for edge in data_driven_edges)
     return "\n".join(lines)
 
 
@@ -2286,7 +2296,7 @@ def _edge_json(edge: DependencyEdge) -> dict[str, object]:
 
 
 def _symbol_json(symbol: TechnicalSymbol) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "symbol_id": symbol.symbol_id,
         "original_name": symbol.original_name,
         "normalized_name": symbol.normalized_name,
@@ -2301,6 +2311,157 @@ def _symbol_json(symbol: TechnicalSymbol) -> dict[str, object]:
         "start_line": symbol.start_line,
         "end_line": symbol.end_line,
     }
+    configuration = _configuration_symbol_json(symbol)
+    if configuration:
+        payload["configuration"] = configuration
+    return payload
+
+
+def _configuration_symbol_json(symbol: TechnicalSymbol) -> dict[str, object]:
+    """Construye metadata Data-Driven segura para JSON de CLI.
+
+    Args:
+        symbol: Simbolo reverse engineering que puede provenir de configuracion.
+
+    Returns:
+        Diccionario con metadata declarativa o vacio para otras tecnologias.
+    """
+    if symbol.technology != "configuration":
+        return {}
+    keys = (
+        "configuration_name",
+        "record_id",
+        "table",
+        "operation",
+        "identity_values",
+        "display_values",
+        "declared_columns",
+        "configured_metadata",
+    )
+    return {
+        key: _json_safe_metadata_value(symbol.metadata[key])
+        for key in keys
+        if key in symbol.metadata
+    }
+
+
+def _json_safe_metadata_value(value: object) -> object:
+    """Convierte metadata congelada a tipos JSON simples.
+
+    Args:
+        value: Valor extraido de metadata de simbolo.
+
+    Returns:
+        Valor serializable por `json.dumps`.
+    """
+    if isinstance(value, tuple):
+        return [_json_safe_metadata_value(item) for item in value]
+    if isinstance(value, list):
+        return [_json_safe_metadata_value(item) for item in value]
+    if isinstance(value, Mapping):
+        return {
+            str(key): _json_safe_metadata_value(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _configuration_symbol_text(symbol: TechnicalSymbol) -> str:
+    """Construye un sufijo textual breve para simbolos Data-Driven.
+
+    Args:
+        symbol: Simbolo reverse engineering que puede provenir de configuracion.
+
+    Returns:
+        Texto `configuracion=...` o cadena vacia para otras tecnologias.
+    """
+    if symbol.technology != "configuration":
+        return ""
+    parts = []
+    for label, key in (
+        ("configuracion", "configuration_name"),
+        ("tabla", "table"),
+        ("registro", "record_id"),
+    ):
+        value = symbol.metadata.get(key)
+        if isinstance(value, str) and value:
+            parts.append(f"{label}={value}")
+    display_values = symbol.metadata.get("display_values")
+    if isinstance(display_values, (list, tuple)) and display_values:
+        parts.append(
+            "valores="
+            + ",".join(_truncate_visual_value(str(item)) for item in display_values)
+        )
+    return " ".join(parts)
+
+
+def _data_driven_impact_edges(impact: ImpactAnalysis) -> tuple[DependencyEdge, ...]:
+    """Selecciona relaciones Data-Driven relevantes para salida textual.
+
+    Args:
+        impact: Resultado de impacto renderizado por CLI.
+
+    Returns:
+        Aristas de impacto cuando la semilla u otro extremo es Data-Driven.
+    """
+    walk = impact.walk
+    if walk is None:
+        return ()
+    symbol = impact.resolution.symbol
+    if symbol is not None and symbol.technology == "configuration":
+        return walk.edges
+    return tuple(
+        edge
+        for edge in walk.edges
+        if (
+            edge.source_symbol is not None
+            and edge.source_symbol.technology == "configuration"
+        )
+        or (
+            edge.target_symbol is not None
+            and edge.target_symbol.technology == "configuration"
+        )
+    )
+
+
+def _impact_edge_text(edge: DependencyEdge) -> str:
+    """Renderiza una arista de impacto en una linea textual estable.
+
+    Args:
+        edge: Arista calculada por `DependencyWalkService`.
+
+    Returns:
+        Linea con origen, destino, tipo y estado de resolucion.
+    """
+    source = (
+        edge.source_symbol.normalized_name
+        if edge.source_symbol is not None
+        else edge.relation.source_symbol_id or "origen_desconocido"
+    )
+    target = (
+        edge.target_symbol.normalized_name
+        if edge.target_symbol is not None
+        else edge.target_key or edge.relation.target_key or "destino_desconocido"
+    )
+    return (
+        f"- {source} -> {target} tipo={edge.relation.relation_type} "
+        f"estado={edge.relation.resolution_status.value}"
+    )
+
+
+def _truncate_visual_value(value: str, *, limit: int = 80) -> str:
+    """Trunca valores largos solo para visualizacion humana.
+
+    Args:
+        value: Texto completo almacenado en metadata.
+        limit: Longitud maxima antes de agregar indicador de truncamiento.
+
+    Returns:
+        Texto original o version abreviada con indicador `truncado`.
+    """
+    if len(value) <= limit:
+        return value
+    return value[: limit - 15].rstrip() + "... (truncado)"
 
 
 def _evidence_json(item) -> dict[str, object]:

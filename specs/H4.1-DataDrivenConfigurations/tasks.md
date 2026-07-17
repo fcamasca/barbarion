@@ -123,7 +123,7 @@ preservado.
 
 ### H4.1-T08 - Integrar Data-Driven en `barbarion analyze`
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** ejecutar pipeline Data-Driven incremental dentro de H4.  
 **Descripcion:** Seleccionar archivos declarados, procesar por archivo/scope,
 persistir, reconciliar obsoletos, re-resolver referencias afectadas, soportar

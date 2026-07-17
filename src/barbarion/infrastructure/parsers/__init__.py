@@ -2,7 +2,12 @@
 
 from barbarion.infrastructure.parsers.base import BaseParser
 from barbarion.infrastructure.parsers.data_driven_dml import (
+    DmlConfigurationRecord,
+    DmlDiagnostic,
+    DmlParseResult,
     DmlStatement,
+    DmlValue,
+    parse_dml_configurations,
     split_dml_statements,
 )
 from barbarion.infrastructure.parsers.docx import DocxParser
@@ -41,7 +46,11 @@ __all__ = [
     "BaseParser",
     "DecodedText",
     "DOCUMENT_CORRUPT",
+    "DmlConfigurationRecord",
+    "DmlDiagnostic",
+    "DmlParseResult",
     "DmlStatement",
+    "DmlValue",
     "DocxParser",
     "DuplicateParserExtensionError",
     "EXTRACTION_LIMIT_EXCEEDED",
@@ -64,5 +73,6 @@ __all__ = [
     "UnknownParserExtensionError",
     "decode_text_bytes",
     "decode_text_source",
+    "parse_dml_configurations",
     "split_dml_statements",
 ]

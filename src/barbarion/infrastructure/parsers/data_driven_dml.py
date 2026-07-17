@@ -2,7 +2,52 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass
+
+from barbarion.config import DataDrivenConfiguration
+
+_IDENTIFIER = r'(?:"[^"]+"|[A-Za-z][\w$#]*)(?:\s*\.\s*(?:"[^"]+"|[A-Za-z][\w$#]*))*'
+_INSERT_RE = re.compile(
+    rf"""
+    ^\s*INSERT\s+INTO\s+
+    (?P<table>{_IDENTIFIER})
+    \s*
+    (?:
+        \((?P<columns>.*?)\)
+        \s*
+    )?
+    VALUES\s*
+    \((?P<values>.*)\)
+    \s*$
+    """,
+    re.IGNORECASE | re.VERBOSE | re.DOTALL,
+)
+_UPDATE_RE = re.compile(
+    rf"""
+    ^\s*UPDATE\s+
+    (?P<table>{_IDENTIFIER})
+    \s+SET\s+
+    (?P<set>.*?)
+    \s+WHERE\s+
+    (?P<where>.*)
+    \s*$
+    """,
+    re.IGNORECASE | re.VERBOSE | re.DOTALL,
+)
+_DATE_LITERAL_RE = re.compile(
+    r"^DATE\s+'[^']*(?:''[^']*)*'$",
+    re.IGNORECASE | re.DOTALL,
+)
+_TIMESTAMP_LITERAL_RE = re.compile(
+    r"^TIMESTAMP\s+'[^']*(?:''[^']*)*'$",
+    re.IGNORECASE | re.DOTALL,
+)
+_NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
+_PLACEHOLDER_RE = re.compile(
+    r"^(?::[A-Za-z_][A-Za-z0-9_]*|&[A-Za-z_][A-Za-z0-9_]*|\$\{[^}]+\})$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -13,6 +58,52 @@ class DmlStatement:
     start_line: int
     end_line: int
     terminated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DmlValue:
+    """Valor estatico extraido desde una sentencia DML."""
+
+    column: str
+    raw: str
+    value_type: str
+    position: int
+
+
+@dataclass(frozen=True, slots=True)
+class DmlConfigurationRecord:
+    """Registro canonico extraido desde DML declarado."""
+
+    record_id: str
+    configuration_name: str
+    table: str
+    operation: str
+    identity_values: tuple[DmlValue, ...]
+    values: tuple[DmlValue, ...]
+    statement_ordinal: int
+    start_line: int
+    end_line: int
+    partial: bool
+    terminated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DmlDiagnostic:
+    """Diagnostico recuperable por sentencia."""
+
+    statement_ordinal: int
+    start_line: int
+    end_line: int
+    statement_type: str
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class DmlParseResult:
+    """Resultado del parsing estatico DML."""
+
+    records: tuple[DmlConfigurationRecord, ...]
+    diagnostics: tuple[DmlDiagnostic, ...]
 
 
 def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
@@ -133,3 +224,574 @@ def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
         flush(terminated=False)
 
     return tuple(statements)
+
+
+def parse_dml_configurations(
+    source: str,
+    configurations: tuple[DataDrivenConfiguration, ...],
+    *,
+    max_statements_per_file: int,
+    max_literal_chars: int,
+) -> DmlParseResult:
+    """Parsea INSERT/UPDATE soportados sin ejecutar SQL."""
+    statements = split_dml_statements(source)
+    if len(statements) > max_statements_per_file:
+        return DmlParseResult(
+            records=(),
+            diagnostics=(
+                DmlDiagnostic(
+                    statement_ordinal=max_statements_per_file + 1,
+                    start_line=1,
+                    end_line=1,
+                    statement_type="limit",
+                    reason="max_statements_per_file",
+                ),
+            ),
+        )
+
+    records: list[DmlConfigurationRecord] = []
+    diagnostics: list[DmlDiagnostic] = []
+    for ordinal, statement in enumerate(statements, start=1):
+        record, diagnostic = _parse_statement(
+            statement,
+            ordinal,
+            configurations,
+            max_literal_chars=max_literal_chars,
+        )
+        if record is not None:
+            records.append(record)
+        if diagnostic is not None:
+            diagnostics.append(diagnostic)
+    return DmlParseResult(records=tuple(records), diagnostics=tuple(diagnostics))
+
+
+def _parse_statement(
+    statement: DmlStatement,
+    ordinal: int,
+    configurations: tuple[DataDrivenConfiguration, ...],
+    *,
+    max_literal_chars: int,
+) -> tuple[DmlConfigurationRecord | None, DmlDiagnostic | None]:
+    text = _strip_sql_comments(statement.text).strip()
+    statement_type = _statement_type(text)
+    if statement_type == "insert":
+        return _parse_insert(
+            text,
+            statement,
+            ordinal,
+            configurations,
+            max_literal_chars=max_literal_chars,
+        )
+    if statement_type == "update":
+        return _parse_update(
+            text,
+            statement,
+            ordinal,
+            configurations,
+            max_literal_chars=max_literal_chars,
+        )
+    return None, _diagnostic(
+        statement,
+        ordinal,
+        statement_type,
+        "unsupported_statement",
+    )
+
+
+def _parse_insert(
+    text: str,
+    statement: DmlStatement,
+    ordinal: int,
+    configurations: tuple[DataDrivenConfiguration, ...],
+    *,
+    max_literal_chars: int,
+) -> tuple[DmlConfigurationRecord | None, DmlDiagnostic | None]:
+    if _contains_unsupported_insert_shape(text):
+        return None, _diagnostic(statement, ordinal, "insert", "unsupported_insert")
+    match = _INSERT_RE.match(text)
+    if match is None:
+        return None, _diagnostic(statement, ordinal, "insert", "malformed_insert")
+
+    table = _normalize_table_name(match.group("table"))
+    configuration = _configuration_for_table(configurations, table)
+    if configuration is None:
+        return None, _diagnostic(statement, ordinal, "insert", "undeclared_table")
+
+    columns_text = match.group("columns")
+    if columns_text is None:
+        if not configuration.default_column_order:
+            return None, _diagnostic(
+                statement,
+                ordinal,
+                "insert",
+                "missing_default_column_order",
+            )
+        columns = configuration.default_column_order
+    else:
+        columns = tuple(
+            _normalize_identifier(column)
+            for column in _split_top_level(columns_text)
+        )
+
+    raw_values = _split_top_level(match.group("values"))
+    if len(columns) != len(raw_values):
+        return None, _diagnostic(statement, ordinal, "insert", "column_value_mismatch")
+    values, diagnostic = _build_values(
+        columns,
+        raw_values,
+        statement,
+        ordinal,
+        "insert",
+        max_literal_chars=max_literal_chars,
+    )
+    if diagnostic is not None:
+        return None, diagnostic
+
+    identities = _identity_values(configuration, values)
+    if len(identities) != len(configuration.identity_columns):
+        return None, _diagnostic(statement, ordinal, "insert", "missing_identity")
+    return (
+        _record(
+            configuration=configuration,
+            table=match.group("table"),
+            operation="insert",
+            identity_values=identities,
+            values=values,
+            statement=statement,
+            ordinal=ordinal,
+            partial=False,
+        ),
+        None,
+    )
+
+
+def _parse_update(
+    text: str,
+    statement: DmlStatement,
+    ordinal: int,
+    configurations: tuple[DataDrivenConfiguration, ...],
+    *,
+    max_literal_chars: int,
+) -> tuple[DmlConfigurationRecord | None, DmlDiagnostic | None]:
+    if _contains_unsupported_update_shape(text):
+        return None, _diagnostic(statement, ordinal, "update", "unsupported_update")
+    match = _UPDATE_RE.match(text)
+    if match is None:
+        return None, _diagnostic(statement, ordinal, "update", "malformed_update")
+
+    table = _normalize_table_name(match.group("table"))
+    configuration = _configuration_for_table(configurations, table)
+    if configuration is None:
+        return None, _diagnostic(statement, ordinal, "update", "undeclared_table")
+
+    set_pairs = _parse_assignments(match.group("set"), separator=",")
+    if not set_pairs:
+        return None, _diagnostic(statement, ordinal, "update", "missing_set")
+    where_pairs = _parse_assignments(match.group("where"), separator="AND")
+    if not where_pairs:
+        return None, _diagnostic(statement, ordinal, "update", "unsupported_where")
+
+    where_columns = {_normalize_identifier(column) for column, _value in where_pairs}
+    required_identities = {
+        _normalize_identifier(column) for column in configuration.identity_columns
+    }
+    if not required_identities.issubset(where_columns):
+        return None, _diagnostic(statement, ordinal, "update", "missing_identity_where")
+
+    combined_pairs = (*where_pairs, *set_pairs)
+    columns = tuple(_normalize_identifier(column) for column, _value in combined_pairs)
+    raw_values = tuple(value for _column, value in combined_pairs)
+    values, diagnostic = _build_values(
+        columns,
+        raw_values,
+        statement,
+        ordinal,
+        "update",
+        max_literal_chars=max_literal_chars,
+    )
+    if diagnostic is not None:
+        return None, diagnostic
+    identities = _identity_values(configuration, values)
+    return (
+        _record(
+            configuration=configuration,
+            table=match.group("table"),
+            operation="update",
+            identity_values=identities,
+            values=values,
+            statement=statement,
+            ordinal=ordinal,
+            partial=True,
+        ),
+        None,
+    )
+
+
+def _build_values(
+    columns: tuple[str, ...],
+    raw_values: tuple[str, ...],
+    statement: DmlStatement,
+    ordinal: int,
+    statement_type: str,
+    *,
+    max_literal_chars: int,
+) -> tuple[tuple[DmlValue, ...], DmlDiagnostic | None]:
+    values: list[DmlValue] = []
+    for position, (column, raw_value) in enumerate(zip(columns, raw_values), start=1):
+        raw = raw_value.strip()
+        if len(raw) > max_literal_chars:
+            return (), _diagnostic(
+                statement,
+                ordinal,
+                statement_type,
+                "max_literal_chars",
+            )
+        if _contains_subquery(raw):
+            return (), _diagnostic(statement, ordinal, statement_type, "subquery")
+        values.append(
+            DmlValue(
+                column=_normalize_identifier(column),
+                raw=raw,
+                value_type=_value_type(raw),
+                position=position,
+            )
+        )
+    return tuple(values), None
+
+
+def _record(
+    *,
+    configuration: DataDrivenConfiguration,
+    table: str,
+    operation: str,
+    identity_values: tuple[DmlValue, ...],
+    values: tuple[DmlValue, ...],
+    statement: DmlStatement,
+    ordinal: int,
+    partial: bool,
+) -> DmlConfigurationRecord:
+    normalized_table = _normalize_table_name(table)
+    record_id = _record_id(configuration.name, normalized_table, identity_values)
+    return DmlConfigurationRecord(
+        record_id=record_id,
+        configuration_name=configuration.name,
+        table=table,
+        operation=operation,
+        identity_values=identity_values,
+        values=values,
+        statement_ordinal=ordinal,
+        start_line=statement.start_line,
+        end_line=statement.end_line,
+        partial=partial,
+        terminated=statement.terminated,
+    )
+
+
+def _record_id(
+    configuration_name: str,
+    normalized_table: str,
+    identity_values: tuple[DmlValue, ...],
+) -> str:
+    payload = "|".join(
+        (
+            "barbarion.configuration.record.v1",
+            configuration_name,
+            normalized_table,
+            *(
+                f"{value.column}={value.raw}"
+                for value in sorted(identity_values, key=lambda item: item.column)
+            ),
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _identity_values(
+    configuration: DataDrivenConfiguration,
+    values: tuple[DmlValue, ...],
+) -> tuple[DmlValue, ...]:
+    required = {
+        _normalize_identifier(column)
+        for column in configuration.identity_columns
+    }
+    return tuple(value for value in values if value.column in required)
+
+
+def _configuration_for_table(
+    configurations: tuple[DataDrivenConfiguration, ...],
+    table: str,
+) -> DataDrivenConfiguration | None:
+    normalized = _normalize_table_name(table)
+    unqualified = normalized.rsplit(".", 1)[-1]
+    for configuration in configurations:
+        for configured_table in configuration.tables:
+            configured = _normalize_table_name(configured_table)
+            if normalized == configured or unqualified == configured.rsplit(".", 1)[-1]:
+                return configuration
+    return None
+
+
+def _parse_assignments(text: str, *, separator: str) -> tuple[tuple[str, str], ...]:
+    parts = (
+        _split_top_level(text)
+        if separator == ","
+        else _split_top_level_keyword(text, separator)
+    )
+    assignments: list[tuple[str, str]] = []
+    for part in parts:
+        left, right = _split_assignment(part)
+        if left is None or right is None:
+            return ()
+        assignments.append((_normalize_identifier(left), right.strip()))
+    return tuple(assignments)
+
+
+def _split_assignment(text: str) -> tuple[str | None, str | None]:
+    state = "normal"
+    depth = 0
+    index = 0
+    while index < len(text):
+        character = text[index]
+        next_character = text[index + 1] if index + 1 < len(text) else ""
+        if state == "normal":
+            if character == "'":
+                state = "single_quote"
+            elif character == '"':
+                state = "double_quote"
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth = max(0, depth - 1)
+            elif character == "=" and depth == 0:
+                return text[:index].strip(), text[index + 1 :].strip()
+        elif state == "single_quote":
+            if character == "'" and next_character == "'":
+                index += 1
+            elif character == "'":
+                state = "normal"
+        elif state == "double_quote" and character == '"':
+            state = "normal"
+        index += 1
+    return None, None
+
+
+def _split_top_level(text: str) -> tuple[str, ...]:
+    return _split_top_level_character(text, ",")
+
+
+def _split_top_level_character(text: str, separator: str) -> tuple[str, ...]:
+    parts: list[str] = []
+    start = 0
+    state = "normal"
+    depth = 0
+    index = 0
+    while index < len(text):
+        character = text[index]
+        next_character = text[index + 1] if index + 1 < len(text) else ""
+        if state == "normal":
+            if character == "'":
+                state = "single_quote"
+            elif character == '"':
+                state = "double_quote"
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth = max(0, depth - 1)
+            elif character == separator and depth == 0:
+                parts.append(text[start:index].strip())
+                start = index + 1
+        elif state == "single_quote":
+            if character == "'" and next_character == "'":
+                index += 1
+            elif character == "'":
+                state = "normal"
+        elif state == "double_quote" and character == '"':
+            state = "normal"
+        index += 1
+    parts.append(text[start:].strip())
+    return tuple(part for part in parts if part)
+
+
+def _split_top_level_keyword(text: str, keyword: str) -> tuple[str, ...]:
+    parts: list[str] = []
+    start = 0
+    state = "normal"
+    depth = 0
+    upper_text = text.upper()
+    upper_keyword = keyword.upper()
+    index = 0
+    while index < len(text):
+        character = text[index]
+        next_character = text[index + 1] if index + 1 < len(text) else ""
+        if state == "normal":
+            if character == "'":
+                state = "single_quote"
+            elif character == '"':
+                state = "double_quote"
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth = max(0, depth - 1)
+            elif (
+                depth == 0
+                and upper_text.startswith(upper_keyword, index)
+                and _keyword_boundary(text, index, len(keyword))
+            ):
+                parts.append(text[start:index].strip())
+                index += len(keyword)
+                start = index
+                continue
+        elif state == "single_quote":
+            if character == "'" and next_character == "'":
+                index += 1
+            elif character == "'":
+                state = "normal"
+        elif state == "double_quote" and character == '"':
+            state = "normal"
+        index += 1
+    parts.append(text[start:].strip())
+    return tuple(part for part in parts if part)
+
+
+def _keyword_boundary(text: str, start: int, length: int) -> bool:
+    before = text[start - 1] if start > 0 else " "
+    after = text[start + length] if start + length < len(text) else " "
+    return not (_is_identifier_character(before) or _is_identifier_character(after))
+
+
+def _is_identifier_character(character: str) -> bool:
+    return character.isalnum() or character in {"_", "$", "#"}
+
+
+def _strip_sql_comments(text: str) -> str:
+    output: list[str] = []
+    state = "normal"
+    index = 0
+    while index < len(text):
+        character = text[index]
+        next_character = text[index + 1] if index + 1 < len(text) else ""
+        if state == "normal":
+            if character == "-" and next_character == "-":
+                state = "line_comment"
+                index += 2
+                continue
+            if character == "/" and next_character == "*":
+                state = "block_comment"
+                index += 2
+                continue
+            if character == "'":
+                state = "single_quote"
+            elif character == '"':
+                state = "double_quote"
+            output.append(character)
+        elif state == "line_comment":
+            if character == "\n":
+                output.append(character)
+                state = "normal"
+        elif state == "block_comment":
+            if character == "\n":
+                output.append(character)
+            if character == "*" and next_character == "/":
+                state = "normal"
+                index += 1
+        elif state == "single_quote":
+            output.append(character)
+            if character == "'" and next_character == "'":
+                output.append(next_character)
+                index += 1
+            elif character == "'":
+                state = "normal"
+        elif state == "double_quote":
+            output.append(character)
+            if character == '"':
+                state = "normal"
+        index += 1
+    return "".join(output)
+
+
+def _value_type(raw: str) -> str:
+    stripped = raw.strip()
+    if stripped.upper() == "NULL":
+        return "null"
+    if _is_quoted_string(stripped):
+        return "string"
+    if _NUMBER_RE.match(stripped):
+        return "number"
+    if _DATE_LITERAL_RE.match(stripped):
+        return "date_literal"
+    if _TIMESTAMP_LITERAL_RE.match(stripped):
+        return "timestamp_literal"
+    if _PLACEHOLDER_RE.match(stripped):
+        return "placeholder"
+    if _looks_like_function(stripped):
+        return "function_expression"
+    return "raw_expression"
+
+
+def _is_quoted_string(value: str) -> bool:
+    return len(value) >= 2 and value[0] == "'" and value[-1] == "'"
+
+
+def _looks_like_function(value: str) -> bool:
+    return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_$#]*\s*\(.*\)$", value, re.DOTALL))
+
+
+def _contains_unsupported_insert_shape(text: str) -> bool:
+    upper = text.upper()
+    return (
+        upper.startswith("INSERT ALL")
+        or " RETURNING " in upper
+        or re.search(r"\bINSERT\s+INTO\b.*\bSELECT\b", upper, re.DOTALL) is not None
+    )
+
+
+def _contains_unsupported_update_shape(text: str) -> bool:
+    upper = text.upper()
+    return (
+        " RETURNING " in upper
+        or " FROM " in upper
+        or re.search(r"\b(OR|IN|LIKE)\b", upper) is not None
+        or _contains_subquery(text)
+    )
+
+
+def _contains_subquery(text: str) -> bool:
+    return re.search(r"\(\s*SELECT\b", text, re.IGNORECASE | re.DOTALL) is not None
+
+
+def _statement_type(text: str) -> str:
+    stripped = text.lstrip()
+    if re.match(r"^INSERT\b", stripped, re.IGNORECASE):
+        return "insert"
+    if re.match(r"^UPDATE\b", stripped, re.IGNORECASE):
+        return "update"
+    if re.match(r"^(BEGIN|DECLARE)\b", stripped, re.IGNORECASE):
+        return "plsql_block"
+    return "unknown"
+
+
+def _diagnostic(
+    statement: DmlStatement,
+    ordinal: int,
+    statement_type: str,
+    reason: str,
+) -> DmlDiagnostic:
+    return DmlDiagnostic(
+        statement_ordinal=ordinal,
+        start_line=statement.start_line,
+        end_line=statement.end_line,
+        statement_type=statement_type,
+        reason=reason,
+    )
+
+
+def _normalize_identifier(identifier: str) -> str:
+    return identifier.strip().strip('"').lower()
+
+
+def _normalize_table_name(table: str) -> str:
+    return ".".join(
+        _normalize_identifier(part)
+        for part in re.split(r"\s*\.\s*", table.strip())
+        if part.strip()
+    )

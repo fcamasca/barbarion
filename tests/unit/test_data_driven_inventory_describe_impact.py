@@ -39,6 +39,21 @@ from barbarion.infrastructure.markdown import (
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 
 
+def test_cli_accepts_configuration_technology_filters() -> None:
+    """Verifica el contrato argparse para filtros Data-Driven."""
+    parser = cli.build_parser()
+
+    inventory = parser.parse_args(
+        ["inventory", "--technology", "configuration"]
+    )
+    impact = parser.parse_args(
+        ["impact", "pricing_rules.r1", "--technology", "configuration"]
+    )
+
+    assert inventory.technology == "configuration"
+    assert impact.technology == "configuration"
+
+
 def test_inventory_technology_configuration_filters_sqlite(
     tmp_path: Path,
 ) -> None:

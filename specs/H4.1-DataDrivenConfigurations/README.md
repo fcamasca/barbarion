@@ -1,6 +1,6 @@
 # H4.1 - Configuraciones Data-Driven
 
-**Estado:** especificacion creada, pendiente de implementacion.
+**Estado:** implementacion concluida, aceptacion tecnica T12 en revision humana.
 
 H4.1 extiende la ingenieria inversa H4 para incorporar conocimiento tecnico
 definido como datos de configuracion exportados en archivos `.sql`. El hito
@@ -26,9 +26,11 @@ no esta expresada directamente en codigo Oracle/PLSQL o PowerBuilder.
 - [tasks.md](tasks.md)
 - [test-plan.md](test-plan.md)
 - [impact-analysis.md](impact-analysis.md)
+- [acceptance.md](acceptance.md)
 
-No se crea `acceptance.md` durante esta tarea. La aceptacion tecnica queda
-planificada como la ultima tarea de implementacion en [tasks.md](tasks.md).
+La evidencia integral de la implementacion, regresion, smoke instalado, corpus
+piloto y limitaciones conocidas se consolida en [acceptance.md](acceptance.md).
+T12 permanece pendiente hasta que una persona revise esa evidencia.
 
 ## Alcance resumido
 
@@ -68,9 +70,9 @@ Fuera de alcance:
 - D-014: SQLite + sqlite-vec para RAG.
 - D-015: tablas permanentes H4 sin prefijo de hito.
 
-## Estado actual confirmado
+## Estado implementado
 
-El repositorio ya contiene:
+El repositorio contiene:
 
 - H1-H5 completados y MVP publicado como `0.5.0`;
 - SQLite schema version `4`;
@@ -79,8 +81,13 @@ El repositorio ya contiene:
 - parsers Oracle y PowerBuilder orientados a codigo fuente y SQL embebido;
 - comandos `ingest`, `index`, `search`, `ask`, `analyze`, `inventory`,
   `describe`, `impact`, `spec create` y `spec validate`;
-- configuracion TOML sin seccion Data-Driven aun;
-- ningun parser DML dedicado y ninguna declaracion de tablas de configuracion.
+- configuracion TOML Data-Driven validada y visible en `config show`;
+- clasificacion de archivos `.sql` declarados como `configuration`;
+- splitter y parser DML estatico para el subconjunto soportado de `INSERT` y
+  `UPDATE`, operando sobre el documento completo;
+- simbolos, referencias y relaciones Data-Driven persistidos y reconciliados;
+- integracion con `analyze`, `inventory`, `describe`, `impact`, RAG y Spec Mode;
+- metricas, warnings recuperables y diagnosticos en espanol.
 
 Regla de clasificacion:
 
@@ -104,4 +111,4 @@ tabla declarada en codigo Oracle no reclasifica automaticamente el archivo como
 - Pruebas: `H4.1-TP-NNN` e `INT-H4.1-NN`.
 - Mensajes CLI y documentacion de usuario en espanol.
 - Identificadores de codigo, opciones y claves TOML en ingles.
-- Comentarios y docstrings de codigo en espanol cuando se implemente.
+- Comentarios y docstrings de codigo Python en espanol con Google Style.

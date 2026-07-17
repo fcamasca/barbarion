@@ -3051,7 +3051,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_help_option(inventory_parser)
     inventory_parser.add_argument(
         "--technology",
-        choices=("oracle", "powerbuilder", "document", "unknown"),
+        choices=(
+            "oracle",
+            "powerbuilder",
+            "configuration",
+            "document",
+            "unknown",
+        ),
         help="filtra por tecnologia",
     )
     inventory_parser.add_argument(
@@ -3212,7 +3218,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     impact_parser.add_argument(
         "--technology",
-        choices=("oracle", "powerbuilder", "document", "unknown"),
+        choices=(
+            "oracle",
+            "powerbuilder",
+            "configuration",
+            "document",
+            "unknown",
+        ),
         help="filtra relaciones por tecnologia participante",
     )
     impact_parser.add_argument(

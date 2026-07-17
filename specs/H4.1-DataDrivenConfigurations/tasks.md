@@ -168,7 +168,8 @@ impacto Data-Driven.
 
 ### H4.1-T11 - Completar observabilidad, errores y documentacion operativa
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** consolidar metricas, warnings, logs, `stats` y documentacion.  
 **Descripcion:** Reportar archivos DML, sentencias, registros, simbolos,
 referencias, relaciones, reconciliacion, duraciones, errores parciales y

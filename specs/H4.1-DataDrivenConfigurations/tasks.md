@@ -76,7 +76,7 @@ metadata trazable.
 
 ### H4.1-T05 - Persistir conocimiento Data-Driven en SQLite H4
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** guardar simbolos y metadata Data-Driven sin migracion nueva.  
 **Descripcion:** Reutilizar `symbols`, `symbol_references`, `relations`,
 `relation_candidates` y `metadata_json`. No crear `configuration_records` ni
@@ -98,7 +98,9 @@ origen.
 **Objetivo:** detectar referencias entre configuraciones y hacia Oracle/PB desde
 columnas declaradas.  
 **Descripcion:** Implementar `reference_columns`, `parent_columns`,
-`sequence_columns`, tipos de referencia y target keys conservadoras.  
+`sequence_columns` como metadata de orden, tipos de referencia y target keys
+conservadoras. `precedes` solo se genera desde `reference_columns` con
+`relation_type = "precedes"` y destino explicito.
 **Dependencias:** H4.1-T04.  
 **Resultado esperado:** `symbol_references` trazables con estados iniciales
 correctos.  

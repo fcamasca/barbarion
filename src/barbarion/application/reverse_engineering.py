@@ -15,7 +15,10 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from barbarion.config import Settings
-from barbarion.domain.data_driven import build_configuration_symbols
+from barbarion.domain.data_driven import (
+    build_configuration_references,
+    build_configuration_symbols,
+)
 from barbarion.domain.models import Confidence
 from barbarion.domain.ports import LlmProviderPort
 from barbarion.domain.progress import (
@@ -316,7 +319,11 @@ class AnalyzeService:
             )
 
         symbols = _symbols_from_sources(sources, settings=self.settings)
-        references = _references_from_sources(sources, symbols)
+        references = _references_from_sources(
+            sources,
+            symbols,
+            settings=self.settings,
+        )
         counters = replace(
             counters,
             symbols_detected=len(symbols),
@@ -1564,6 +1571,8 @@ def _edge_sort_key(edge: DependencyEdge) -> tuple[int, str, str, str, str]:
 def _references_from_sources(
     sources: tuple[SymbolSource, ...],
     symbols: tuple[TechnicalSymbol, ...],
+    *,
+    settings: Settings | None = None,
 ) -> tuple[TechnicalReference, ...]:
     """Extrae referencias unicas y las vincula con el simbolo fuente si existe."""
     source_symbol_by_chunk = {
@@ -1572,14 +1581,69 @@ def _references_from_sources(
         if symbol.chunk_id is not None
     }
     by_id: dict[str, TechnicalReference] = {}
+    configuration_sources_by_document: dict[int, list[SymbolSource]] = {}
     for source in sources:
+        if _is_data_driven_configuration_source(source, settings):
+            configuration_sources_by_document.setdefault(
+                source.document_id,
+                [],
+            ).append(source)
+            continue
         references = _extract_references_from_source(
             source,
             source_symbol_id=source_symbol_by_chunk.get(source.chunk_id),
         )
         for reference in references:
             by_id.setdefault(reference.reference_id, reference)
+    for document_sources in configuration_sources_by_document.values():
+        for reference in _configuration_references_from_document(
+            tuple(document_sources),
+            settings=settings,
+        ):
+            by_id.setdefault(reference.reference_id, reference)
     return tuple(by_id.values())
+
+
+def _configuration_references_from_document(
+    sources: tuple[SymbolSource, ...],
+    *,
+    settings: Settings | None,
+) -> tuple[TechnicalReference, ...]:
+    if settings is None or not sources:
+        return ()
+    document_source = sources[0]
+    parse_result = parse_dml_configurations(
+        document_source.document_content,
+        settings.data_driven.configurations,
+        max_statements_per_file=settings.data_driven.max_statements_per_file,
+        max_literal_chars=settings.data_driven.max_literal_chars,
+    )
+    references: list[TechnicalReference] = []
+    for record in parse_result.records:
+        evidence_source = _evidence_source_for_record(record, sources)
+        plan = build_configuration_references(
+            (record,),
+            settings.data_driven.configurations,
+            source_file_id=evidence_source.file_id,
+            source_chunk_id=evidence_source.chunk_id,
+        )
+        references.extend(plan.references)
+    return tuple(references)
+
+
+def _evidence_source_for_record(
+    record: Any,
+    sources: tuple[SymbolSource, ...],
+) -> SymbolSource:
+    if record.start_line is not None:
+        for source in sources:
+            if (
+                source.start_line is not None
+                and source.end_line is not None
+                and source.start_line <= record.start_line <= source.end_line
+            ):
+                return source
+    return sources[0]
 
 
 def _extract_references_from_source(
@@ -1809,6 +1873,9 @@ def _type_compatible(reference_type: str, symbol_type: str) -> bool:
         "open": {"window", "userobject", "menu", "application"},
         "event": {"event"},
         "datawindow": {"datawindow"},
+        "configuration_reference": {"configuration_record"},
+        "parent_of": {"configuration_record"},
+        "precedes": {"configuration_record", "configuration_step"},
     }.get(reference_type, set())
     return symbol_type in allowed
 
@@ -1826,6 +1893,9 @@ def _relation_type(reference: TechnicalReference) -> str:
         "event": "calls",
         "datawindow": "uses",
         "dynamic_sql": "uses",
+        "configuration_reference": "references",
+        "parent_of": "parent_of",
+        "precedes": "precedes",
     }.get(reference.reference_type, "uses")
 
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from barbarion.application.reverse_engineering import AnalyzeService
 from barbarion.config import (
     DataDrivenConfiguration,
+    DataDrivenReferenceColumn,
     DataDrivenSettings,
     load_settings,
 )
@@ -194,14 +195,19 @@ def test_h4_analyze_persists_data_driven_symbols_idempotently(
     first = service.run()
     second = service.run()
 
-    assert first.symbols_detected == second.symbols_detected == 4
+    assert first.symbols_detected == second.symbols_detected == 5
+    assert first.references_detected == second.references_detected == 1
+    assert first.relations_resolved == second.relations_resolved == 1
     symbols = repository.active_symbols()
-    assert len(symbols) == 4
-    by_type = {symbol.symbol_type: symbol for symbol in symbols}
-    entity = by_type["configuration_entity"]
-    record = by_type["configuration_record"]
-    formula = by_type["configuration_formula"]
-    mapping = by_type["configuration_mapping"]
+    assert len(symbols) == 5
+    by_type = {
+        (symbol.symbol_type, symbol.original_name): symbol
+        for symbol in symbols
+    }
+    entity = by_type[("configuration_entity", "pricing_rules")]
+    record = by_type[("configuration_record", "Base Rule")]
+    formula = by_type[("configuration_formula", "{A}+{B}")]
+    mapping = by_type[("configuration_mapping", "CustomerMap")]
     assert record.parent_symbol_id == entity.symbol_id
     assert formula.parent_symbol_id == record.symbol_id
     assert mapping.parent_symbol_id == record.symbol_id
@@ -218,13 +224,21 @@ def test_h4_analyze_persists_data_driven_symbols_idempotently(
         symbol_count = connection.execute(
             "SELECT COUNT(*) FROM symbols"
         ).fetchone()[0]
+        reference_count = connection.execute(
+            "SELECT COUNT(*) FROM symbol_references"
+        ).fetchone()[0]
+        relation_count = connection.execute(
+            "SELECT COUNT(*) FROM relations"
+        ).fetchone()[0]
         tables = {
             row[0]
             for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
-    assert symbol_count == 4
+    assert symbol_count == 5
+    assert reference_count == 1
+    assert relation_count == 1
     assert "symbols" in tables
     assert "relations" in tables
     assert "symbol_references" in tables
@@ -277,7 +291,12 @@ def _configuration() -> DataDrivenConfiguration:
         variable_columns=(),
         parameter_columns=(),
         mapping_columns=("MAPPING_NAME",),
-        reference_columns=(),
+        reference_columns=(
+            DataDrivenReferenceColumn(
+                column="NEXT_RULE_ID",
+                target_configuration="pricing_rules",
+            ),
+        ),
         parent_columns=(),
         sequence_columns=(),
         status_columns=(),
@@ -295,9 +314,14 @@ def _seed_configuration_chunk(path: Path) -> None:
         ")\n"
         "VALUES ('R1', 'Base Rule', '{A}+{B}', 'CustomerMap');"
     )
-    document_text = ("\n" * 19) + statement
+    linked_statement = (
+        "INSERT INTO APP_CFG.PRICING_RULES "
+        "(RULE_ID, RULE_NAME, NEXT_RULE_ID) "
+        "VALUES ('R2', 'Linked Rule', 'R1');"
+    )
+    document_text = ("\n" * 19) + statement + "\n" + linked_statement
     first_chunk = "\n".join(statement.splitlines()[:3])
-    second_chunk = "\n".join(statement.splitlines()[2:])
+    second_chunk = "\n".join((*statement.splitlines()[2:], linked_statement))
     with sqlite3.connect(path) as connection:
         connection.execute(
             """
@@ -356,7 +380,7 @@ def _seed_configuration_chunk(path: Path) -> None:
                     '{"artifact_kind":"configuration"}', '1', ?
                 ),
                 (
-                    'cfg-chunk-2', 1, 1, 'file', ?, ?, 22, 24, NULL, NULL,
+                    'cfg-chunk-2', 1, 1, 'file', ?, ?, 22, 25, NULL, NULL,
                     '{"artifact_kind":"configuration"}', '1', ?
                 )
             """,

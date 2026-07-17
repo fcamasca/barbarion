@@ -165,8 +165,9 @@ por confirmar.
 
 ### H4.1-TP-016 - Jerarquia y secuencia
 
-`parent_columns` produce `parent_of`; `sequence_columns` solo produce relacion
-si identifica destino.
+`parent_columns` produce `parent_of`; `sequence_columns` queda como metadata.
+Solo una entrada de `reference_columns` con `relation_type = "precedes"`
+produce relacion si identifica destino.
 
 ### H4.1-TP-017 - Referencias Oracle/PowerBuilder
 

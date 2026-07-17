@@ -351,8 +351,11 @@ configuraciones.
 
 - `reference_columns` define destino esperado por columna;
 - relaciones padre-hijo se extraen desde `parent_columns`;
-- relaciones de orden se extraen desde `sequence_columns` cuando referencian
-  otros pasos o elementos;
+- `sequence_columns` conserva atributos de orden como metadata y no genera
+  relaciones `precedes` por si solo;
+- relaciones `precedes` se extraen solo desde `reference_columns` cuando una
+  columna declarada identifica explicitamente el siguiente paso o elemento con
+  `relation_type = "precedes"`;
 - si existe un unico destino compatible, se crea relacion `resolved`;
 - si hay varios destinos compatibles, se crea relacion `ambiguous` con
   candidatos;

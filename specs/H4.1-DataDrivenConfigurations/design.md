@@ -78,7 +78,7 @@ parameter_columns = ["PARAMETER_CODE"]
 mapping_columns = ["MAPPING_CODE"]
 reference_columns = [
   { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },
-  { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }
+  { column = "NEXT_STEP_ID", target_configuration = "pricing_rules", relation_type = "precedes" }
 ]
 parent_columns = [{ column = "PARENT_RULE_ID", target_configuration = "pricing_rules" }]
 sequence_columns = ["DISPLAY_ORDER"]
@@ -115,6 +115,10 @@ archivo .sql
 - `default_column_order` solo se usa para `INSERT INTO table VALUES (...)`.
 - `reference_columns` es la unica forma inicial de declarar referencias por
   columna. No hay inferencia automatica por nombre de columna.
+- `sequence_columns` conserva atributos de orden como metadata; no genera
+  relaciones `precedes` por si solo. `precedes` requiere una columna de
+  referencia explicita, por ejemplo `NEXT_STEP_ID`, declarada en
+  `reference_columns` con `relation_type = "precedes"`.
 - El parser conserva valores de columnas no declaradas solo si estan en
   `metadata_columns`; columnas restantes no se copian a metadata para reducir
   ruido y exposicion.
@@ -350,8 +354,8 @@ Reglas:
 
 - `contains` se usa para entidad -> registro y registro -> elementos hijos.
 - `parent_of` se usa para jerarquia declarada.
-- `precedes` se usa solo cuando la declaracion permite identificar otro paso;
-  de lo contrario la secuencia queda metadata.
+- `precedes` se usa solo cuando una columna declarada identifica explicitamente
+  otro paso o registro; de lo contrario la secuencia queda como metadata.
 - `uses` y `calls` se usan hacia Oracle/PowerBuilder segun tipo declarado.
 - Referencias no resueltas no desaparecen; quedan visibles con `target_key`.
 

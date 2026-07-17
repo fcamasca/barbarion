@@ -511,7 +511,7 @@ def test_data_driven_values_are_loaded(tmp_path: Path) -> None:
                 'mapping_columns = ["MAPPING_NAME"]',
                 'reference_columns = [',
                 '  { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },',
-                '  { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }',
+                '  { column = "NEXT_RULE_ID", target_configuration = "pricing_rules", relation_type = "precedes" }',
                 "]",
                 "parent_columns = [",
                 '  { column = "PARENT_RULE_ID", target_configuration = "pricing_rules" }',
@@ -559,6 +559,7 @@ def test_data_driven_values_are_loaded(tmp_path: Path) -> None:
                     DataDrivenReferenceColumn(
                         column="NEXT_RULE_ID",
                         target_configuration="pricing_rules",
+                        relation_type="precedes",
                     ),
                 ),
                 parent_columns=(

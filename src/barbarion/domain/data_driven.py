@@ -11,9 +11,12 @@ from typing import Any
 from barbarion.config import DataDrivenConfiguration
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
+    ResolutionStatus,
     SymbolStatus,
+    TechnicalReference,
     TechnicalSymbol,
     normalize_symbol_name,
+    technical_reference_id,
     technical_symbol_id,
 )
 
@@ -34,11 +37,19 @@ class ConfigurationSymbolPlan:
     diagnostics: tuple[ConfigurationSymbolDiagnostic, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class ConfigurationReferencePlan:
+    """Referencias Data-Driven listas para persistencia posterior."""
+
+    references: tuple[TechnicalReference, ...]
+    diagnostics: tuple[ConfigurationSymbolDiagnostic, ...] = ()
+
+
 def build_configuration_symbols(
     records: tuple[Any, ...],
     configurations: tuple[DataDrivenConfiguration, ...],
 ) -> ConfigurationSymbolPlan:
-    """Construye simbolos H4 en memoria desde registros DML canonicos."""
+    """Construye simbolos tecnicos en memoria desde registros DML canonicos."""
     symbols: list[TechnicalSymbol] = []
     diagnostics: list[ConfigurationSymbolDiagnostic] = []
     seen_record_ids: set[str] = set()
@@ -81,6 +92,89 @@ def build_configuration_symbols(
 
     return ConfigurationSymbolPlan(
         symbols=_deduplicate_symbols(tuple(symbols)),
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def build_configuration_references(
+    records: tuple[Any, ...],
+    configurations: tuple[DataDrivenConfiguration, ...],
+    *,
+    source_file_id: int,
+    source_chunk_id: str | None = None,
+) -> ConfigurationReferencePlan:
+    """Construye referencias tecnicas desde columnas Data-Driven declaradas."""
+    references: list[TechnicalReference] = []
+    diagnostics: list[ConfigurationSymbolDiagnostic] = []
+    for record in records:
+        configuration = _configuration_by_name(
+            configurations,
+            record.configuration_name,
+        )
+        if configuration is None:
+            diagnostics.append(
+                ConfigurationSymbolDiagnostic(
+                    record_id=record.record_id,
+                    reason="undeclared_configuration",
+                )
+            )
+            continue
+        if not record.identity_values:
+            diagnostics.append(
+                ConfigurationSymbolDiagnostic(
+                    record_id=record.record_id,
+                    reason="missing_identity",
+                )
+            )
+            continue
+        source_symbol = _record_symbol(
+            configuration,
+            record,
+            _entity_symbol(configuration, record).symbol_id,
+        )
+        values_by_column = {value.column: value for value in record.values}
+        for column in configuration.reference_columns:
+            value = values_by_column.get(_normalize_identifier(column.column))
+            if value is None or value.value_type == "null":
+                continue
+            references.append(
+                _reference_from_declared_column(
+                    record=record,
+                    value=value,
+                    source_symbol=source_symbol,
+                    source_file_id=source_file_id,
+                    source_chunk_id=source_chunk_id,
+                    column=column.column,
+                    target_configuration=column.target_configuration,
+                    target_technology=column.target_technology,
+                    target_type=column.target_type,
+                    reference_type=_reference_type(
+                        relation_type=column.relation_type,
+                        target_configuration=column.target_configuration,
+                        target_type=column.target_type,
+                    ),
+                )
+            )
+        for column in configuration.parent_columns:
+            value = values_by_column.get(_normalize_identifier(column.column))
+            if value is None or value.value_type == "null":
+                continue
+            references.append(
+                _reference_from_declared_column(
+                    record=record,
+                    value=value,
+                    source_symbol=source_symbol,
+                    source_file_id=source_file_id,
+                    source_chunk_id=source_chunk_id,
+                    column=column.column,
+                    target_configuration=column.target_configuration,
+                    target_technology="configuration",
+                    target_type="configuration_record",
+                    reference_type="parent_of",
+                )
+            )
+    return ConfigurationReferencePlan(
+        references=_deduplicate_references(tuple(references)),
         diagnostics=tuple(diagnostics),
     )
 
@@ -320,6 +414,132 @@ def _metadata_columns(
 ) -> tuple[str, ...]:
     declared = set(_declared_columns(configuration))
     return tuple(value.column for value in record.values if value.column in declared)
+
+
+def _reference_from_declared_column(
+    *,
+    record: Any,
+    value: Any,
+    source_symbol: TechnicalSymbol,
+    source_file_id: int,
+    source_chunk_id: str | None,
+    column: str,
+    target_configuration: str | None,
+    target_technology: str | None,
+    target_type: str | None,
+    reference_type: str,
+) -> TechnicalReference:
+    raw_text = value.raw
+    normalized_target = _reference_target(
+        raw_text,
+        target_configuration=target_configuration,
+    )
+    resolution_status = (
+        ResolutionStatus.DYNAMIC
+        if _is_dynamic_reference_value(raw_text)
+        else ResolutionStatus.UNRESOLVED
+    )
+    reference_id = technical_reference_id(
+        source_file_id=source_file_id,
+        raw_text=raw_text,
+        normalized_target=normalized_target,
+        reference_type=reference_type,
+        start_line=record.start_line,
+        end_line=record.end_line,
+    )
+    return TechnicalReference(
+        reference_id=reference_id,
+        source_file_id=source_file_id,
+        source_symbol_id=source_symbol.symbol_id,
+        source_chunk_id=source_chunk_id,
+        raw_text=raw_text,
+        normalized_target=normalized_target,
+        reference_type=reference_type,
+        technology=target_technology or "configuration",
+        detection_method="data_driven_dml",
+        confidence=Confidence.LOW if resolution_status == ResolutionStatus.DYNAMIC else Confidence.HIGH,
+        resolution_status=resolution_status,
+        start_line=record.start_line,
+        end_line=record.end_line,
+        metadata={
+            "configuration_name": record.configuration_name,
+            "table_name": record.table,
+            "column": column,
+            "target_configuration": target_configuration,
+            "target_technology": target_technology or "configuration",
+            "target_type": target_type,
+            "statement_ordinal": record.statement_ordinal,
+            "source_record_id": record.record_id,
+            "value_type": value.value_type,
+        },
+    )
+
+
+def _reference_target(
+    raw_text: str,
+    *,
+    target_configuration: str | None,
+) -> str:
+    display = _display_reference_value(raw_text)
+    if target_configuration is None:
+        return normalize_symbol_name(display)
+    return normalize_symbol_name(f"{target_configuration}.{_safe_name_part(display)}")
+
+
+def _reference_type(
+    *,
+    relation_type: str | None = None,
+    target_configuration: str | None,
+    target_type: str | None,
+) -> str:
+    if relation_type == "precedes":
+        return "precedes"
+    if relation_type == "parent_of":
+        return "parent_of"
+    if relation_type == "calls":
+        return "calls"
+    if relation_type == "uses":
+        return "uses"
+    if target_configuration is not None:
+        return "configuration_reference"
+    if target_type is None:
+        return "uses"
+    normalized = _normalize_identifier(target_type)
+    if normalized in {"procedure", "function", "event", "function_object"}:
+        return "calls"
+    if normalized in {"table", "view", "datawindow"}:
+        return "table"
+    return normalized
+
+
+def _is_dynamic_reference_value(raw_text: str) -> bool:
+    value = _display_raw(raw_text)
+    return (
+        "||" in value
+        or "${" in value
+        or "{" in value
+        or "}" in value
+        or value.startswith(":")
+        or value.startswith("&")
+    )
+
+
+def _display_reference_value(raw_text: str) -> str:
+    value = _display_raw(raw_text)
+    if value.startswith("${") and value.endswith("}"):
+        return value[2:-1]
+    if value.startswith(":") or value.startswith("&"):
+        return value[1:]
+    return value
+
+
+def _deduplicate_references(
+    references: tuple[TechnicalReference, ...],
+) -> tuple[TechnicalReference, ...]:
+    by_id: dict[str, TechnicalReference] = {}
+    for reference in references:
+        by_id.setdefault(reference.reference_id, reference)
+    return tuple(by_id.values())
 
 
 def _source_hash(record: Any) -> str:

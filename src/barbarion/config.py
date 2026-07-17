@@ -153,7 +153,13 @@ _ALLOWED_DATA_DRIVEN_CONFIGURATION_KEYS = frozenset(
     }
 )
 _ALLOWED_REFERENCE_COLUMN_KEYS = frozenset(
-    {"column", "target_technology", "target_type", "target_configuration"}
+    {
+        "column",
+        "target_technology",
+        "target_type",
+        "target_configuration",
+        "relation_type",
+    }
 )
 _ALLOWED_PARENT_COLUMN_KEYS = frozenset({"column", "target_configuration"})
 _ALLOWED_STATUS_COLUMN_KEYS = frozenset(
@@ -163,6 +169,9 @@ _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _RETRIEVAL_MODES = frozenset({"semantic", "keyword", "hybrid"})
 _DATA_DRIVEN_TARGET_TECHNOLOGIES = frozenset(
     {"configuration", "oracle", "powerbuilder"}
+)
+_DATA_DRIVEN_REFERENCE_RELATION_TYPES = frozenset(
+    {"references", "parent_of", "precedes", "uses", "calls"}
 )
 
 
@@ -245,6 +254,7 @@ class DataDrivenReferenceColumn:
     target_technology: str | None = None
     target_type: str | None = None
     target_configuration: str | None = None
+    relation_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1170,6 +1180,15 @@ def _validate_reference_columns(
                         f"{item_key}.target_configuration",
                     )
                     if target_configuration is not None
+                    else None
+                ),
+                relation_type=(
+                    _validate_choice(
+                        item["relation_type"],
+                        f"{item_key}.relation_type",
+                        _DATA_DRIVEN_REFERENCE_RELATION_TYPES,
+                    )
+                    if "relation_type" in item
                     else None
                 ),
             )

@@ -1,7 +1,15 @@
 """Pruebas del repositorio SQLite H4 Reverse Engineering."""
 
+import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
+from barbarion.application.reverse_engineering import AnalyzeService
+from barbarion.config import (
+    DataDrivenConfiguration,
+    DataDrivenSettings,
+    load_settings,
+)
 from barbarion.database import initialize_database
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
@@ -163,6 +171,66 @@ def test_h4_repository_active_references_ignore_orphan_chunks(
     assert repository.active_references() == (active_reference,)
 
 
+def test_h4_analyze_persists_data_driven_symbols_idempotently(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+    _seed_configuration_chunk(path)
+    repository = SQLiteReverseEngineeringRepository(path)
+    settings = replace(
+        load_settings(environ={}, cwd=tmp_path),
+        data_driven=DataDrivenSettings(
+            enabled=True,
+            file_patterns=("*.sql",),
+            max_statements_per_file=100,
+            max_literal_chars=1000,
+            token_patterns=(),
+            configurations=(_configuration(),),
+        ),
+    )
+    service = AnalyzeService(settings=settings, repository=repository)
+
+    first = service.run()
+    second = service.run()
+
+    assert first.symbols_detected == second.symbols_detected == 4
+    symbols = repository.active_symbols()
+    assert len(symbols) == 4
+    by_type = {symbol.symbol_type: symbol for symbol in symbols}
+    entity = by_type["configuration_entity"]
+    record = by_type["configuration_record"]
+    formula = by_type["configuration_formula"]
+    mapping = by_type["configuration_mapping"]
+    assert record.parent_symbol_id == entity.symbol_id
+    assert formula.parent_symbol_id == record.symbol_id
+    assert mapping.parent_symbol_id == record.symbol_id
+    assert record.file_id == 1
+    assert record.document_id == 1
+    assert record.chunk_id == "cfg-chunk-1"
+    assert record.start_line == 20
+    assert record.metadata["configuration_name"] == "pricing_rules"
+    assert record.metadata["identity"] == {"rule_id": "'R1'"}
+    assert record.metadata["artifact_kind"] == "configuration"
+    assert record.metadata["relative_path"] == "cfg/pricing.sql"
+
+    with sqlite3.connect(path) as connection:
+        symbol_count = connection.execute(
+            "SELECT COUNT(*) FROM symbols"
+        ).fetchone()[0]
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    assert symbol_count == 4
+    assert "symbols" in tables
+    assert "relations" in tables
+    assert "symbol_references" in tables
+    assert not any(table.startswith("data_driven") for table in tables)
+
+
 def _reference(
     *,
     source_chunk_id: str,
@@ -192,3 +260,113 @@ def _reference(
         start_line=start_line,
         end_line=start_line,
     )
+
+
+def _configuration() -> DataDrivenConfiguration:
+    return DataDrivenConfiguration(
+        name="pricing_rules",
+        symbol_type="configuration_record",
+        tables=("APP_CFG.PRICING_RULES",),
+        identity_columns=("RULE_ID",),
+        file_patterns=(),
+        default_column_order=(),
+        name_columns=("RULE_NAME",),
+        description_columns=(),
+        rule_columns=(),
+        formula_columns=("FORMULA",),
+        variable_columns=(),
+        parameter_columns=(),
+        mapping_columns=("MAPPING_NAME",),
+        reference_columns=(),
+        parent_columns=(),
+        sequence_columns=(),
+        status_columns=(),
+        effective_from_columns=(),
+        effective_to_columns=(),
+        metadata_columns=(),
+    )
+
+
+def _seed_configuration_chunk(path: Path) -> None:
+    statement = (
+        "INSERT INTO APP_CFG.PRICING_RULES (\n"
+        "    RULE_ID, RULE_NAME,\n"
+        "    FORMULA, MAPPING_NAME\n"
+        ")\n"
+        "VALUES ('R1', 'Base Rule', '{A}+{B}', 'CustomerMap');"
+    )
+    document_text = ("\n" * 19) + statement
+    first_chunk = "\n".join(statement.splitlines()[:3])
+    second_chunk = "\n".join(statement.splitlines()[2:])
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """
+            INSERT INTO ingestion_runs(
+                id, domain, mode, status, roots_json, config_sha256, started_at
+            )
+            VALUES (1, 'default', 'incremental', 'completed', '[]', ?, ?)
+            """,
+            ("f" * 64, "2026-01-01T00:00:00+00:00"),
+        )
+        connection.execute(
+            """
+            INSERT INTO files(
+                id, domain, source_root, relative_path, extension, artifact_kind,
+                media_type, size_bytes, modified_at_ns, sha256, status,
+                first_seen_run_id, last_seen_run_id, created_at, updated_at
+            )
+            VALUES (
+                1, 'default', 'root', 'cfg/pricing.sql', '.sql',
+                'configuration', 'text/plain', 128, 1, ?, 'processed',
+                1, 1, ?, ?
+            )
+            """,
+            (
+                "a" * 64,
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, file_id, source_sha256, parser_id, parser_version,
+                normalizer_version, normalized_text, content_sha256,
+                metadata_json, warnings_json, extracted_at
+            )
+            VALUES (1, 1, ?, 'data_driven_dml', '1', '1', ?, ?, '{}', '[]', ?)
+            """,
+            (
+                "a" * 64,
+                document_text,
+                "b" * 64,
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO chunks(
+                id, document_id, ordinal, chunk_type, content, content_sha256,
+                start_line, end_line, object_type, object_name, metadata_json,
+                chunker_version, created_at
+            )
+            VALUES
+                (
+                    'cfg-chunk-1', 1, 0, 'file', ?, ?, 20, 22, NULL, NULL,
+                    '{"artifact_kind":"configuration"}', '1', ?
+                ),
+                (
+                    'cfg-chunk-2', 1, 1, 'file', ?, ?, 22, 24, NULL, NULL,
+                    '{"artifact_kind":"configuration"}', '1', ?
+                )
+            """,
+            (
+                first_chunk,
+                "c" * 64,
+                "2026-01-01T00:00:00+00:00",
+                second_chunk,
+                "d" * 64,
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        connection.commit()

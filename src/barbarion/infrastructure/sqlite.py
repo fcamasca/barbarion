@@ -1320,6 +1320,7 @@ class SymbolSource:
     document_id: int
     chunk_id: str
     content: str
+    document_content: str
     artifact_kind: str
     relative_path: str
     extension: str
@@ -2144,6 +2145,7 @@ class SQLiteReverseEngineeringRepository:
                     files.extension AS extension,
                     files.artifact_kind AS artifact_kind,
                     documents.id AS document_id,
+                    documents.normalized_text AS document_content,
                     chunks.id AS chunk_id,
                     chunks.content AS content,
                     chunks.chunk_type AS chunk_type,
@@ -2944,6 +2946,7 @@ def _symbol_source_from_row(row: sqlite3.Row) -> SymbolSource:
         document_id=int(row["document_id"]),
         chunk_id=str(row["chunk_id"]),
         content=str(row["content"]),
+        document_content=str(row["document_content"]),
         artifact_kind=str(row["artifact_kind"]),
         relative_path=str(row["relative_path"]),
         extension=str(row["extension"]),

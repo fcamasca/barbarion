@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from barbarion.config import Settings
+from barbarion.domain.data_driven import build_configuration_symbols
 from barbarion.domain.models import Confidence
 from barbarion.domain.ports import LlmProviderPort
 from barbarion.domain.progress import (
@@ -54,6 +55,7 @@ from barbarion.infrastructure.sqlite import (
     SQLiteReverseEngineeringRepository,
 )
 from barbarion.infrastructure.parsers.oracle import extract_oracle_references
+from barbarion.infrastructure.parsers.data_driven_dml import parse_dml_configurations
 from barbarion.infrastructure.parsers.powerbuilder import extract_powerbuilder_references
 
 
@@ -217,8 +219,7 @@ class SymbolCatalogService:
         seen: set[str] = set()
         duplicates = 0
         unknowns = 0
-        for source in sources:
-            symbol = symbol_from_source(source)
+        for symbol in _iter_symbols_from_sources(sources, settings=self.settings):
             if symbol.symbol_id in seen:
                 duplicates += 1
                 continue
@@ -314,7 +315,7 @@ class AnalyzeService:
                 },
             )
 
-        symbols = _symbols_from_sources(sources)
+        symbols = _symbols_from_sources(sources, settings=self.settings)
         references = _references_from_sources(sources, symbols)
         counters = replace(
             counters,
@@ -1045,13 +1046,128 @@ class _AnalyzeCounters:
         }
 
 
-def _symbols_from_sources(sources: tuple[SymbolSource, ...]) -> tuple[TechnicalSymbol, ...]:
+def _symbols_from_sources(
+    sources: tuple[SymbolSource, ...],
+    *,
+    settings: Settings | None = None,
+) -> tuple[TechnicalSymbol, ...]:
     """Construye simbolos unicos por identidad determinista."""
     by_id: dict[str, TechnicalSymbol] = {}
-    for source in sources:
-        symbol = symbol_from_source(source)
+    for symbol in _iter_symbols_from_sources(sources, settings=settings):
         by_id.setdefault(symbol.symbol_id, symbol)
     return tuple(by_id.values())
+
+
+def _iter_symbols_from_sources(
+    sources: tuple[SymbolSource, ...],
+    *,
+    settings: Settings | None = None,
+) -> tuple[TechnicalSymbol, ...]:
+    """Construye simbolos preservando duplicados entre fuentes equivalentes."""
+    symbols: list[TechnicalSymbol] = []
+    configuration_sources_by_document: dict[int, list[SymbolSource]] = {}
+    for source in sources:
+        if _is_data_driven_configuration_source(source, settings):
+            configuration_sources_by_document.setdefault(
+                source.document_id,
+                [],
+            ).append(source)
+            continue
+        for symbol in _symbols_from_source(source, settings=settings):
+            symbols.append(symbol)
+    for document_sources in configuration_sources_by_document.values():
+        for symbol in _configuration_symbols_from_document(
+            tuple(document_sources),
+            settings=settings,
+        ):
+            symbols.append(symbol)
+    return tuple(symbols)
+
+
+def _symbols_from_source(
+    source: SymbolSource,
+    *,
+    settings: Settings | None,
+) -> tuple[TechnicalSymbol, ...]:
+    if not _is_data_driven_configuration_source(source, settings):
+        return (symbol_from_source(source),)
+    return _configuration_symbols_from_document((source,), settings=settings)
+
+
+def _configuration_symbols_from_document(
+    sources: tuple[SymbolSource, ...],
+    *,
+    settings: Settings | None,
+) -> tuple[TechnicalSymbol, ...]:
+    if settings is None or not sources:
+        return ()
+    document_source = sources[0]
+
+    parse_result = parse_dml_configurations(
+        document_source.document_content,
+        settings.data_driven.configurations,
+        max_statements_per_file=settings.data_driven.max_statements_per_file,
+        max_literal_chars=settings.data_driven.max_literal_chars,
+    )
+    if not parse_result.records:
+        return ()
+
+    plan = build_configuration_symbols(
+        parse_result.records,
+        settings.data_driven.configurations,
+    )
+    return tuple(
+        _with_source_trace(symbol, _evidence_source_for_symbol(symbol, sources))
+        for symbol in plan.symbols
+    )
+
+
+def _is_data_driven_configuration_source(
+    source: SymbolSource,
+    settings: Settings | None,
+) -> bool:
+    return (
+        settings is not None
+        and source.artifact_kind == "configuration"
+        and settings.data_driven.enabled
+        and bool(settings.data_driven.configurations)
+    )
+
+
+def _evidence_source_for_symbol(
+    symbol: TechnicalSymbol,
+    sources: tuple[SymbolSource, ...],
+) -> SymbolSource:
+    if symbol.start_line is not None:
+        for source in sources:
+            if (
+                source.start_line is not None
+                and source.end_line is not None
+                and source.start_line <= symbol.start_line <= source.end_line
+            ):
+                return source
+    return sources[0]
+
+
+def _with_source_trace(
+    symbol: TechnicalSymbol,
+    source: SymbolSource,
+) -> TechnicalSymbol:
+    metadata = {
+        **symbol.metadata,
+        "artifact_kind": source.artifact_kind,
+        "relative_path": source.relative_path,
+        "source_chunk_id": source.chunk_id,
+    }
+    return replace(
+        symbol,
+        file_id=source.file_id,
+        document_id=source.document_id,
+        chunk_id=source.chunk_id,
+        start_line=symbol.start_line,
+        end_line=symbol.end_line,
+        metadata=metadata,
+    )
 
 
 def _resolve_object(

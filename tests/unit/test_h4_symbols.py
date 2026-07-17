@@ -110,6 +110,7 @@ def test_h4_symbol_from_source_uses_breadcrumb_container() -> None:
             artifact_kind="oracle",
             chunk_type="procedure",
             content="procedure run_demo is begin null; end;",
+            document_content="procedure run_demo is begin null; end;",
             object_type="procedure",
             object_name="run_demo",
             start_line=10,

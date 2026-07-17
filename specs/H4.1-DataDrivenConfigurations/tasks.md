@@ -86,6 +86,9 @@ diseno antes de proponer una migracion.
 **Dependencias:** H4.1-T04.  
 **Resultado esperado:** persistencia idempotente de entidad, registros y
 simbolos hijos con FK y trazabilidad.  
+**Nota de implementacion:** La unidad de parseo DML es el documento/archivo SQL
+completo y ordenado; los chunks se usan solo como evidencia y ubicacion de
+origen.
 **Requisitos:** H4.1-REQ-002, H4.1-REQ-007, H4.1-REQ-011.  
 **Checkpoint:** `python -m pytest tests/unit/test_sqlite_reverse_engineering_repository.py tests/unit/test_data_driven_symbols.py`.
 
@@ -123,6 +126,10 @@ preservado.
 **Descripcion:** Seleccionar archivos declarados, procesar por archivo/scope,
 persistir, reconciliar obsoletos, re-resolver referencias afectadas, soportar
 `--full`, `--path`, `--dry-run` y cancelacion.  
+**Nota de avance:** La persistencia de simbolos Data-Driven desde
+`AnalyzeService` quedo parcialmente adelantada durante T05; T08 conserva
+pendiente la integracion completa de referencias, reconciliacion, CLI y casos
+incrementales.
 **Dependencias:** H4.1-T05, H4.1-T06, H4.1-T07.  
 **Resultado esperado:** `analyze` produce simbolos, referencias y relaciones
 Data-Driven idempotentes.  

@@ -341,12 +341,7 @@ def _deduplicate_symbols(
     by_id: dict[str, TechnicalSymbol] = {}
     for symbol in symbols:
         by_id.setdefault(symbol.symbol_id, symbol)
-    return tuple(
-        sorted(
-            by_id.values(),
-            key=lambda item: (item.symbol_type, item.normalized_name),
-        )
-    )
+    return tuple(by_id.values())
 
 
 def _configuration_by_name(

@@ -1,4 +1,9 @@
-"""Modelos y constructores puros para configuraciones Data-Driven."""
+"""Constructores puros para conocimiento de configuraciones Data-Driven.
+
+El modulo transforma registros DML ya parseados en simbolos y referencias del
+catalogo de ingenieria inversa. No accede a SQLite, no ejecuta SQL y no evalua
+formulas; solo conserva evidencia y relaciones declaradas o candidatas.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +28,12 @@ from barbarion.domain.reverse_engineering import (
 
 @dataclass(frozen=True, slots=True)
 class ConfigurationSymbolDiagnostic:
-    """Advertencia recuperable al construir simbolos Data-Driven."""
+    """Advertencia recuperable al construir simbolos o referencias.
+
+    Attributes:
+        record_id: Identidad del registro asociado al diagnostico.
+        reason: Codigo estable que describe el motivo.
+    """
 
     record_id: str
     reason: str
@@ -31,7 +41,12 @@ class ConfigurationSymbolDiagnostic:
 
 @dataclass(frozen=True, slots=True)
 class ConfigurationSymbolPlan:
-    """Simbolos Data-Driven listos para persistencia posterior."""
+    """Plan de simbolos de configuracion listo para persistencia posterior.
+
+    Attributes:
+        symbols: Simbolos tecnicos generados en orden padre-hijo.
+        diagnostics: Advertencias recuperables detectadas durante la construccion.
+    """
 
     symbols: tuple[TechnicalSymbol, ...]
     diagnostics: tuple[ConfigurationSymbolDiagnostic, ...] = ()
@@ -39,7 +54,12 @@ class ConfigurationSymbolPlan:
 
 @dataclass(frozen=True, slots=True)
 class ConfigurationReferencePlan:
-    """Referencias Data-Driven listas para persistencia posterior."""
+    """Plan de referencias de configuracion listo para persistencia posterior.
+
+    Attributes:
+        references: Referencias tecnicas derivadas de columnas declaradas o tokens.
+        diagnostics: Advertencias recuperables detectadas durante la construccion.
+    """
 
     references: tuple[TechnicalReference, ...]
     diagnostics: tuple[ConfigurationSymbolDiagnostic, ...] = ()
@@ -49,7 +69,19 @@ def build_configuration_symbols(
     records: tuple[Any, ...],
     configurations: tuple[DataDrivenConfiguration, ...],
 ) -> ConfigurationSymbolPlan:
-    """Construye simbolos tecnicos en memoria desde registros DML canonicos."""
+    """Construye simbolos tecnicos desde registros DML canonicos.
+
+    Crea la entidad de configuracion, el registro y sus simbolos derivados. Los
+    registros parciales de `UPDATE` se guardan como evidencia parcial y no
+    intentan reconstruir el estado real de una base de datos.
+
+    Args:
+        records: Registros parseados desde el documento SQL completo.
+        configurations: Declaraciones Data-Driven disponibles.
+
+    Returns:
+        Plan con simbolos deduplicados y diagnosticos recuperables.
+    """
     symbols: list[TechnicalSymbol] = []
     diagnostics: list[ConfigurationSymbolDiagnostic] = []
     seen_record_ids: set[str] = set()
@@ -104,7 +136,25 @@ def build_configuration_references(
     source_chunk_id: str | None = None,
     token_patterns: tuple[str, ...] = (),
 ) -> ConfigurationReferencePlan:
-    """Construye referencias tecnicas desde columnas Data-Driven declaradas."""
+    """Construye referencias tecnicas desde columnas declaradas y formulas.
+
+    `reference_columns` y `parent_columns` producen referencias explicitas. Los
+    `sequence_columns` se conservan como metadata de simbolos y no generan
+    relaciones automaticamente; una relacion `precedes` requiere una referencia
+    explicita con ese tipo. Los tokens de formulas se detectan con patrones
+    configurados, y las llamadas `NAME(...)` se tratan como candidatas sin asumir
+    tecnologia.
+
+    Args:
+        records: Registros parseados desde el documento SQL completo.
+        configurations: Declaraciones Data-Driven disponibles.
+        source_file_id: Archivo usado como evidencia de las referencias.
+        source_chunk_id: Chunk usado solo como evidencia opcional.
+        token_patterns: Expresiones regulares configuradas para tokens.
+
+    Returns:
+        Plan con referencias deduplicadas y diagnosticos recuperables.
+    """
     references: list[TechnicalReference] = []
     diagnostics: list[ConfigurationSymbolDiagnostic] = []
     for record in records:
@@ -194,6 +244,7 @@ def _entity_symbol(
     configuration: DataDrivenConfiguration,
     record: Any,
 ) -> TechnicalSymbol:
+    """Crea el simbolo raiz de una familia de configuracion."""
     normalized_name = normalize_symbol_name(configuration.name)
     return TechnicalSymbol(
         symbol_id=technical_symbol_id(
@@ -223,6 +274,7 @@ def _record_symbol(
     record: Any,
     parent_symbol_id: str,
 ) -> TechnicalSymbol:
+    """Crea el simbolo de registro conservando identidad y metadata trazable."""
     identity = _identity_mapping(record)
     normalized_name = _record_normalized_name(configuration.name, record)
     original_name = _record_original_name(configuration, record, identity)
@@ -256,6 +308,7 @@ def _derived_symbols(
     record: Any,
     parent: TechnicalSymbol,
 ) -> tuple[TechnicalSymbol, ...]:
+    """Crea simbolos hijos desde columnas declaradas con valor estatico."""
     specs = (
         ("configuration_rule", configuration.rule_columns),
         ("configuration_formula", configuration.formula_columns),
@@ -311,6 +364,7 @@ def _record_metadata(
     configuration: DataDrivenConfiguration,
     record: Any,
 ) -> dict[str, Any]:
+    """Compone metadata consultable sin copiar columnas no declaradas."""
     identity = _identity_mapping(record)
     values = {value.column: value.raw for value in record.values}
     metadata = {
@@ -337,6 +391,7 @@ def _record_status(
     configuration: DataDrivenConfiguration,
     record: Any,
 ) -> SymbolStatus:
+    """Mapea columnas de estado declaradas a estado vigente del simbolo."""
     values = {value.column: _unquote(value.raw).lower() for value in record.values}
     for status_column in configuration.status_columns:
         column = _normalize_identifier(status_column.column)
@@ -440,6 +495,7 @@ def _reference_from_declared_column(
     target_type: str | None,
     reference_type: str,
 ) -> TechnicalReference:
+    """Crea una referencia explicita desde una columna declarada."""
     raw_text = value.raw
     normalized_target = _reference_target(
         raw_text,
@@ -495,6 +551,13 @@ def _formula_token_references(
     source_chunk_id: str | None,
     token_patterns: tuple[str, ...],
 ) -> tuple[TechnicalReference, ...]:
+    """Extrae referencias conservadoras desde reglas y formulas.
+
+    Aplica patrones configurados, deduplica tokens por columna y registro, y no
+    evalua expresiones. Las llamadas `NAME(...)` quedan como candidatas de
+    funcion con tecnologia desconocida hasta que el resolvedor encuentre
+    evidencia compatible.
+    """
     references: list[TechnicalReference] = []
     values_by_column = {value.column: value for value in record.values}
     token_targets = _token_targets(configuration, record)
@@ -598,6 +661,7 @@ def _formula_reference(
     metadata: dict[str, Any],
     target_technology: str = "configuration",
 ) -> TechnicalReference:
+    """Materializa una referencia de formula conservando el texto original."""
     reference_id = technical_reference_id(
         source_file_id=source_file_id,
         raw_text=raw_text,
@@ -637,6 +701,7 @@ def _token_targets(
     configuration: DataDrivenConfiguration,
     record: Any,
 ) -> dict[str, tuple[str, str]]:
+    """Indexa variables y parametros declarados para resolver tokens locales."""
     values_by_column = {value.column: value for value in record.values}
     targets: dict[str, tuple[str, str]] = {}
     record_name = _record_normalized_name(configuration.name, record)
@@ -661,6 +726,7 @@ def _tokens_from_patterns(
     expression: str,
     token_patterns: tuple[str, ...],
 ) -> tuple[str, ...]:
+    """Aplica patrones configurados y devuelve los grupos capturados utiles."""
     tokens: list[str] = []
     for pattern in token_patterns:
         regex = re.compile(pattern)
@@ -678,12 +744,14 @@ def _tokens_from_patterns(
 
 
 def _function_candidates(expression: str) -> tuple[str, ...]:
+    """Detecta llamadas lexicas `NAME(...)` sin afirmar tecnologia."""
     candidates = re.findall(r"\b([A-Za-z_][A-Za-z0-9_$#]*)\s*\(", expression)
     ignored = {"case"}
     return tuple(dict.fromkeys(candidate for candidate in candidates if candidate.lower() not in ignored))
 
 
 def _is_external_formula_function(name: str) -> bool:
+    """Reconoce funciones comunes no administradas por el catalogo local."""
     return name.lower() in {
         "abs",
         "ceil",
@@ -706,6 +774,7 @@ def _is_external_formula_function(name: str) -> bool:
 
 
 def _is_dynamic_formula_expression(expression: str) -> bool:
+    """Detecta formas incompletas o concatenadas que impiden resolucion exacta."""
     return (
         "||" in expression
         or expression.count("(") != expression.count(")")
@@ -718,6 +787,7 @@ def _reference_target(
     *,
     target_configuration: str | None,
 ) -> str:
+    """Normaliza el destino de una referencia declarada."""
     display = _display_reference_value(raw_text)
     if target_configuration is None:
         return normalize_symbol_name(display)
@@ -730,6 +800,7 @@ def _reference_type(
     target_configuration: str | None,
     target_type: str | None,
 ) -> str:
+    """Mapea declaracion TOML a tipo de referencia conservador."""
     if relation_type == "precedes":
         return "precedes"
     if relation_type == "parent_of":
@@ -751,6 +822,7 @@ def _reference_type(
 
 
 def _is_dynamic_reference_value(raw_text: str) -> bool:
+    """Detecta referencias declaradas con placeholders o concatenacion."""
     value = _display_raw(raw_text)
     return (
         "||" in value
@@ -774,6 +846,7 @@ def _display_reference_value(raw_text: str) -> str:
 def _deduplicate_references(
     references: tuple[TechnicalReference, ...],
 ) -> tuple[TechnicalReference, ...]:
+    """Conserva la primera ocurrencia estable de cada referencia."""
     by_id: dict[str, TechnicalReference] = {}
     for reference in references:
         by_id.setdefault(reference.reference_id, reference)
@@ -796,6 +869,7 @@ def _source_hash(record: Any) -> str:
 def _deduplicate_symbols(
     symbols: tuple[TechnicalSymbol, ...],
 ) -> tuple[TechnicalSymbol, ...]:
+    """Conserva orden padre-hijo al eliminar simbolos repetidos."""
     by_id: dict[str, TechnicalSymbol] = {}
     for symbol in symbols:
         by_id.setdefault(symbol.symbol_id, symbol)

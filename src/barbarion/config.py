@@ -248,7 +248,15 @@ class LlmSettings:
 
 @dataclass(frozen=True, slots=True)
 class DataDrivenReferenceColumn:
-    """Columna que apunta a otro simbolo de configuracion o tecnologia."""
+    """Columna que declara una referencia explicita.
+
+    Attributes:
+        column: Columna que contiene el texto de la referencia.
+        target_technology: Tecnologia esperada del destino, si aplica.
+        target_type: Tipo tecnico esperado del destino, si aplica.
+        target_configuration: Configuracion destino para referencias entre registros.
+        relation_type: Relacion deseada; `precedes` requiere una columna explicita.
+    """
 
     column: str
     target_technology: str | None = None
@@ -259,7 +267,12 @@ class DataDrivenReferenceColumn:
 
 @dataclass(frozen=True, slots=True)
 class DataDrivenParentColumn:
-    """Columna que expresa jerarquia entre configuraciones data-driven."""
+    """Columna que expresa jerarquia entre registros de configuracion.
+
+    Attributes:
+        column: Columna que contiene la identidad del padre.
+        target_configuration: Configuracion donde debe buscarse el padre.
+    """
 
     column: str
     target_configuration: str
@@ -267,7 +280,13 @@ class DataDrivenParentColumn:
 
 @dataclass(frozen=True, slots=True)
 class DataDrivenStatusColumn:
-    """Columna que distingue registros activos e inactivos."""
+    """Columna que distingue registros activos e inactivos.
+
+    Attributes:
+        column: Columna que contiene el estado.
+        active_values: Valores declarados como activos.
+        inactive_values: Valores declarados como inactivos.
+    """
 
     column: str
     active_values: tuple[str, ...]
@@ -276,7 +295,12 @@ class DataDrivenStatusColumn:
 
 @dataclass(frozen=True, slots=True)
 class DataDrivenConfiguration:
-    """Contrato declarativo para una familia de configuraciones en tablas."""
+    """Contrato declarativo para una familia de configuraciones en tablas.
+
+    La declaracion describe como identificar registros, que columnas producen
+    simbolos derivados y que columnas producen referencias. `sequence_columns`
+    conserva metadata de orden y no genera relaciones por si sola.
+    """
 
     name: str
     symbol_type: str
@@ -302,7 +326,16 @@ class DataDrivenConfiguration:
 
 @dataclass(frozen=True, slots=True)
 class DataDrivenSettings:
-    """Configuracion efectiva para deteccion data-driven declarativa."""
+    """Configuracion efectiva para deteccion Data-Driven declarativa.
+
+    Attributes:
+        enabled: Habilita la clasificacion y analisis de configuraciones.
+        file_patterns: Patrones globales de archivos SQL candidatos.
+        max_statements_per_file: Limite defensivo de sentencias por documento.
+        max_literal_chars: Longitud maxima de literales aceptados.
+        token_patterns: Patrones de tokens usados en reglas y formulas.
+        configurations: Declaraciones de familias de configuracion.
+    """
 
     enabled: bool
     file_patterns: tuple[str, ...]
@@ -840,7 +873,7 @@ def _build_llm_settings(value: object) -> LlmSettings:
 
 
 def _build_data_driven_settings(value: object) -> DataDrivenSettings:
-    """Construye la configuracion data-driven sin activar analisis SQL."""
+    """Construye la configuracion Data-Driven sin ejecutar analisis SQL."""
     values = _merge_section(
         value,
         "data_driven",
@@ -884,7 +917,7 @@ def _build_data_driven_configurations(
     *,
     enabled: bool,
 ) -> tuple[DataDrivenConfiguration, ...]:
-    """Valida la lista de configuraciones declarativas."""
+    """Valida la lista de familias de configuracion declaradas."""
     if not isinstance(value, (list, tuple)):
         raise ConfigError("La clave 'data_driven.configurations' debe ser una lista.")
     if enabled and not value:
@@ -912,7 +945,7 @@ def _build_data_driven_configuration(
     value: object,
     key: str,
 ) -> DataDrivenConfiguration:
-    """Valida una configuracion data-driven TOML."""
+    """Valida una tabla TOML de configuracion Data-Driven."""
     if not isinstance(value, dict):
         raise ConfigError(f"La clave '{key}' debe ser una tabla TOML.")
 
@@ -1111,7 +1144,7 @@ def _validate_sql_file_patterns(
     *,
     required: bool,
 ) -> tuple[str, ...]:
-    """Valida patrones destinados a DML contenido en archivos .sql."""
+    """Valida patrones destinados a DML contenido en archivos `.sql`."""
     patterns = _validate_string_list(value, key)
     if required and not patterns:
         raise ConfigError(f"La clave '{key}' debe contener al menos un patron .sql.")
@@ -1132,7 +1165,11 @@ def _validate_reference_columns(
     value: object,
     key: str,
 ) -> tuple[DataDrivenReferenceColumn, ...]:
-    """Valida columnas de referencia data-driven."""
+    """Valida columnas que producen referencias explicitas.
+
+    `relation_type = "precedes"` solo declara una relacion cuando la columna
+    identifica el destino; las columnas de orden se validan como metadata.
+    """
     if not isinstance(value, (list, tuple)):
         raise ConfigError(f"La clave '{key}' debe ser una lista.")
 
@@ -1200,7 +1237,7 @@ def _validate_parent_columns(
     value: object,
     key: str,
 ) -> tuple[DataDrivenParentColumn, ...]:
-    """Valida columnas de jerarquia data-driven."""
+    """Valida columnas de jerarquia entre registros de configuracion."""
     if not isinstance(value, (list, tuple)):
         raise ConfigError(f"La clave '{key}' debe ser una lista.")
 

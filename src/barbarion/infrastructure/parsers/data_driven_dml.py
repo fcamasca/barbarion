@@ -1,4 +1,9 @@
-"""Splitter acotado para DML Data-Driven."""
+"""Parser DML acotado para configuraciones Data-Driven.
+
+El modulo trabaja sobre el contenido completo de un documento SQL y no ejecuta
+sentencias. Solo reconoce un subconjunto conservador de `INSERT` y `UPDATE`
+orientado a extraer registros de configuracion declarados por TOML.
+"""
 
 from __future__ import annotations
 
@@ -52,7 +57,14 @@ _PLACEHOLDER_RE = re.compile(
 
 @dataclass(frozen=True, slots=True)
 class DmlStatement:
-    """Sentencia DML detectada sin ejecutar ni interpretar SQL."""
+    """Sentencia DML detectada por el splitter.
+
+    Attributes:
+        text: Texto de la sentencia sin el terminador final.
+        start_line: Linea inicial dentro del documento completo.
+        end_line: Linea final dentro del documento completo.
+        terminated: Indica si la sentencia termino con `;`.
+    """
 
     text: str
     start_line: int
@@ -62,7 +74,14 @@ class DmlStatement:
 
 @dataclass(frozen=True, slots=True)
 class DmlValue:
-    """Valor estatico extraido desde una sentencia DML."""
+    """Valor estatico extraido de una columna DML.
+
+    Attributes:
+        column: Nombre normalizado de la columna.
+        raw: Texto original del literal o expresion aceptada.
+        value_type: Clasificacion estatica del valor.
+        position: Posicion ordinal dentro de la lista de valores.
+    """
 
     column: str
     raw: str
@@ -72,7 +91,25 @@ class DmlValue:
 
 @dataclass(frozen=True, slots=True)
 class DmlConfigurationRecord:
-    """Registro canonico extraido desde DML declarado."""
+    """Registro de configuracion canonico derivado de una sentencia DML.
+
+    Los registros parciales producidos por `UPDATE` conservan solo las columnas
+    presentes en la sentencia y en el `WHERE`; no reconstruyen el estado real de
+    la base de datos.
+
+    Attributes:
+        record_id: Identidad determinista calculada desde la configuracion y su clave.
+        configuration_name: Nombre declarativo de la configuracion TOML.
+        table: Tabla objetivo tal como fue detectada.
+        operation: Operacion DML soportada.
+        identity_values: Valores usados como identidad del registro.
+        values: Valores disponibles en la sentencia.
+        statement_ordinal: Posicion de la sentencia dentro del documento.
+        start_line: Linea inicial de la sentencia.
+        end_line: Linea final de la sentencia.
+        partial: Indica si el registro proviene de un `UPDATE`.
+        terminated: Indica si la sentencia termino con `;`.
+    """
 
     record_id: str
     configuration_name: str
@@ -89,7 +126,15 @@ class DmlConfigurationRecord:
 
 @dataclass(frozen=True, slots=True)
 class DmlDiagnostic:
-    """Diagnostico recuperable por sentencia."""
+    """Diagnostico recuperable producido durante el parsing DML.
+
+    Attributes:
+        statement_ordinal: Posicion de la sentencia o fragmento diagnosticado.
+        start_line: Linea inicial de la evidencia.
+        end_line: Linea final de la evidencia.
+        statement_type: Tipo de sentencia detectado de forma estatica.
+        reason: Codigo estable del motivo de descarte.
+    """
 
     statement_ordinal: int
     start_line: int
@@ -100,14 +145,30 @@ class DmlDiagnostic:
 
 @dataclass(frozen=True, slots=True)
 class DmlParseResult:
-    """Resultado del parsing estatico DML."""
+    """Resultado del parsing estatico de un documento SQL.
+
+    Attributes:
+        records: Registros de configuracion extraidos con exito.
+        diagnostics: Advertencias recuperables para sentencias omitidas.
+    """
 
     records: tuple[DmlConfigurationRecord, ...]
     diagnostics: tuple[DmlDiagnostic, ...]
 
 
 def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
-    """Separa sentencias por punto y coma fuera de strings y comentarios."""
+    """Separa sentencias DML sin dividir literales ni comentarios.
+
+    Usa `;` como terminador solamente cuando aparece fuera de strings,
+    identificadores delimitados y comentarios. Si el contenido termina con un
+    fragmento cerrado de forma segura, lo acepta aunque no tenga `;`.
+
+    Args:
+        source: Contenido completo del documento SQL.
+
+    Returns:
+        Sentencias detectadas en orden de aparicion.
+    """
     statements: list[DmlStatement] = []
     buffer: list[str] = []
     state = "normal"
@@ -233,7 +294,21 @@ def parse_dml_configurations(
     max_statements_per_file: int,
     max_literal_chars: int,
 ) -> DmlParseResult:
-    """Parsea INSERT/UPDATE soportados sin ejecutar SQL."""
+    """Extrae registros declarados desde un documento SQL completo.
+
+    Solo interpreta formas acotadas de `INSERT` y `UPDATE`; cualquier sentencia
+    fuera de ese subconjunto se informa como diagnostico recuperable. El parser
+    no ejecuta SQL ni evalua expresiones.
+
+    Args:
+        source: Contenido completo del documento SQL.
+        configurations: Declaraciones Data-Driven habilitadas.
+        max_statements_per_file: Limite defensivo de sentencias por documento.
+        max_literal_chars: Longitud maxima permitida para literales.
+
+    Returns:
+        Registros extraidos y diagnosticos de sentencias descartadas.
+    """
     statements = split_dml_statements(source)
     if len(statements) > max_statements_per_file:
         return DmlParseResult(
@@ -272,6 +347,7 @@ def _parse_statement(
     *,
     max_literal_chars: int,
 ) -> tuple[DmlConfigurationRecord | None, DmlDiagnostic | None]:
+    """Despacha una sentencia soportada y convierte rechazos en diagnosticos."""
     text = _strip_sql_comments(statement.text).strip()
     statement_type = _statement_type(text)
     if statement_type == "insert":
@@ -306,6 +382,7 @@ def _parse_insert(
     *,
     max_literal_chars: int,
 ) -> tuple[DmlConfigurationRecord | None, DmlDiagnostic | None]:
+    """Parsea `INSERT INTO ... VALUES ...` contra tablas declaradas."""
     if _contains_unsupported_insert_shape(text):
         return None, _diagnostic(statement, ordinal, "insert", "unsupported_insert")
     match = _INSERT_RE.match(text)
@@ -373,6 +450,7 @@ def _parse_update(
     *,
     max_literal_chars: int,
 ) -> tuple[DmlConfigurationRecord | None, DmlDiagnostic | None]:
+    """Parsea `UPDATE ... SET ... WHERE ...` como registro parcial trazable."""
     if _contains_unsupported_update_shape(text):
         return None, _diagnostic(statement, ordinal, "update", "unsupported_update")
     match = _UPDATE_RE.match(text)
@@ -436,6 +514,7 @@ def _build_values(
     *,
     max_literal_chars: int,
 ) -> tuple[tuple[DmlValue, ...], DmlDiagnostic | None]:
+    """Normaliza columnas y valores preservando el texto original aceptado."""
     values: list[DmlValue] = []
     for position, (column, raw_value) in enumerate(zip(columns, raw_values), start=1):
         raw = raw_value.strip()
@@ -470,6 +549,7 @@ def _record(
     ordinal: int,
     partial: bool,
 ) -> DmlConfigurationRecord:
+    """Construye el registro canonico y conserva si la operacion fue parcial."""
     normalized_table = _normalize_table_name(table)
     record_id = _record_id(configuration.name, normalized_table, identity_values)
     return DmlConfigurationRecord(
@@ -532,6 +612,7 @@ def _configuration_for_table(
 
 
 def _parse_assignments(text: str, *, separator: str) -> tuple[tuple[str, str], ...]:
+    """Extrae asignaciones `columna = valor` separadas a nivel superior."""
     parts = (
         _split_top_level(text)
         if separator == ","
@@ -580,6 +661,7 @@ def _split_top_level(text: str) -> tuple[str, ...]:
 
 
 def _split_top_level_character(text: str, separator: str) -> tuple[str, ...]:
+    """Divide por un caracter sin entrar en strings ni parentesis anidados."""
     parts: list[str] = []
     start = 0
     state = "normal"
@@ -613,6 +695,7 @@ def _split_top_level_character(text: str, separator: str) -> tuple[str, ...]:
 
 
 def _split_top_level_keyword(text: str, keyword: str) -> tuple[str, ...]:
+    """Divide por una palabra clave solo cuando esta fuera de literales."""
     parts: list[str] = []
     start = 0
     state = "normal"
@@ -664,6 +747,7 @@ def _is_identifier_character(character: str) -> bool:
 
 
 def _strip_sql_comments(text: str) -> str:
+    """Elimina comentarios SQL conservando strings e identificadores."""
     output: list[str] = []
     state = "normal"
     index = 0
@@ -767,6 +851,7 @@ def _contains_keyword_outside_literals(text: str, keyword: str) -> bool:
 
 
 def _scrub_literals(text: str) -> str:
+    """Reemplaza strings por espacios para buscar palabras clave estructurales."""
     output: list[str] = []
     state = "normal"
     index = 0

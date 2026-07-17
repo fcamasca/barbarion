@@ -130,7 +130,11 @@ def processing_signature(
     settings: Settings,
     versions: ProcessingVersions,
 ) -> str:
-    """Devuelve SHA-256 de la configuracion transformativa canonica."""
+    """Devuelve SHA-256 de la configuracion transformativa canonica.
+
+    Incluye la declaracion Data-Driven porque puede cambiar `artifact_kind` y la
+    metadata persistida de documentos y chunks.
+    """
     canonical = canonical_processing_config(
         settings.ingestion,
         versions,
@@ -244,7 +248,7 @@ def canonical_processing_config(
     *,
     data_driven: Any | None = None,
 ) -> str:
-    """Serializa solo valores que cambian el procesamiento de contenido."""
+    """Serializa solo valores que cambian contenido o metadata persistida."""
     payload = {
         "schema": "barbarion.processing-signature.v1",
         "versions": {

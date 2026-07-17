@@ -1058,7 +1058,11 @@ def _symbols_from_sources(
     *,
     settings: Settings | None = None,
 ) -> tuple[TechnicalSymbol, ...]:
-    """Construye simbolos unicos por identidad determinista."""
+    """Construye simbolos unicos desde fuentes vigentes.
+
+    Para configuraciones Data-Driven agrupa chunks por documento y parsea el
+    texto completo, evitando cortes de sentencias o duplicados por overlap.
+    """
     by_id: dict[str, TechnicalSymbol] = {}
     for symbol in _iter_symbols_from_sources(sources, settings=settings):
         by_id.setdefault(symbol.symbol_id, symbol)
@@ -1096,6 +1100,7 @@ def _symbols_from_source(
     *,
     settings: Settings | None,
 ) -> tuple[TechnicalSymbol, ...]:
+    """Construye simbolos para una fuente individual cuando no hay agrupamiento."""
     if not _is_data_driven_configuration_source(source, settings):
         return (symbol_from_source(source),)
     return _configuration_symbols_from_document((source,), settings=settings)
@@ -1106,6 +1111,11 @@ def _configuration_symbols_from_document(
     *,
     settings: Settings | None,
 ) -> tuple[TechnicalSymbol, ...]:
+    """Construye simbolos Data-Driven desde el documento completo.
+
+    La fuente elegida aporta `document_content`; los chunks del mismo documento
+    se usan despues solo para asociar evidencia y ubicacion.
+    """
     if settings is None or not sources:
         return ()
     document_source = sources[0]
@@ -1133,6 +1143,7 @@ def _is_data_driven_configuration_source(
     source: SymbolSource,
     settings: Settings | None,
 ) -> bool:
+    """Determina si una fuente debe entrar al flujo Data-Driven."""
     return (
         settings is not None
         and source.artifact_kind == "configuration"
@@ -1145,6 +1156,7 @@ def _evidence_source_for_symbol(
     symbol: TechnicalSymbol,
     sources: tuple[SymbolSource, ...],
 ) -> SymbolSource:
+    """Selecciona el chunk que cubre la linea inicial de un simbolo."""
     if symbol.start_line is not None:
         for source in sources:
             if (
@@ -1160,6 +1172,7 @@ def _with_source_trace(
     symbol: TechnicalSymbol,
     source: SymbolSource,
 ) -> TechnicalSymbol:
+    """Adjunta archivo, documento, chunk y metadata de evidencia al simbolo."""
     metadata = {
         **symbol.metadata,
         "artifact_kind": source.artifact_kind,
@@ -1574,7 +1587,12 @@ def _references_from_sources(
     *,
     settings: Settings | None = None,
 ) -> tuple[TechnicalReference, ...]:
-    """Extrae referencias unicas y las vincula con el simbolo fuente si existe."""
+    """Extrae referencias unicas y las vincula con el simbolo fuente si existe.
+
+    Las configuraciones Data-Driven se agrupan por documento completo antes de
+    extraer referencias, para no procesar sentencias cortadas ni solapes de
+    chunks como entradas independientes.
+    """
     source_symbol_by_chunk = {
         symbol.chunk_id: symbol.symbol_id
         for symbol in symbols
@@ -1609,6 +1627,7 @@ def _configuration_references_from_document(
     *,
     settings: Settings | None,
 ) -> tuple[TechnicalReference, ...]:
+    """Extrae referencias Data-Driven desde el documento SQL completo."""
     if settings is None or not sources:
         return ()
     document_source = sources[0]
@@ -1636,6 +1655,7 @@ def _evidence_source_for_record(
     record: Any,
     sources: tuple[SymbolSource, ...],
 ) -> SymbolSource:
+    """Selecciona el chunk que cubre la linea inicial de un registro."""
     if record.start_line is not None:
         for source in sources:
             if (
@@ -1800,7 +1820,11 @@ def _candidate_symbols(
     reference: TechnicalReference,
     symbols: tuple[TechnicalSymbol, ...],
 ) -> tuple[TechnicalSymbol, ...]:
-    """Selecciona candidatos por tecnologia, tipo, nombre y contenedor."""
+    """Selecciona candidatos por tecnologia, tipo, nombre y contenedor.
+
+    Las referencias con tecnologia desconocida, como candidatas `NAME(...)` de
+    formulas, se comparan contra cualquier tecnologia compatible del catalogo.
+    """
     compatible = [
         symbol
         for symbol in symbols
@@ -1890,7 +1914,7 @@ def _type_compatible(reference_type: str, symbol_type: str) -> bool:
 
 
 def _relation_type(reference: TechnicalReference) -> str:
-    """Mapea el tipo de referencia al tipo canonico de relacion reverse engineering."""
+    """Mapea una referencia al tipo canonico de relacion."""
     return {
         "call": "calls",
         "calls": "calls",

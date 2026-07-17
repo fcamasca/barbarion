@@ -102,7 +102,12 @@ class IngestionRepositoryPort(Protocol):
         chunks: Sequence[ChunkCandidate],
         artifact_kind: str | None = None,
     ) -> None:
-        """Reemplaza documento y chunks de un archivo en una transaccion."""
+        """Reemplaza documento y chunks de un archivo en una transaccion.
+
+        Args:
+            artifact_kind: Clasificacion opcional que debe persistirse para el
+                archivo cuando difiere de la inferencia por extension.
+        """
 
     def mark_seen(
         self,

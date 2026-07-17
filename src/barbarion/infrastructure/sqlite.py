@@ -1314,7 +1314,28 @@ class ReverseEngineeringStats:
 
 @dataclass(frozen=True, slots=True)
 class SymbolSource:
-    """Chunk vigente con metadata suficiente para catalogar simbolos de reverse engineering."""
+    """Fuente vigente para catalogar simbolos y referencias.
+
+    `document_content` contiene el texto completo normalizado del documento y
+    permite analizar configuraciones Data-Driven por archivo. `content` y
+    `chunk_id` se conservan como evidencia granular.
+
+    Attributes:
+        file_id: Identificador persistido del archivo.
+        document_id: Identificador persistido del documento.
+        chunk_id: Identificador del chunk usado como evidencia.
+        content: Texto del chunk.
+        document_content: Texto completo normalizado del documento.
+        artifact_kind: Tipo de artefacto clasificado durante ingesta.
+        relative_path: Ruta relativa del archivo.
+        extension: Extension normalizada del archivo.
+        chunk_type: Tipo de chunk persistido.
+        object_type: Tipo de objeto detectado, si existe.
+        object_name: Nombre de objeto detectado, si existe.
+        start_line: Linea inicial del chunk.
+        end_line: Linea final del chunk.
+        metadata: Metadata JSON del chunk.
+    """
 
     file_id: int
     document_id: int
@@ -2125,7 +2146,12 @@ class SQLiteReverseEngineeringRepository:
         domain: str,
         path_prefix: str | None = None,
     ) -> tuple[SymbolSource, ...]:
-        """Lee chunks vigentes que pueden alimentar el catalogo de simbolos."""
+        """Lee chunks vigentes que pueden alimentar el catalogo de simbolos.
+
+        Cada fila incluye el contenido completo del documento asociado para que
+        los analizadores que requieren contexto de archivo no dependan de cortes
+        ni overlap de chunks.
+        """
         clauses = [
             "files.domain = ?",
             "files.status = 'processed'",

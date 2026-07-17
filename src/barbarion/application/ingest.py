@@ -526,6 +526,14 @@ def _replace(metrics: IngestionMetrics, **changes: int | None) -> IngestionMetri
 
 @dataclass(frozen=True, slots=True)
 class _DataDrivenClassification:
+    """Resultado de clasificar un documento como configuracion Data-Driven.
+
+    Attributes:
+        artifact_kind: Tipo de artefacto que debe persistirse para el archivo.
+        configuration_names: Configuraciones declaradas que coincidieron.
+        table_names: Tablas declaradas detectadas en sentencias DML.
+    """
+
     artifact_kind: str | None = None
     configuration_names: tuple[str, ...] = ()
     table_names: tuple[str, ...] = ()
@@ -537,6 +545,20 @@ def _classify_data_driven_document(
     discovered_file: DiscoveredFile,
     text: str,
 ) -> _DataDrivenClassification:
+    """Clasifica un documento SQL contra declaraciones Data-Driven.
+
+    La clasificacion exige que el archivo coincida con los patrones declarados y
+    que el documento completo mencione una tabla configurada en sentencias DML.
+    No parsea ni ejecuta SQL; solo identifica candidatos para etapas posteriores.
+
+    Args:
+        settings: Configuracion efectiva de la aplicacion.
+        discovered_file: Archivo descubierto por la ingesta.
+        text: Texto normalizado completo del documento.
+
+    Returns:
+        Clasificacion con nombres de configuracion y tablas coincidentes.
+    """
     data_driven = settings.data_driven
     if (
         not data_driven.enabled
@@ -579,6 +601,7 @@ def _document_with_data_driven_metadata(
     document: NormalizedDocument,
     classification: _DataDrivenClassification,
 ) -> NormalizedDocument:
+    """Agrega metadata Data-Driven al documento cuando fue clasificado."""
     if classification.artifact_kind != "configuration":
         return document
     metadata = dict(document.metadata)
@@ -592,6 +615,7 @@ def _chunks_with_data_driven_metadata(
     chunks: tuple[ChunkCandidate, ...],
     classification: _DataDrivenClassification,
 ) -> tuple[ChunkCandidate, ...]:
+    """Propaga metadata Data-Driven a chunks usados solo como evidencia."""
     if classification.artifact_kind != "configuration":
         return chunks
     enriched: list[ChunkCandidate] = []
@@ -605,6 +629,7 @@ def _chunks_with_data_driven_metadata(
 
 
 def _matches_any_pattern(path: str, patterns: tuple[str, ...]) -> bool:
+    """Evalua patrones de ruta de forma case-insensitive y estable."""
     normalized_path = path.replace("\\", "/").lower()
     return any(
         fnmatch.fnmatchcase(normalized_path, pattern.replace("\\", "/").lower())
@@ -613,6 +638,7 @@ def _matches_any_pattern(path: str, patterns: tuple[str, ...]) -> bool:
 
 
 def _referenced_dml_tables(text: str) -> frozenset[str]:
+    """Detecta nombres de tablas mencionadas en `INSERT` o `UPDATE`."""
     return frozenset(
         _normalize_table_name(match.group("table"))
         for match in _DML_TABLE_RE.finditer(text)
@@ -623,6 +649,7 @@ def _matching_declared_table(
     configuration: DataDrivenConfiguration,
     referenced_tables: frozenset[str],
 ) -> str | None:
+    """Devuelve la tabla declarada que coincide con el documento."""
     for table in configuration.tables:
         normalized = _normalize_table_name(table)
         unqualified = normalized.rsplit(".", 1)[-1]

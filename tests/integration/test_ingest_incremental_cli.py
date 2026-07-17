@@ -18,24 +18,37 @@ def write_config(
     *,
     chunk_size: int = 500,
     chunk_overlap: int = 0,
+    data_driven: bool = False,
 ) -> Path:
+    lines = [
+        'domain = "integration"',
+        'data_dir = "data"',
+        'output_dir = "output"',
+        'logs_dir = "logs"',
+        'database_path = "data/barbarion.db"',
+        'log_level = "INFO"',
+        "[ingestion]",
+        f'paths = ["{corpus.as_posix()}"]',
+        f"chunk_size = {chunk_size}",
+        f"chunk_overlap = {chunk_overlap}",
+        'encodings = ["utf-8", "cp1252", "latin-1"]',
+    ]
+    if data_driven:
+        lines.extend(
+            [
+                "[data_driven]",
+                "enabled = true",
+                'file_patterns = ["config/**/*.sql"]',
+                "[[data_driven.configurations]]",
+                'name = "pricing_rules"',
+                'symbol_type = "configuration_record"',
+                'tables = ["APP_CFG.PRICING_RULES"]',
+                'identity_columns = ["RULE_ID"]',
+            ]
+        )
     source = tmp_path / "barbarion.toml"
     source.write_text(
-        "\n".join(
-            [
-                'domain = "integration"',
-                'data_dir = "data"',
-                'output_dir = "output"',
-                'logs_dir = "logs"',
-                'database_path = "data/barbarion.db"',
-                'log_level = "INFO"',
-                "[ingestion]",
-                f'paths = ["{corpus.as_posix()}"]',
-                f"chunk_size = {chunk_size}",
-                f"chunk_overlap = {chunk_overlap}",
-                'encodings = ["utf-8", "cp1252", "latin-1"]',
-            ]
-        ),
+        "\n".join(lines),
         encoding="utf-8",
     )
     return source
@@ -214,3 +227,40 @@ def test_cli_ingest_powerbuilder_overlap_root_persists_unique_chunks(
         db_path,
         "SELECT COUNT(*) FROM chunks",
     )
+
+
+def test_cli_ingest_classifies_declared_sql_as_configuration(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    corpus = tmp_path / "corpus"
+    config_dir = corpus / "config" / "pricing"
+    oracle_dir = corpus / "oracle"
+    config_dir.mkdir(parents=True)
+    oracle_dir.mkdir(parents=True)
+    (config_dir / "rules.sql").write_text(
+        "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID, RULE_NAME) "
+        "VALUES ('R1', 'Base');",
+        encoding="utf-8",
+    )
+    (oracle_dir / "package.sql").write_text(
+        "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('R2');",
+        encoding="utf-8",
+    )
+    for name in ("data", "output", "logs"):
+        (tmp_path / name).mkdir()
+    db_path = tmp_path / "data" / "barbarion.db"
+    initialize_database(db_path)
+    config = write_config(tmp_path, corpus, data_driven=True)
+
+    run_ingest(config, "--full", capsys=capsys)
+
+    with sqlite3.connect(db_path) as connection:
+        rows = dict(
+            connection.execute(
+                "SELECT relative_path, artifact_kind FROM files ORDER BY relative_path"
+            ).fetchall()
+        )
+
+    assert rows["config/pricing/rules.sql"] == "configuration"
+    assert rows["oracle/package.sql"] == "oracle"

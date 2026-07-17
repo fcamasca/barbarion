@@ -100,6 +100,7 @@ class IngestionRepositoryPort(Protocol):
         encoding: str | None,
         document: NormalizedDocument,
         chunks: Sequence[ChunkCandidate],
+        artifact_kind: str | None = None,
     ) -> None:
         """Reemplaza documento y chunks de un archivo en una transaccion."""
 

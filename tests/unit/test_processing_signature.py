@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from barbarion.config import IngestionSettings, Settings, load_settings
+from barbarion.config import (
+    DataDrivenConfiguration,
+    DataDrivenSettings,
+    load_settings,
+)
 from barbarion.domain.ingestion import (
     ProcessingVersions,
     canonical_processing_config,
@@ -94,6 +98,46 @@ def test_version_changes_signature(
     assert processing_signature(settings, versions()) != processing_signature(
         settings,
         versions(**changed_versions),
+    )
+
+
+def test_data_driven_declaration_changes_processing_signature(tmp_path: Path) -> None:
+    settings = load_settings(environ={}, cwd=tmp_path)
+    data_driven = DataDrivenSettings(
+        enabled=True,
+        file_patterns=("config/**/*.sql",),
+        max_statements_per_file=10_000,
+        max_literal_chars=200_000,
+        token_patterns=(),
+        configurations=(
+            DataDrivenConfiguration(
+                name="pricing_rules",
+                symbol_type="configuration_record",
+                tables=("APP_CFG.PRICING_RULES",),
+                identity_columns=("RULE_ID",),
+                file_patterns=(),
+                default_column_order=(),
+                name_columns=(),
+                description_columns=(),
+                rule_columns=(),
+                formula_columns=(),
+                variable_columns=(),
+                parameter_columns=(),
+                reference_columns=(),
+                parent_columns=(),
+                sequence_columns=(),
+                status_columns=(),
+                effective_from_columns=(),
+                effective_to_columns=(),
+                metadata_columns=(),
+            ),
+        ),
+    )
+    changed_settings = replace(settings, data_driven=data_driven)
+
+    assert processing_signature(settings, versions()) != processing_signature(
+        changed_settings,
+        versions(),
     )
 
 

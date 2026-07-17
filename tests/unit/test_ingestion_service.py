@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import logging
+import json
 import sqlite3
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from barbarion.application.ingest import IngestionService
-from barbarion.config import Settings, load_settings
+from barbarion.config import (
+    DataDrivenConfiguration,
+    DataDrivenSettings,
+    Settings,
+    load_settings,
+)
 from barbarion.domain.models import (
     Confidence,
     DiscoveredFile,
@@ -134,6 +140,11 @@ class FakeParser(BaseParser):
         )
 
 
+class FakeSqlParser(FakeParser):
+    parser_id = "oracle"
+    supported_extensions = (".sql",)
+
+
 def settings_for(tmp_path: Path, root: Path) -> Settings:
     settings = load_settings(environ={}, cwd=tmp_path)
     ingestion = replace(
@@ -144,6 +155,53 @@ def settings_for(tmp_path: Path, root: Path) -> Settings:
         chunk_overlap=0,
     )
     return replace(settings, ingestion=ingestion, database_path=tmp_path / "barbarion.db")
+
+
+def data_driven_settings_for(tmp_path: Path, root: Path) -> Settings:
+    settings = load_settings(environ={}, cwd=tmp_path)
+    ingestion = replace(
+        settings.ingestion,
+        paths=(root,),
+        extensions=(".sql",),
+        chunk_size=500,
+        chunk_overlap=0,
+    )
+    data_driven = DataDrivenSettings(
+        enabled=True,
+        file_patterns=("config/**/*.sql",),
+        max_statements_per_file=10_000,
+        max_literal_chars=200_000,
+        token_patterns=(),
+        configurations=(
+            DataDrivenConfiguration(
+                name="pricing_rules",
+                symbol_type="configuration_record",
+                tables=("APP_CFG.PRICING_RULES",),
+                identity_columns=("RULE_ID",),
+                file_patterns=(),
+                default_column_order=(),
+                name_columns=(),
+                description_columns=(),
+                rule_columns=(),
+                formula_columns=(),
+                variable_columns=(),
+                parameter_columns=(),
+                reference_columns=(),
+                parent_columns=(),
+                sequence_columns=(),
+                status_columns=(),
+                effective_from_columns=(),
+                effective_to_columns=(),
+                metadata_columns=(),
+            ),
+        ),
+    )
+    return replace(
+        settings,
+        ingestion=ingestion,
+        data_driven=data_driven,
+        database_path=tmp_path / "barbarion.db",
+    )
 
 
 def test_ingestion_service_processes_valid_files_and_records_recoverable_errors(
@@ -180,6 +238,87 @@ def test_ingestion_service_processes_valid_files_and_records_recoverable_errors(
         assert connection.execute(
             "SELECT COUNT(*) FROM files WHERE status = 'error'"
         ).fetchone() == (1,)
+
+
+def test_ingestion_service_classifies_declared_sql_as_configuration(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "sources"
+    source = make_file(
+        root,
+        "config/pricing/rules.sql",
+        "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID, RULE_NAME) VALUES ('R1', 'Base');",
+    )
+    settings = data_driven_settings_for(tmp_path, root)
+    initialize_database(settings.database_path)
+    repository = SQLiteIngestionRepository(settings.database_path, domain=settings.domain)
+    service = IngestionService(
+        settings=settings,
+        discovery=FakeDiscovery((source,)),
+        fingerprint=FakeFingerprint(),
+        repository=repository,
+        parser_registry=ParserRegistry([FakeSqlParser()]),
+    )
+
+    outcome = service.run(mode=IngestionMode.INCREMENTAL)
+
+    assert outcome.status == IngestionRunStatus.COMPLETED
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        file_row = connection.execute(
+            "SELECT artifact_kind FROM files WHERE relative_path = ?",
+            ("config/pricing/rules.sql",),
+        ).fetchone()
+        document_row = connection.execute(
+            "SELECT metadata_json FROM documents"
+        ).fetchone()
+        chunk_row = connection.execute(
+            "SELECT metadata_json FROM chunks"
+        ).fetchone()
+
+    document_metadata = json.loads(document_row["metadata_json"])
+    chunk_metadata = json.loads(chunk_row["metadata_json"])
+    assert file_row["artifact_kind"] == "configuration"
+    assert document_metadata["artifact_kind"] == "configuration"
+    assert document_metadata["data_driven_configuration_names"] == ["pricing_rules"]
+    assert document_metadata["data_driven_tables"] == ["APP_CFG.PRICING_RULES"]
+    assert chunk_metadata["artifact_kind"] == "configuration"
+    assert chunk_metadata["data_driven_configuration_names"] == ["pricing_rules"]
+
+
+def test_ingestion_service_keeps_undeclared_sql_as_oracle(tmp_path: Path) -> None:
+    root = tmp_path / "sources"
+    source = make_file(
+        root,
+        "oracle/package.sql",
+        "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('R1');",
+    )
+    settings = data_driven_settings_for(tmp_path, root)
+    initialize_database(settings.database_path)
+    repository = SQLiteIngestionRepository(settings.database_path, domain=settings.domain)
+    service = IngestionService(
+        settings=settings,
+        discovery=FakeDiscovery((source,)),
+        fingerprint=FakeFingerprint(),
+        repository=repository,
+        parser_registry=ParserRegistry([FakeSqlParser()]),
+    )
+
+    outcome = service.run(mode=IngestionMode.INCREMENTAL)
+
+    assert outcome.status == IngestionRunStatus.COMPLETED
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        file_row = connection.execute(
+            "SELECT artifact_kind FROM files WHERE relative_path = ?",
+            ("oracle/package.sql",),
+        ).fetchone()
+        document_row = connection.execute(
+            "SELECT metadata_json FROM documents"
+        ).fetchone()
+    document_metadata = json.loads(document_row["metadata_json"])
+    assert file_row["artifact_kind"] == "oracle"
+    assert "data_driven_configuration_names" not in document_metadata
 
 
 def test_ingestion_service_does_not_reconcile_after_root_error(tmp_path: Path) -> None:

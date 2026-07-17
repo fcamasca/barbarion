@@ -109,7 +109,9 @@ archivo coincide con `file_patterns` y la sentencia afecta una tabla declarada;
 
 ### H4.1-TP-004 - Splitter de sentencias
 
-Separa por `;` fuera de strings, comentarios y expresiones soportadas.
+Separa por `;` fuera de strings, comentarios y expresiones soportadas. Acepta
+la ultima sentencia sin `;` al final del archivo solo si no quedan strings,
+comentarios o delimitadores abiertos y el parser la interpreta de forma segura.
 
 ### H4.1-TP-005 - INSERT soportado
 

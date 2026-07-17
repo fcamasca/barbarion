@@ -59,3 +59,42 @@ provider = "ollama"
 model = "llama3.1:8b"
 timeout_seconds = 600.0
 temperature = 0.1
+
+[data_driven]
+enabled = false
+file_patterns = ["config/**/*.sql"]
+max_statements_per_file = 10000
+max_literal_chars = 200000
+token_patterns = [
+  '\{([A-Za-z_][A-Za-z0-9_]*)\}',
+  '\$\{([^}]+)\}',
+  ':([A-Za-z_][A-Za-z0-9_]*)'
+]
+
+[[data_driven.configurations]]
+name = "pricing_rules"
+symbol_type = "configuration_record"
+tables = ["APP_CFG.PRICING_RULES"]
+identity_columns = ["RULE_ID"]
+file_patterns = ["config/pricing/**/*.sql"]
+default_column_order = ["RULE_ID", "RULE_NAME", "DESCRIPTION", "FORMULA"]
+name_columns = ["RULE_NAME"]
+description_columns = ["DESCRIPTION"]
+rule_columns = ["RULE_SQL"]
+formula_columns = ["FORMULA"]
+variable_columns = ["VARIABLE_NAME"]
+parameter_columns = ["PARAMETER_NAME"]
+reference_columns = [
+  { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },
+  { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }
+]
+parent_columns = [
+  { column = "PARENT_RULE_ID", target_configuration = "pricing_rules" }
+]
+sequence_columns = ["DISPLAY_ORDER"]
+status_columns = [
+  { column = "STATUS", active_values = ["A"], inactive_values = ["I"] }
+]
+effective_from_columns = ["VALID_FROM"]
+effective_to_columns = ["VALID_TO"]
+metadata_columns = ["CREATED_BY", "UPDATED_AT"]

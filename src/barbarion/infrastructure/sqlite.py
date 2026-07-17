@@ -699,6 +699,7 @@ class SQLiteIngestionRepository:
         encoding: str | None,
         document: NormalizedDocument,
         chunks: Sequence[ChunkCandidate],
+        artifact_kind: str | None = None,
     ) -> None:
         if fingerprint.sha256 is None:
             raise SQLiteIngestionError("DATABASE_WRITE_FAILED: falta SHA-256.")
@@ -717,6 +718,7 @@ class SQLiteIngestionRepository:
                     parser_id=parser_id,
                     parser_version=parser_version,
                     encoding=encoding,
+                    artifact_kind=artifact_kind,
                     status=FileStatus.PROCESSED,
                     now=now,
                 )
@@ -1093,6 +1095,7 @@ class SQLiteIngestionRepository:
         encoding: str | None,
         status: FileStatus,
         now: str,
+        artifact_kind: str | None = None,
         skip_reason: str | None = None,
     ) -> int:
         row = connection.execute(
@@ -1111,7 +1114,7 @@ class SQLiteIngestionRepository:
             _source_root(discovered_file),
             discovered_file.relative_path.as_posix(),
             discovered_file.extension,
-            _artifact_kind(discovered_file.extension),
+            artifact_kind or _artifact_kind(discovered_file.extension),
             _media_type(discovered_file.extension),
             fingerprint.size_bytes,
             fingerprint.mtime_ns,
@@ -1163,7 +1166,7 @@ class SQLiteIngestionRepository:
             """,
             (
                 discovered_file.extension,
-                _artifact_kind(discovered_file.extension),
+                artifact_kind or _artifact_kind(discovered_file.extension),
                 _media_type(discovered_file.extension),
                 fingerprint.size_bytes,
                 fingerprint.mtime_ns,

@@ -7,6 +7,11 @@ import pytest
 
 from barbarion.config import (
     ConfigError,
+    DataDrivenConfiguration,
+    DataDrivenParentColumn,
+    DataDrivenReferenceColumn,
+    DataDrivenSettings,
+    DataDrivenStatusColumn,
     EmbeddingsSettings,
     IngestionSettings,
     LlmSettings,
@@ -114,6 +119,18 @@ def test_defaults_are_resolved_from_working_directory(tmp_path: Path) -> None:
             model="llama3.1:8b",
             timeout_seconds=120.0,
             temperature=0.1,
+        ),
+        data_driven=DataDrivenSettings(
+            enabled=False,
+            file_patterns=(),
+            max_statements_per_file=10_000,
+            max_literal_chars=200_000,
+            token_patterns=(
+                r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+                r"\$\{([^}]+)\}",
+                r":([A-Za-z_][A-Za-z0-9_]*)",
+            ),
+            configurations=(),
         ),
         config_source=None,
     )
@@ -467,6 +484,192 @@ def test_invalid_h3_values_are_rejected(
         load_settings(source, environ={}, cwd=tmp_path)
 
 
+def test_data_driven_values_are_loaded(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "data-driven.toml",
+        "\n".join(
+            [
+                "[data_driven]",
+                "enabled = true",
+                'file_patterns = ["config/**/*.sql"]',
+                "max_statements_per_file = 2500",
+                "max_literal_chars = 120000",
+                "token_patterns = ['\\{([A-Z_]+)\\}', ':([A-Z_]+)']",
+                "[[data_driven.configurations]]",
+                'name = "pricing_rules"',
+                'symbol_type = "configuration_record"',
+                'tables = ["APP_CFG.PRICING_RULES"]',
+                'identity_columns = ["RULE_ID"]',
+                'file_patterns = ["config/pricing/**/*.sql"]',
+                'default_column_order = ["RULE_ID", "RULE_NAME", "FORMULA"]',
+                'name_columns = ["RULE_NAME"]',
+                'description_columns = ["DESCRIPTION"]',
+                'rule_columns = ["RULE_SQL"]',
+                'formula_columns = ["FORMULA"]',
+                'variable_columns = ["VARIABLE_NAME"]',
+                'parameter_columns = ["PARAMETER_NAME"]',
+                'reference_columns = [',
+                '  { column = "FUNCTION_NAME", target_technology = "oracle", target_type = "function" },',
+                '  { column = "NEXT_RULE_ID", target_configuration = "pricing_rules" }',
+                "]",
+                "parent_columns = [",
+                '  { column = "PARENT_RULE_ID", target_configuration = "pricing_rules" }',
+                "]",
+                'sequence_columns = ["DISPLAY_ORDER"]',
+                "status_columns = [",
+                '  { column = "STATUS", active_values = ["A"], inactive_values = ["I"] }',
+                "]",
+                'effective_from_columns = ["VALID_FROM"]',
+                'effective_to_columns = ["VALID_TO"]',
+                'metadata_columns = ["CREATED_BY", "UPDATED_AT"]',
+            ]
+        ),
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.data_driven == DataDrivenSettings(
+        enabled=True,
+        file_patterns=("config/**/*.sql",),
+        max_statements_per_file=2500,
+        max_literal_chars=120000,
+        token_patterns=(r"\{([A-Z_]+)\}", r":([A-Z_]+)"),
+        configurations=(
+            DataDrivenConfiguration(
+                name="pricing_rules",
+                symbol_type="configuration_record",
+                tables=("APP_CFG.PRICING_RULES",),
+                identity_columns=("RULE_ID",),
+                file_patterns=("config/pricing/**/*.sql",),
+                default_column_order=("RULE_ID", "RULE_NAME", "FORMULA"),
+                name_columns=("RULE_NAME",),
+                description_columns=("DESCRIPTION",),
+                rule_columns=("RULE_SQL",),
+                formula_columns=("FORMULA",),
+                variable_columns=("VARIABLE_NAME",),
+                parameter_columns=("PARAMETER_NAME",),
+                reference_columns=(
+                    DataDrivenReferenceColumn(
+                        column="FUNCTION_NAME",
+                        target_technology="oracle",
+                        target_type="function",
+                    ),
+                    DataDrivenReferenceColumn(
+                        column="NEXT_RULE_ID",
+                        target_configuration="pricing_rules",
+                    ),
+                ),
+                parent_columns=(
+                    DataDrivenParentColumn(
+                        column="PARENT_RULE_ID",
+                        target_configuration="pricing_rules",
+                    ),
+                ),
+                sequence_columns=("DISPLAY_ORDER",),
+                status_columns=(
+                    DataDrivenStatusColumn(
+                        column="STATUS",
+                        active_values=("A",),
+                        inactive_values=("I",),
+                    ),
+                ),
+                effective_from_columns=("VALID_FROM",),
+                effective_to_columns=("VALID_TO",),
+                metadata_columns=("CREATED_BY", "UPDATED_AT"),
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_message"),
+    [
+        ("[data_driven]\nunknown = true\n", "data_driven.unknown"),
+        ("[data_driven]\nenabled = \"yes\"\n", "data_driven.enabled"),
+        (
+            "[data_driven]\nenabled = true\nfile_patterns = []\n",
+            "data_driven.file_patterns",
+        ),
+        (
+            "\n".join(
+                [
+                    "[data_driven]",
+                    "enabled = true",
+                    'file_patterns = ["config/**/*.dml"]',
+                    "[[data_driven.configurations]]",
+                    'name = "pricing_rules"',
+                    'symbol_type = "configuration_record"',
+                    'tables = ["APP_CFG.PRICING_RULES"]',
+                    'identity_columns = ["RULE_ID"]',
+                ]
+            ),
+            ".dml",
+        ),
+        (
+            "[data_driven]\nenabled = true\nfile_patterns = [\"config/**/*.sql\"]\n",
+            "data_driven.configurations",
+        ),
+        (
+            "\n".join(
+                [
+                    "[data_driven]",
+                    "enabled = true",
+                    'file_patterns = ["config/**/*.sql"]',
+                    "[[data_driven.configurations]]",
+                    'name = "pricing_rules"',
+                    'symbol_type = "configuration_record"',
+                    'tables = ["APP_CFG.PRICING_RULES"]',
+                ]
+            ),
+            "identity_columns",
+        ),
+        (
+            "\n".join(
+                [
+                    "[data_driven]",
+                    "enabled = true",
+                    'file_patterns = ["config/**/*.sql"]',
+                    "[[data_driven.configurations]]",
+                    'name = "pricing_rules"',
+                    'symbol_type = "configuration_record"',
+                    'tables = ["APP_CFG.PRICING_RULES"]',
+                    'identity_columns = ["RULE_ID"]',
+                    'reference_columns = [{ column = "NEXT_RULE_ID" }]',
+                ]
+            ),
+            "target_technology",
+        ),
+        (
+            "\n".join(
+                [
+                    "[data_driven]",
+                    "enabled = true",
+                    'file_patterns = ["config/**/*.sql"]',
+                    "[[data_driven.configurations]]",
+                    'name = "pricing_rules"',
+                    'symbol_type = "configuration_record"',
+                    'tables = ["APP_CFG.PRICING_RULES"]',
+                    'identity_columns = ["RULE_ID"]',
+                    "status_columns = [",
+                    '  { column = "STATUS", active_values = [], inactive_values = ["I"] }',
+                    "]",
+                ]
+            ),
+            "active_values",
+        ),
+    ],
+)
+def test_invalid_data_driven_values_are_rejected(
+    content: str,
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    source = write_config(tmp_path / "invalid-data-driven.toml", content)
+
+    with pytest.raises(ConfigError, match=expected_message):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
 def test_settings_are_immutable(tmp_path: Path) -> None:
     settings = load_settings(environ={}, cwd=tmp_path)
 
@@ -503,11 +706,15 @@ def test_example_configuration_is_valid(tmp_path: Path) -> None:
     assert settings.ingestion.max_extracted_chars == 5_000_000
     assert settings.ingestion.max_pdf_pages == 1000
     assert settings.ingestion.encodings == ("utf-8", "cp1252", "iso8859-1")
+    assert ".dml" not in settings.ingestion.extensions
     assert settings.vector_store.provider == "sqlite_vec"
     assert settings.embeddings.model == "nomic-embed-text"
     assert settings.retrieval.mode == "hybrid"
     assert settings.rag.context_token_budget == 6000
     assert settings.llm.provider == "ollama"
+    assert settings.data_driven.enabled is False
+    assert settings.data_driven.file_patterns == ("config/**/*.sql",)
+    assert settings.data_driven.configurations[0].name == "pricing_rules"
 
 
 def test_relative_explicit_source_is_resolved_from_cwd(tmp_path: Path) -> None:

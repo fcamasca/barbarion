@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import time
 import logging
-from dataclasses import dataclass
+import fnmatch
+import re
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
+from barbarion.config import DataDrivenConfiguration
 from barbarion.config import Settings
 from barbarion.domain.ingestion import (
     IncrementalAction,
@@ -28,6 +31,8 @@ from barbarion.domain.models import (
     IngestionRunStatus,
     PipelineError,
     SourceFile,
+    ChunkCandidate,
+    NormalizedDocument,
 )
 from barbarion.domain.ports import (
     DiscoveryPort,
@@ -35,6 +40,17 @@ from barbarion.domain.ports import (
     IngestionRepositoryPort,
 )
 from barbarion.infrastructure.parsers.registry import ParserRegistry
+
+_DML_TABLE_RE = re.compile(
+    r"""
+    \b(?:INSERT\s+INTO|UPDATE)\s+
+    (?P<table>
+        (?:"[^"]+"|[A-Za-z][\w$#]*)
+        (?:\s*\.\s*(?:"[^"]+"|[A-Za-z][\w$#]*))*
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 class ParserRegistryPort(Protocol):
@@ -270,6 +286,12 @@ class IngestionService:
             extraction,
             source_sha256=current_fingerprint.sha256 or "",
         )
+        classification = _classify_data_driven_document(
+            settings=self.settings,
+            discovered_file=discovered_file,
+            text=document.text,
+        )
+        document = _document_with_data_driven_metadata(document, classification)
         chunks = chunk_document(
             document,
             file_identity=discovered_file.relative_path.as_posix(),
@@ -277,6 +299,7 @@ class IngestionService:
             chunk_size=self.settings.ingestion.chunk_size,
             chunk_overlap=self.settings.ingestion.chunk_overlap,
         )
+        chunks = _chunks_with_data_driven_metadata(chunks, classification)
         self.repository.replace_document(
             run_id=run_id,
             discovered_file=discovered_file,
@@ -287,6 +310,7 @@ class IngestionService:
             encoding=extraction.encoding,
             document=document,
             chunks=chunks,
+            artifact_kind=classification.artifact_kind,
         )
         return _replace(
             metrics,
@@ -498,3 +522,115 @@ def _replace(metrics: IngestionMetrics, **changes: int | None) -> IngestionMetri
     }
     values.update(changes)
     return IngestionMetrics(**values)
+
+
+@dataclass(frozen=True, slots=True)
+class _DataDrivenClassification:
+    artifact_kind: str | None = None
+    configuration_names: tuple[str, ...] = ()
+    table_names: tuple[str, ...] = ()
+
+
+def _classify_data_driven_document(
+    *,
+    settings: Settings,
+    discovered_file: DiscoveredFile,
+    text: str,
+) -> _DataDrivenClassification:
+    data_driven = settings.data_driven
+    if (
+        not data_driven.enabled
+        or discovered_file.extension != ".sql"
+        or not _matches_any_pattern(
+            discovered_file.relative_path.as_posix(),
+            data_driven.file_patterns,
+        )
+    ):
+        return _DataDrivenClassification()
+
+    referenced_tables = _referenced_dml_tables(text)
+    if not referenced_tables:
+        return _DataDrivenClassification()
+
+    matched_configurations: list[str] = []
+    matched_tables: list[str] = []
+    for configuration in data_driven.configurations:
+        if configuration.file_patterns and not _matches_any_pattern(
+            discovered_file.relative_path.as_posix(),
+            configuration.file_patterns,
+        ):
+            continue
+        table = _matching_declared_table(configuration, referenced_tables)
+        if table is None:
+            continue
+        matched_configurations.append(configuration.name)
+        matched_tables.append(table)
+
+    if not matched_configurations:
+        return _DataDrivenClassification()
+    return _DataDrivenClassification(
+        artifact_kind="configuration",
+        configuration_names=tuple(dict.fromkeys(matched_configurations)),
+        table_names=tuple(dict.fromkeys(matched_tables)),
+    )
+
+
+def _document_with_data_driven_metadata(
+    document: NormalizedDocument,
+    classification: _DataDrivenClassification,
+) -> NormalizedDocument:
+    if classification.artifact_kind != "configuration":
+        return document
+    metadata = dict(document.metadata)
+    metadata["artifact_kind"] = "configuration"
+    metadata["data_driven_configuration_names"] = classification.configuration_names
+    metadata["data_driven_tables"] = classification.table_names
+    return replace(document, metadata=metadata)
+
+
+def _chunks_with_data_driven_metadata(
+    chunks: tuple[ChunkCandidate, ...],
+    classification: _DataDrivenClassification,
+) -> tuple[ChunkCandidate, ...]:
+    if classification.artifact_kind != "configuration":
+        return chunks
+    enriched: list[ChunkCandidate] = []
+    for chunk in chunks:
+        metadata = dict(chunk.metadata)
+        metadata["artifact_kind"] = "configuration"
+        metadata["data_driven_configuration_names"] = classification.configuration_names
+        metadata["data_driven_tables"] = classification.table_names
+        enriched.append(replace(chunk, metadata=metadata))
+    return tuple(enriched)
+
+
+def _matches_any_pattern(path: str, patterns: tuple[str, ...]) -> bool:
+    normalized_path = path.replace("\\", "/").lower()
+    return any(
+        fnmatch.fnmatchcase(normalized_path, pattern.replace("\\", "/").lower())
+        for pattern in patterns
+    )
+
+
+def _referenced_dml_tables(text: str) -> frozenset[str]:
+    return frozenset(
+        _normalize_table_name(match.group("table"))
+        for match in _DML_TABLE_RE.finditer(text)
+    )
+
+
+def _matching_declared_table(
+    configuration: DataDrivenConfiguration,
+    referenced_tables: frozenset[str],
+) -> str | None:
+    for table in configuration.tables:
+        normalized = _normalize_table_name(table)
+        unqualified = normalized.rsplit(".", 1)[-1]
+        if normalized in referenced_tables or unqualified in referenced_tables:
+            return table
+    return None
+
+
+def _normalize_table_name(table: str) -> str:
+    parts = [part.strip().strip('"').lower() for part in table.split(".")]
+    return ".".join(part for part in parts if part)

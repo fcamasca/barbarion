@@ -22,7 +22,7 @@ Estados iniciales: `pendiente`.
 
 ### H4.1-T01 - Agregar configuracion TOML Data-Driven
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** definir `DataDrivenSettings` y validar declaracion TOML.  
 **Descripcion:** Agregar `[data_driven]`, `[[data_driven.configurations]]`,
 validacion de claves, patrones, tablas, columnas y limites. Actualizar
@@ -35,7 +35,7 @@ romper configuraciones existentes.
 
 ### H4.1-T02 - Clasificar archivos de configuracion en ingesta
 
-**Estado:** pendiente.  
+**Estado:** completado.
 **Objetivo:** identificar archivos DML declarados sin redisenar H2.  
 **Descripcion:** Extender clasificacion de `artifact_kind`, metadata de
 documentos/chunks para archivos `.sql` que cumplen simultaneamente
@@ -51,9 +51,10 @@ declarados conservan comportamiento previo.
 
 **Estado:** pendiente.  
 **Objetivo:** parsear `INSERT` y `UPDATE` soportados como texto estatico.  
-**Descripcion:** Crear separador de sentencias, parser de valores, diagnosticos
-de no soportado, limites `max_statements_per_file` y `max_literal_chars`.
-No ejecutar ni evaluar funciones.  
+**Descripcion:** Crear separador de sentencias con `;` interno fuera de strings
+y comentarios, aceptar EOF sin `;` solo cuando sea seguro, parser de valores,
+diagnosticos de no soportado, limites `max_statements_per_file` y
+`max_literal_chars`. No ejecutar ni evaluar funciones.
 **Dependencias:** H4.1-T01.  
 **Resultado esperado:** sentencias soportadas producen modelos canonicos y
 sentencias no soportadas generan warnings recuperables.  

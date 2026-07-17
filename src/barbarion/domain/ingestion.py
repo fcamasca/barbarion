@@ -131,7 +131,11 @@ def processing_signature(
     versions: ProcessingVersions,
 ) -> str:
     """Devuelve SHA-256 de la configuracion transformativa canonica."""
-    canonical = canonical_processing_config(settings.ingestion, versions)
+    canonical = canonical_processing_config(
+        settings.ingestion,
+        versions,
+        data_driven=settings.data_driven,
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -237,6 +241,8 @@ def chunk_document(
 def canonical_processing_config(
     ingestion: IngestionSettings,
     versions: ProcessingVersions,
+    *,
+    data_driven: Any | None = None,
 ) -> str:
     """Serializa solo valores que cambian el procesamiento de contenido."""
     payload = {
@@ -256,6 +262,19 @@ def canonical_processing_config(
             "encodings": list(ingestion.encodings),
         },
     }
+    if data_driven is not None:
+        payload["data_driven"] = {
+            "enabled": data_driven.enabled,
+            "file_patterns": list(data_driven.file_patterns),
+            "configurations": [
+                {
+                    "name": configuration.name,
+                    "tables": list(configuration.tables),
+                    "file_patterns": list(configuration.file_patterns),
+                }
+                for configuration in data_driven.configurations
+            ],
+        }
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 

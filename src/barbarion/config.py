@@ -100,6 +100,18 @@ _DEFAULT_LLM: dict[str, object] = {
     "timeout_seconds": 120.0,
     "temperature": 0.1,
 }
+_DEFAULT_DATA_DRIVEN: dict[str, object] = {
+    "enabled": False,
+    "file_patterns": (),
+    "max_statements_per_file": 10_000,
+    "max_literal_chars": 200_000,
+    "token_patterns": (
+        r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+        r"\$\{([^}]+)\}",
+        r":([A-Za-z_][A-Za-z0-9_]*)",
+    ),
+    "configurations": (),
+}
 _ALLOWED_KEYS = frozenset(_DEFAULTS) | {
     "ingestion",
     "embeddings",
@@ -107,6 +119,7 @@ _ALLOWED_KEYS = frozenset(_DEFAULTS) | {
     "retrieval",
     "rag",
     "llm",
+    "data_driven",
 }
 _ALLOWED_INGESTION_KEYS = frozenset(_DEFAULT_INGESTION)
 _ALLOWED_EMBEDDINGS_KEYS = frozenset(_DEFAULT_EMBEDDINGS)
@@ -114,8 +127,42 @@ _ALLOWED_VECTOR_STORE_KEYS = frozenset(_DEFAULT_VECTOR_STORE)
 _ALLOWED_RETRIEVAL_KEYS = frozenset(_DEFAULT_RETRIEVAL)
 _ALLOWED_RAG_KEYS = frozenset(_DEFAULT_RAG)
 _ALLOWED_LLM_KEYS = frozenset(_DEFAULT_LLM)
+_ALLOWED_DATA_DRIVEN_KEYS = frozenset(_DEFAULT_DATA_DRIVEN)
+_ALLOWED_DATA_DRIVEN_CONFIGURATION_KEYS = frozenset(
+    {
+        "name",
+        "symbol_type",
+        "tables",
+        "identity_columns",
+        "file_patterns",
+        "default_column_order",
+        "name_columns",
+        "description_columns",
+        "rule_columns",
+        "formula_columns",
+        "variable_columns",
+        "parameter_columns",
+        "reference_columns",
+        "parent_columns",
+        "sequence_columns",
+        "status_columns",
+        "effective_from_columns",
+        "effective_to_columns",
+        "metadata_columns",
+    }
+)
+_ALLOWED_REFERENCE_COLUMN_KEYS = frozenset(
+    {"column", "target_technology", "target_type", "target_configuration"}
+)
+_ALLOWED_PARENT_COLUMN_KEYS = frozenset({"column", "target_configuration"})
+_ALLOWED_STATUS_COLUMN_KEYS = frozenset(
+    {"column", "active_values", "inactive_values"}
+)
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 _RETRIEVAL_MODES = frozenset({"semantic", "keyword", "hybrid"})
+_DATA_DRIVEN_TARGET_TECHNOLOGIES = frozenset(
+    {"configuration", "oracle", "powerbuilder"}
+)
 
 
 class ConfigError(ValueError):
@@ -190,6 +237,70 @@ class LlmSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DataDrivenReferenceColumn:
+    """Columna que apunta a otro simbolo de configuracion o tecnologia."""
+
+    column: str
+    target_technology: str | None = None
+    target_type: str | None = None
+    target_configuration: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DataDrivenParentColumn:
+    """Columna que expresa jerarquia entre configuraciones data-driven."""
+
+    column: str
+    target_configuration: str
+
+
+@dataclass(frozen=True, slots=True)
+class DataDrivenStatusColumn:
+    """Columna que distingue registros activos e inactivos."""
+
+    column: str
+    active_values: tuple[str, ...]
+    inactive_values: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DataDrivenConfiguration:
+    """Contrato declarativo para una familia de configuraciones en tablas."""
+
+    name: str
+    symbol_type: str
+    tables: tuple[str, ...]
+    identity_columns: tuple[str, ...]
+    file_patterns: tuple[str, ...]
+    default_column_order: tuple[str, ...]
+    name_columns: tuple[str, ...]
+    description_columns: tuple[str, ...]
+    rule_columns: tuple[str, ...]
+    formula_columns: tuple[str, ...]
+    variable_columns: tuple[str, ...]
+    parameter_columns: tuple[str, ...]
+    reference_columns: tuple[DataDrivenReferenceColumn, ...]
+    parent_columns: tuple[DataDrivenParentColumn, ...]
+    sequence_columns: tuple[str, ...]
+    status_columns: tuple[DataDrivenStatusColumn, ...]
+    effective_from_columns: tuple[str, ...]
+    effective_to_columns: tuple[str, ...]
+    metadata_columns: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DataDrivenSettings:
+    """Configuracion efectiva para deteccion data-driven declarativa."""
+
+    enabled: bool
+    file_patterns: tuple[str, ...]
+    max_statements_per_file: int
+    max_literal_chars: int
+    token_patterns: tuple[str, ...]
+    configurations: tuple[DataDrivenConfiguration, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """Configuración efectiva e inmutable de Barbarion."""
 
@@ -207,6 +318,7 @@ class Settings:
     retrieval: RetrievalSettings
     rag: RagSettings
     llm: LlmSettings
+    data_driven: DataDrivenSettings
     config_source: Path | None
 
 
@@ -250,6 +362,7 @@ def load_settings(
         retrieval=_build_retrieval_settings(values.get("retrieval")),
         rag=_build_rag_settings(values.get("rag")),
         llm=_build_llm_settings(values.get("llm")),
+        data_driven=_build_data_driven_settings(values.get("data_driven")),
         config_source=source,
     )
 
@@ -317,6 +430,27 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("llm.model", settings.llm.model),
         ("llm.timeout_seconds", str(settings.llm.timeout_seconds)),
         ("llm.temperature", str(settings.llm.temperature)),
+        ("data_driven.enabled", str(settings.data_driven.enabled).lower()),
+        (
+            "data_driven.file_patterns",
+            _format_items(settings.data_driven.file_patterns),
+        ),
+        (
+            "data_driven.max_statements_per_file",
+            str(settings.data_driven.max_statements_per_file),
+        ),
+        (
+            "data_driven.max_literal_chars",
+            str(settings.data_driven.max_literal_chars),
+        ),
+        (
+            "data_driven.token_patterns",
+            _format_items(settings.data_driven.token_patterns),
+        ),
+        (
+            "data_driven.configurations",
+            str(len(settings.data_driven.configurations)),
+        ),
     )
 
 
@@ -693,6 +827,164 @@ def _build_llm_settings(value: object) -> LlmSettings:
     )
 
 
+def _build_data_driven_settings(value: object) -> DataDrivenSettings:
+    """Construye la configuracion data-driven sin activar analisis SQL."""
+    values = _merge_section(
+        value,
+        "data_driven",
+        _DEFAULT_DATA_DRIVEN,
+        _ALLOWED_DATA_DRIVEN_KEYS,
+    )
+    enabled = _validate_bool(values["enabled"], "data_driven.enabled")
+
+    return DataDrivenSettings(
+        enabled=enabled,
+        file_patterns=_validate_sql_file_patterns(
+            values["file_patterns"],
+            "data_driven.file_patterns",
+            required=enabled,
+        ),
+        max_statements_per_file=_validate_int_range(
+            values["max_statements_per_file"],
+            "data_driven.max_statements_per_file",
+            minimum=1,
+            maximum=1_000_000,
+        ),
+        max_literal_chars=_validate_int_range(
+            values["max_literal_chars"],
+            "data_driven.max_literal_chars",
+            minimum=1,
+            maximum=50_000_000,
+        ),
+        token_patterns=_validate_required_string_list(
+            values["token_patterns"],
+            "data_driven.token_patterns",
+        ),
+        configurations=_build_data_driven_configurations(
+            values["configurations"],
+            enabled=enabled,
+        ),
+    )
+
+
+def _build_data_driven_configurations(
+    value: object,
+    *,
+    enabled: bool,
+) -> tuple[DataDrivenConfiguration, ...]:
+    """Valida la lista de configuraciones declarativas."""
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError("La clave 'data_driven.configurations' debe ser una lista.")
+    if enabled and not value:
+        raise ConfigError(
+            "La clave 'data_driven.configurations' debe contener al menos "
+            "una configuracion cuando data_driven.enabled es true."
+        )
+
+    configurations: list[DataDrivenConfiguration] = []
+    seen_names: set[str] = set()
+    for index, item in enumerate(value, start=1):
+        key = f"data_driven.configurations[{index}]"
+        configuration = _build_data_driven_configuration(item, key)
+        if configuration.name in seen_names:
+            raise ConfigError(
+                f"La clave '{key}.name' contiene un nombre duplicado: "
+                f"{configuration.name}."
+            )
+        seen_names.add(configuration.name)
+        configurations.append(configuration)
+    return tuple(configurations)
+
+
+def _build_data_driven_configuration(
+    value: object,
+    key: str,
+) -> DataDrivenConfiguration:
+    """Valida una configuracion data-driven TOML."""
+    if not isinstance(value, dict):
+        raise ConfigError(f"La clave '{key}' debe ser una tabla TOML.")
+
+    unknown_keys = sorted(set(value) - _ALLOWED_DATA_DRIVEN_CONFIGURATION_KEYS)
+    if unknown_keys:
+        formatted = ", ".join(f"{key}.{unknown}" for unknown in unknown_keys)
+        raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
+
+    return DataDrivenConfiguration(
+        name=_validate_identifier(value.get("name"), f"{key}.name"),
+        symbol_type=_validate_identifier(
+            value.get("symbol_type"),
+            f"{key}.symbol_type",
+        ),
+        tables=_validate_required_string_list(value.get("tables"), f"{key}.tables"),
+        identity_columns=_validate_column_list(
+            value.get("identity_columns"),
+            f"{key}.identity_columns",
+            required=True,
+        ),
+        file_patterns=_validate_sql_file_patterns(
+            value.get("file_patterns", ()),
+            f"{key}.file_patterns",
+            required=False,
+        ),
+        default_column_order=_validate_column_list(
+            value.get("default_column_order", ()),
+            f"{key}.default_column_order",
+        ),
+        name_columns=_validate_column_list(
+            value.get("name_columns", ()),
+            f"{key}.name_columns",
+        ),
+        description_columns=_validate_column_list(
+            value.get("description_columns", ()),
+            f"{key}.description_columns",
+        ),
+        rule_columns=_validate_column_list(
+            value.get("rule_columns", ()),
+            f"{key}.rule_columns",
+        ),
+        formula_columns=_validate_column_list(
+            value.get("formula_columns", ()),
+            f"{key}.formula_columns",
+        ),
+        variable_columns=_validate_column_list(
+            value.get("variable_columns", ()),
+            f"{key}.variable_columns",
+        ),
+        parameter_columns=_validate_column_list(
+            value.get("parameter_columns", ()),
+            f"{key}.parameter_columns",
+        ),
+        reference_columns=_validate_reference_columns(
+            value.get("reference_columns", ()),
+            f"{key}.reference_columns",
+        ),
+        parent_columns=_validate_parent_columns(
+            value.get("parent_columns", ()),
+            f"{key}.parent_columns",
+        ),
+        sequence_columns=_validate_column_list(
+            value.get("sequence_columns", ()),
+            f"{key}.sequence_columns",
+        ),
+        status_columns=_validate_status_columns(
+            value.get("status_columns", ()),
+            f"{key}.status_columns",
+        ),
+        effective_from_columns=_validate_column_list(
+            value.get("effective_from_columns", ()),
+            f"{key}.effective_from_columns",
+        ),
+        effective_to_columns=_validate_column_list(
+            value.get("effective_to_columns", ()),
+            f"{key}.effective_to_columns",
+        ),
+        metadata_columns=_validate_column_list(
+            value.get("metadata_columns", ()),
+            f"{key}.metadata_columns",
+        ),
+    )
+
+
 def _merge_section(
     value: object,
     section: str,
@@ -774,6 +1066,177 @@ def _validate_identifier(value: object, key: str) -> str:
             "numeros o guion bajo, y no debe iniciar con numero."
         )
     return identifier
+
+
+def _validate_required_string_list(value: object, key: str) -> tuple[str, ...]:
+    """Valida una lista no vacia de cadenas y elimina duplicados."""
+    items = _validate_string_list(value, key)
+    if not items:
+        raise ConfigError(f"La clave '{key}' debe contener al menos un valor.")
+    return tuple(dict.fromkeys(items))
+
+
+def _validate_column_list(
+    value: object,
+    key: str,
+    *,
+    required: bool = False,
+) -> tuple[str, ...]:
+    """Valida una lista de columnas declarativas."""
+    columns = _validate_string_list(value, key)
+    if required and not columns:
+        raise ConfigError(f"La clave '{key}' debe contener al menos una columna.")
+    return tuple(dict.fromkeys(columns))
+
+
+def _validate_sql_file_patterns(
+    value: object,
+    key: str,
+    *,
+    required: bool,
+) -> tuple[str, ...]:
+    """Valida patrones destinados a DML contenido en archivos .sql."""
+    patterns = _validate_string_list(value, key)
+    if required and not patterns:
+        raise ConfigError(f"La clave '{key}' debe contener al menos un patron .sql.")
+
+    for pattern in patterns:
+        normalized = pattern.lower()
+        if ".dml" in normalized:
+            raise ConfigError(
+                f"La clave '{key}' no debe incluir archivos .dml; "
+                "data-driven analiza DML dentro de archivos .sql."
+            )
+        if not normalized.endswith(".sql"):
+            raise ConfigError(f"La clave '{key}' debe apuntar a archivos .sql.")
+    return tuple(dict.fromkeys(patterns))
+
+
+def _validate_reference_columns(
+    value: object,
+    key: str,
+) -> tuple[DataDrivenReferenceColumn, ...]:
+    """Valida columnas de referencia data-driven."""
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError(f"La clave '{key}' debe ser una lista.")
+
+    references: list[DataDrivenReferenceColumn] = []
+    for index, item in enumerate(value, start=1):
+        item_key = f"{key}[{index}]"
+        if not isinstance(item, dict):
+            raise ConfigError(f"La clave '{item_key}' debe ser una tabla TOML.")
+        unknown_keys = sorted(set(item) - _ALLOWED_REFERENCE_COLUMN_KEYS)
+        if unknown_keys:
+            formatted = ", ".join(f"{item_key}.{unknown}" for unknown in unknown_keys)
+            raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
+
+        target_technology = item.get("target_technology")
+        target_configuration = item.get("target_configuration")
+        if target_technology is None and target_configuration is None:
+            raise ConfigError(
+                f"La clave '{item_key}' debe indicar target_technology "
+                "o target_configuration."
+            )
+
+        references.append(
+            DataDrivenReferenceColumn(
+                column=_require_non_empty_string(
+                    item.get("column"),
+                    f"{item_key}.column",
+                ),
+                target_technology=(
+                    _validate_choice(
+                        target_technology,
+                        f"{item_key}.target_technology",
+                        _DATA_DRIVEN_TARGET_TECHNOLOGIES,
+                    )
+                    if target_technology is not None
+                    else None
+                ),
+                target_type=(
+                    _validate_identifier(item["target_type"], f"{item_key}.target_type")
+                    if "target_type" in item
+                    else None
+                ),
+                target_configuration=(
+                    _validate_identifier(
+                        target_configuration,
+                        f"{item_key}.target_configuration",
+                    )
+                    if target_configuration is not None
+                    else None
+                ),
+            )
+        )
+    return tuple(references)
+
+
+def _validate_parent_columns(
+    value: object,
+    key: str,
+) -> tuple[DataDrivenParentColumn, ...]:
+    """Valida columnas de jerarquia data-driven."""
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError(f"La clave '{key}' debe ser una lista.")
+
+    parents: list[DataDrivenParentColumn] = []
+    for index, item in enumerate(value, start=1):
+        item_key = f"{key}[{index}]"
+        if not isinstance(item, dict):
+            raise ConfigError(f"La clave '{item_key}' debe ser una tabla TOML.")
+        unknown_keys = sorted(set(item) - _ALLOWED_PARENT_COLUMN_KEYS)
+        if unknown_keys:
+            formatted = ", ".join(f"{item_key}.{unknown}" for unknown in unknown_keys)
+            raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
+        parents.append(
+            DataDrivenParentColumn(
+                column=_require_non_empty_string(
+                    item.get("column"),
+                    f"{item_key}.column",
+                ),
+                target_configuration=_validate_identifier(
+                    item.get("target_configuration"),
+                    f"{item_key}.target_configuration",
+                ),
+            )
+        )
+    return tuple(parents)
+
+
+def _validate_status_columns(
+    value: object,
+    key: str,
+) -> tuple[DataDrivenStatusColumn, ...]:
+    """Valida columnas de estado data-driven."""
+    if not isinstance(value, (list, tuple)):
+        raise ConfigError(f"La clave '{key}' debe ser una lista.")
+
+    statuses: list[DataDrivenStatusColumn] = []
+    for index, item in enumerate(value, start=1):
+        item_key = f"{key}[{index}]"
+        if not isinstance(item, dict):
+            raise ConfigError(f"La clave '{item_key}' debe ser una tabla TOML.")
+        unknown_keys = sorted(set(item) - _ALLOWED_STATUS_COLUMN_KEYS)
+        if unknown_keys:
+            formatted = ", ".join(f"{item_key}.{unknown}" for unknown in unknown_keys)
+            raise ConfigError(f"Claves de configuracion desconocidas: {formatted}.")
+        statuses.append(
+            DataDrivenStatusColumn(
+                column=_require_non_empty_string(
+                    item.get("column"),
+                    f"{item_key}.column",
+                ),
+                active_values=_validate_required_string_list(
+                    item.get("active_values"),
+                    f"{item_key}.active_values",
+                ),
+                inactive_values=_validate_required_string_list(
+                    item.get("inactive_values"),
+                    f"{item_key}.inactive_values",
+                ),
+            )
+        )
+    return tuple(statuses)
 
 
 def _resolve_path_list(value: object, key: str, base_dir: Path) -> tuple[Path, ...]:

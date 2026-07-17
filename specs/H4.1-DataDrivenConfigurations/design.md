@@ -60,7 +60,6 @@ Solucion inicial concreta:
 [data_driven]
 enabled = true
 file_patterns = ["config/**/*.sql"]
-statement_separator = ";"
 max_statements_per_file = 10000
 max_literal_chars = 200000
 token_patterns = ["\\{([A-Za-z_][A-Za-z0-9_]*)\\}", "\\$\\{([^}]+)\\}", ":([A-Za-z_][A-Za-z0-9_]*)"]
@@ -93,6 +92,9 @@ Reglas:
 - `enabled=false` es el default.
 - `file_patterns` limita candidatos globales a archivos `.sql`; cada
   configuracion puede agregar `file_patterns` propios si necesita acotar mas.
+- La separacion de sentencias DML no es configurable por TOML: el splitter usa
+  `;` como terminador interno solamente cuando aparece fuera de strings,
+  identificadores delimitados y comentarios.
 - La regla de clasificacion es conjuntiva:
 
 ```text
@@ -161,10 +163,16 @@ responsabilidad.
 
 La separacion reconoce:
 
-- `;` como terminador fuera de literales, comentarios y wrappers conocidos;
+- `;` como terminador interno fijo fuera de literales, comentarios y wrappers
+  conocidos;
 - comentarios `--` y `/* ... */`;
 - strings SQL con comillas simples y escape `''`;
 - identificadores con comillas dobles.
+
+Al llegar al final del archivo, la ultima sentencia puede aceptarse sin `;`
+solo si el splitter queda en estado cerrado y el parser puede interpretarla de
+forma segura. Si hay string, comentario o delimitador abierto, se emite warning
+recuperable y el fragmento final se omite.
 
 No interpreta bloques PL/SQL. Si encuentra `BEGIN`, `DECLARE` o estructuras no
 soportadas, marca la sentencia como no soportada.

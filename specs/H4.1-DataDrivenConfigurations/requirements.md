@@ -21,6 +21,8 @@ ejecutar SQL, formulas, reglas ni conectarse a una base de datos.
 - clasificacion controlada de archivos `.sql` declarados como configuracion;
 - soporte inicial para `INSERT` y `UPDATE` en sintaxis acotada;
 - sentencias multilinea y separacion segura por `;` fuera de literales;
+- ultima sentencia sin `;` aceptable si el splitter queda en estado cerrado y
+  el parser puede interpretarla con seguridad;
 - extraccion de registros, claves, nombres, descripciones, reglas, formulas,
   variables, parametros, referencias, jerarquias, secuencias, estado y vigencia;
 - simbolos Data-Driven dentro de `symbols`;
@@ -110,6 +112,8 @@ que archivos, tablas y columnas representan configuraciones.
   `effective_from_columns`, `effective_to_columns` y `metadata_columns`;
 - rechaza claves desconocidas y configuraciones incompletas con mensajes en
   espanol;
+- no expone un separador configurable; `;` es una regla interna fija del
+  splitter DML;
 - no cambia el comportamiento de ingesta si `data_driven.enabled = false`.
 
 **Diseno:** H4.1-DD-001, H4.1-DD-002.  

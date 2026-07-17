@@ -1,6 +1,10 @@
 """Parsers locales y registro explicito de ingesta."""
 
 from barbarion.infrastructure.parsers.base import BaseParser
+from barbarion.infrastructure.parsers.data_driven_dml import (
+    DmlStatement,
+    split_dml_statements,
+)
 from barbarion.infrastructure.parsers.docx import DocxParser
 from barbarion.infrastructure.parsers.encoding import (
     DOCUMENT_CORRUPT,
@@ -37,6 +41,7 @@ __all__ = [
     "BaseParser",
     "DecodedText",
     "DOCUMENT_CORRUPT",
+    "DmlStatement",
     "DocxParser",
     "DuplicateParserExtensionError",
     "EXTRACTION_LIMIT_EXCEEDED",
@@ -59,4 +64,5 @@ __all__ = [
     "UnknownParserExtensionError",
     "decode_text_bytes",
     "decode_text_source",
+    "split_dml_statements",
 ]

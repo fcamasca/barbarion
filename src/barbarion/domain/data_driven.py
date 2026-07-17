@@ -102,6 +102,7 @@ def build_configuration_references(
     *,
     source_file_id: int,
     source_chunk_id: str | None = None,
+    token_patterns: tuple[str, ...] = (),
 ) -> ConfigurationReferencePlan:
     """Construye referencias tecnicas desde columnas Data-Driven declaradas."""
     references: list[TechnicalReference] = []
@@ -173,6 +174,16 @@ def build_configuration_references(
                     reference_type="parent_of",
                 )
             )
+        references.extend(
+            _formula_token_references(
+                configuration=configuration,
+                record=record,
+                source_symbol=source_symbol,
+                source_file_id=source_file_id,
+                source_chunk_id=source_chunk_id,
+                token_patterns=token_patterns,
+            )
+        )
     return ConfigurationReferencePlan(
         references=_deduplicate_references(tuple(references)),
         diagnostics=tuple(diagnostics),
@@ -472,6 +483,233 @@ def _reference_from_declared_column(
             "source_record_id": record.record_id,
             "value_type": value.value_type,
         },
+    )
+
+
+def _formula_token_references(
+    *,
+    configuration: DataDrivenConfiguration,
+    record: Any,
+    source_symbol: TechnicalSymbol,
+    source_file_id: int,
+    source_chunk_id: str | None,
+    token_patterns: tuple[str, ...],
+) -> tuple[TechnicalReference, ...]:
+    references: list[TechnicalReference] = []
+    values_by_column = {value.column: value for value in record.values}
+    token_targets = _token_targets(configuration, record)
+    formula_columns = {_normalize_identifier(column) for column in configuration.formula_columns}
+    scanned_columns = tuple(
+        dict.fromkeys(
+            _normalize_identifier(column)
+            for column in (*configuration.formula_columns, *configuration.rule_columns)
+        )
+    )
+    for column in scanned_columns:
+        value = values_by_column.get(column)
+        if value is None or value.value_type == "null":
+            continue
+        expression = _display_raw(value.raw)
+        dynamic = _is_dynamic_formula_expression(expression)
+        seen_tokens: set[str] = set()
+        for token in _tokens_from_patterns(expression, token_patterns):
+            normalized_token = _safe_name_part(token)
+            if normalized_token.lower() in seen_tokens:
+                continue
+            seen_tokens.add(normalized_token.lower())
+            target = token_targets.get(normalized_token.lower())
+            if target is None:
+                references.append(
+                    _formula_reference(
+                        record=record,
+                        value=value,
+                        source_symbol=source_symbol,
+                        source_file_id=source_file_id,
+                        source_chunk_id=source_chunk_id,
+                        column=column,
+                        raw_text=token,
+                        normalized_target=normalize_symbol_name(token),
+                        reference_type="configuration_token",
+                        resolution_status=ResolutionStatus.DYNAMIC if dynamic else ResolutionStatus.UNRESOLVED,
+                        confidence=Confidence.LOW if dynamic else Confidence.MEDIUM,
+                        metadata={"token_kind": "unknown"},
+                    )
+                )
+                continue
+            references.append(
+                _formula_reference(
+                    record=record,
+                    value=value,
+                    source_symbol=source_symbol,
+                    source_file_id=source_file_id,
+                    source_chunk_id=source_chunk_id,
+                    column=column,
+                    raw_text=token,
+                    normalized_target=target[1],
+                    reference_type="configuration_token",
+                    resolution_status=ResolutionStatus.DYNAMIC if dynamic else ResolutionStatus.UNRESOLVED,
+                    confidence=Confidence.LOW if dynamic else Confidence.HIGH,
+                    metadata={"token_kind": target[0]},
+                )
+            )
+        if column in formula_columns:
+            seen_functions: set[str] = set()
+            for function_name in _function_candidates(expression):
+                normalized_function = normalize_symbol_name(function_name)
+                if normalized_function in seen_functions:
+                    continue
+                seen_functions.add(normalized_function)
+                metadata = {"token_kind": "function_candidate"}
+                if _is_external_formula_function(function_name):
+                    metadata["scope"] = "external"
+                references.append(
+                    _formula_reference(
+                        record=record,
+                        value=value,
+                        source_symbol=source_symbol,
+                        source_file_id=source_file_id,
+                        source_chunk_id=source_chunk_id,
+                        column=column,
+                        raw_text=function_name,
+                        normalized_target=normalized_function,
+                        reference_type="function_candidate",
+                        target_technology="unknown",
+                        resolution_status=ResolutionStatus.DYNAMIC if dynamic else ResolutionStatus.UNRESOLVED,
+                        confidence=Confidence.LOW if dynamic else Confidence.MEDIUM,
+                        metadata=metadata,
+                    )
+                )
+    return tuple(references)
+
+
+def _formula_reference(
+    *,
+    record: Any,
+    value: Any,
+    source_symbol: TechnicalSymbol,
+    source_file_id: int,
+    source_chunk_id: str | None,
+    column: str,
+    raw_text: str,
+    normalized_target: str,
+    reference_type: str,
+    resolution_status: ResolutionStatus,
+    confidence: Confidence,
+    metadata: dict[str, Any],
+    target_technology: str = "configuration",
+) -> TechnicalReference:
+    reference_id = technical_reference_id(
+        source_file_id=source_file_id,
+        raw_text=raw_text,
+        normalized_target=normalized_target,
+        reference_type=reference_type,
+        start_line=record.start_line,
+        end_line=record.end_line,
+    )
+    return TechnicalReference(
+        reference_id=reference_id,
+        source_file_id=source_file_id,
+        source_symbol_id=source_symbol.symbol_id,
+        source_chunk_id=source_chunk_id,
+        raw_text=raw_text,
+        normalized_target=normalized_target,
+        reference_type=reference_type,
+        technology=target_technology,
+        detection_method="data_driven_formula",
+        confidence=confidence,
+        resolution_status=resolution_status,
+        start_line=record.start_line,
+        end_line=record.end_line,
+        metadata={
+            **metadata,
+            "configuration_name": record.configuration_name,
+            "table_name": record.table,
+            "column": column,
+            "statement_ordinal": record.statement_ordinal,
+            "source_record_id": record.record_id,
+            "formula_text": value.raw,
+            "value_type": value.value_type,
+        },
+    )
+
+
+def _token_targets(
+    configuration: DataDrivenConfiguration,
+    record: Any,
+) -> dict[str, tuple[str, str]]:
+    values_by_column = {value.column: value for value in record.values}
+    targets: dict[str, tuple[str, str]] = {}
+    record_name = _record_normalized_name(configuration.name, record)
+    for kind, symbol_type, columns in (
+        ("variable", "configuration_variable", configuration.variable_columns),
+        ("parameter", "configuration_parameter", configuration.parameter_columns),
+    ):
+        for column in columns:
+            value = values_by_column.get(_normalize_identifier(column))
+            if value is None or value.value_type == "null":
+                continue
+            display = _display_raw(value.raw)
+            token = _safe_name_part(display).lower()
+            normalized_name = normalize_symbol_name(
+                f"{record_name}.{symbol_type}.{column}.{display}"
+            )
+            targets[token] = (kind, normalized_name)
+    return targets
+
+
+def _tokens_from_patterns(
+    expression: str,
+    token_patterns: tuple[str, ...],
+) -> tuple[str, ...]:
+    tokens: list[str] = []
+    for pattern in token_patterns:
+        regex = re.compile(pattern)
+        for match in regex.finditer(expression):
+            value = next(
+                (
+                    group
+                    for group in match.groups()
+                    if isinstance(group, str) and group.strip()
+                ),
+                match.group(0),
+            )
+            tokens.append(value.strip())
+    return tuple(tokens)
+
+
+def _function_candidates(expression: str) -> tuple[str, ...]:
+    candidates = re.findall(r"\b([A-Za-z_][A-Za-z0-9_$#]*)\s*\(", expression)
+    ignored = {"case"}
+    return tuple(dict.fromkeys(candidate for candidate in candidates if candidate.lower() not in ignored))
+
+
+def _is_external_formula_function(name: str) -> bool:
+    return name.lower() in {
+        "abs",
+        "ceil",
+        "coalesce",
+        "decode",
+        "floor",
+        "greatest",
+        "least",
+        "lower",
+        "nvl",
+        "nullif",
+        "power",
+        "round",
+        "substr",
+        "to_char",
+        "to_date",
+        "trunc",
+        "upper",
+    }
+
+
+def _is_dynamic_formula_expression(expression: str) -> bool:
+    return (
+        "||" in expression
+        or expression.count("(") != expression.count(")")
+        or expression.count("{") != expression.count("}")
     )
 
 

@@ -1626,6 +1626,7 @@ def _configuration_references_from_document(
             settings.data_driven.configurations,
             source_file_id=evidence_source.file_id,
             source_chunk_id=evidence_source.chunk_id,
+            token_patterns=settings.data_driven.token_patterns,
         )
         references.extend(plan.references)
     return tuple(references)
@@ -1803,7 +1804,10 @@ def _candidate_symbols(
     compatible = [
         symbol
         for symbol in symbols
-        if symbol.technology == reference.technology
+        if (
+            reference.technology == "unknown"
+            or symbol.technology == reference.technology
+        )
         and _type_compatible(reference.reference_type, symbol.symbol_type)
     ]
     target = normalize_symbol_name(reference.normalized_target)
@@ -1866,6 +1870,7 @@ def _type_compatible(reference_type: str, symbol_type: str) -> bool:
     allowed = {
         "call": {"procedure", "function", "event", "function_object"},
         "calls": {"procedure", "function", "event", "function_object"},
+        "function_candidate": {"function", "function_object"},
         "stored_procedure": {"procedure", "function"},
         "table": {"table", "view", "datawindow"},
         "trigger_table": {"table", "view"},
@@ -1876,6 +1881,10 @@ def _type_compatible(reference_type: str, symbol_type: str) -> bool:
         "configuration_reference": {"configuration_record"},
         "parent_of": {"configuration_record"},
         "precedes": {"configuration_record", "configuration_step"},
+        "configuration_token": {
+            "configuration_variable",
+            "configuration_parameter",
+        },
     }.get(reference_type, set())
     return symbol_type in allowed
 
@@ -1885,6 +1894,7 @@ def _relation_type(reference: TechnicalReference) -> str:
     return {
         "call": "calls",
         "calls": "calls",
+        "function_candidate": "calls",
         "stored_procedure": "calls",
         "table": "uses",
         "trigger_table": "uses",
@@ -1896,6 +1906,7 @@ def _relation_type(reference: TechnicalReference) -> str:
         "configuration_reference": "references",
         "parent_of": "parent_of",
         "precedes": "precedes",
+        "configuration_token": "uses",
     }.get(reference.reference_type, "uses")
 
 

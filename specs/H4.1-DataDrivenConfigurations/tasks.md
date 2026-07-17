@@ -94,7 +94,7 @@ origen.
 
 ### H4.1-T06 - Extraer referencias explicitas y estructurales
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** detectar referencias entre configuraciones y hacia Oracle/PB desde
 columnas declaradas.  
 **Descripcion:** Implementar `reference_columns`, `parent_columns`,

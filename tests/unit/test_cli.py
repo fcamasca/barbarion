@@ -202,6 +202,12 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "llm.model",
         "llm.timeout_seconds",
         "llm.temperature",
+        "data_driven.enabled",
+        "data_driven.file_patterns",
+        "data_driven.max_statements_per_file",
+        "data_driven.max_literal_chars",
+        "data_driven.token_patterns",
+        "data_driven.configurations",
     ]
     assert lines[0] == "origen = archivo"
     assert lines[1] == f"archivo_configuracion = {source}"
@@ -212,6 +218,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
     assert "vector_store.provider = sqlite_vec" in lines
     assert "retrieval.mode = hybrid" in lines
     assert "rag.context_token_budget = 6000" in lines
+    assert "data_driven.enabled = false" in lines
     assert list(tmp_path.iterdir()) == [source]
 
 

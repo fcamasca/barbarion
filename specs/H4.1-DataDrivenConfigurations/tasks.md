@@ -140,7 +140,8 @@ Data-Driven idempotentes.
 
 ### H4.1-T09 - Extender inventario, describe, impact, renderers y CLI
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** hacer visible el conocimiento Data-Driven en capacidades H4.  
 **Descripcion:** Agregar tecnologia `configuration`, filtros, secciones de
 descripcion, impacto cruzado y salida text/json/markdown. Mantener mensajes en

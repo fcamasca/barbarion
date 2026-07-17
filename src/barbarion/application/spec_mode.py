@@ -1736,7 +1736,7 @@ def _impact_queries(intent: RequirementIntent) -> tuple[str, ...]:
     queries: list[str] = []
     seen: set[str] = set()
     for value in source:
-        query = _compact_whitespace(value.replace("_", ".") if "." in value else value)
+        query = _compact_whitespace(value)
         if query and query not in seen:
             queries.append(query)
             seen.add(query)

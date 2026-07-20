@@ -19,8 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T04 completadas;
-H1.1-T05 a H1.1-T12 pendientes.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T05 completadas;
+H1.1-T06 a H1.1-T12 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -89,7 +89,8 @@ validar generacion automaticamente.
 
 ### H1.1-T05 - Agregar validacion funcional y `models validate`
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** verificar que un modelo puede responder la sonda minima de
 Barbarion.  
 **Descripcion:** Implementar solicitud sintetica constante, temperatura cero,

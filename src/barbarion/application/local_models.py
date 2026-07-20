@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import time
 
 from barbarion.domain.ports import LocalModelProvider
 from barbarion.domain.local_models import (
     LocalModelErrorCode,
     LocalModelProviderError,
     PullProgress,
+    ModelGenerationRequest,
 )
 
 
@@ -62,6 +64,21 @@ class InstallModelResult:
     pull_requested: bool
     final_present: bool
     final_status: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ModelValidationResult:
+    """Cuatro estados separados de disponibilidad y preparacion."""
+
+    model: str
+    active: bool
+    available: bool
+    installed: bool
+    generation_ready: bool
+    benchmark_eligible: bool
+    duration_ms: int
+    diagnostic_code: str | None = None
+    diagnostic: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +195,116 @@ class InstallModelService:
             pull_requested=True,
             final_present=True,
             final_status=pull.status,
+        )
+
+
+VALIDATION_MARKER = "BARBARION_MODEL_READY"
+VALIDATION_PROMPT = (
+    "Diagnostico sintetico local de Barbarion. Responde exactamente "
+    f"{VALIDATION_MARKER} y no agregues ningun otro texto."
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ValidateModelService:
+    """Valida conectividad, instalacion y generacion sin medir calidad RAG."""
+
+    provider: LocalModelProvider
+    active_model: str
+    clock: Callable[[], float] = time.monotonic
+
+    def run(
+        self,
+        name: str | None,
+        *,
+        timeout_seconds: float,
+    ) -> ModelValidationResult:
+        model = _validated_model_name(name or self.active_model)
+        started = self.clock()
+        try:
+            installed_models = self.provider.list_models(
+                timeout_seconds=timeout_seconds
+            )
+        except LocalModelProviderError as error:
+            return self._result(
+                model,
+                started,
+                available=False,
+                installed=False,
+                generation_ready=False,
+                diagnostic_code=error.code.value,
+                diagnostic=error.detail,
+            )
+        if not _contains_exact(installed_models, model):
+            return self._result(
+                model,
+                started,
+                available=True,
+                installed=False,
+                generation_ready=False,
+                diagnostic_code=LocalModelErrorCode.MODEL_NOT_FOUND.value,
+                diagnostic="El modelo no esta instalado en Ollama.",
+            )
+        try:
+            generation = self.provider.generate_detailed(
+                ModelGenerationRequest(
+                    model=model,
+                    prompt=VALIDATION_PROMPT,
+                    timeout_seconds=timeout_seconds,
+                    temperature=0.0,
+                    max_output_tokens=16,
+                )
+            )
+        except LocalModelProviderError as error:
+            return self._result(
+                model,
+                started,
+                available=True,
+                installed=True,
+                generation_ready=False,
+                diagnostic_code=error.code.value,
+                diagnostic=error.detail,
+            )
+        ready = generation.response.strip() == VALIDATION_MARKER
+        return self._result(
+            model,
+            started,
+            available=True,
+            installed=True,
+            generation_ready=ready,
+            diagnostic_code=(
+                None
+                if ready
+                else LocalModelErrorCode.NOT_GENERATION_READY.value
+            ),
+            diagnostic=(
+                None
+                if ready
+                else "La generacion termino pero no devolvio el marcador exacto."
+            ),
+        )
+
+    def _result(
+        self,
+        model: str,
+        started: float,
+        *,
+        available: bool,
+        installed: bool,
+        generation_ready: bool,
+        diagnostic_code: str | None,
+        diagnostic: str | None,
+    ) -> ModelValidationResult:
+        return ModelValidationResult(
+            model=model,
+            active=model == self.active_model,
+            available=available,
+            installed=installed,
+            generation_ready=generation_ready,
+            benchmark_eligible=generation_ready,
+            duration_ms=max(0, int((self.clock() - started) * 1000)),
+            diagnostic_code=diagnostic_code,
+            diagnostic=diagnostic,
         )
 
 

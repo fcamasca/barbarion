@@ -55,6 +55,7 @@ class OllamaProbeResult:
 
     available: bool
     detail: str
+    installed_models: tuple[str, ...] | None = None
 
 
 OllamaProbe = Callable[[str, float], OllamaProbeResult]
@@ -134,9 +135,19 @@ def probe_ollama(url: str, timeout_seconds: float) -> OllamaProbeResult:
             available=False,
             detail=f"Ollama devolvió una respuesta no válida en {url}.",
         )
+    installed_models = tuple(
+        name
+        for item in payload["models"]
+        if isinstance(item, dict)
+        for name in (
+            item.get("name") if isinstance(item.get("name"), str) else item.get("model"),
+        )
+        if isinstance(name, str) and name.strip()
+    )
     return OllamaProbeResult(
         available=True,
         detail=f"Ollama está disponible en {url}.",
+        installed_models=installed_models,
     )
 
 
@@ -227,12 +238,20 @@ def _check_database(
 def _check_ollama(settings: Settings, probe: OllamaProbe) -> CheckResult:
     """Representa Ollama como dependencia opcional de base."""
     result = probe(settings.ollama_url, settings.ollama_timeout_seconds)
-    return CheckResult(
-        "Ollama",
-        "PASS" if result.available else "WARN",
-        result.detail,
-        False,
-    )
+    if not result.available:
+        return CheckResult("Ollama", "WARN", result.detail, False)
+    if (
+        result.installed_models is not None
+        and settings.llm.model not in result.installed_models
+    ):
+        return CheckResult(
+            "Ollama",
+            "WARN",
+            f"Ollama esta disponible, pero el modelo LLM activo "
+            f"'{settings.llm.model}' no esta instalado.",
+            False,
+        )
+    return CheckResult("Ollama", "PASS", result.detail, False)
 
 
 def _result_for_role(

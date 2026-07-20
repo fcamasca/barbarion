@@ -22,7 +22,9 @@ from barbarion.application.local_models import (
     ListModelsService,
     ModelDetailsView,
     ModelListResult,
+    ModelValidationResult,
     ShowModelService,
+    ValidateModelService,
 )
 from barbarion.application.rag import (
     AskService,
@@ -267,6 +269,74 @@ def _run_models_install(args: argparse.Namespace) -> int:
         return 1
     _render_model_install(result)
     return 0
+
+
+def _run_models_validate(args: argparse.Namespace) -> int:
+    """Valida readiness de generacion sin atribuir calidad funcional."""
+    settings = load_settings(args.config)
+    timeout = args.timeout or settings.llm.timeout_seconds
+    service = ValidateModelService(
+        OllamaModelClient(settings.ollama_url),
+        settings.llm.model,
+    )
+    try:
+        result = service.run(args.model, timeout_seconds=timeout)
+    except ValueError as error:
+        print(f"Error de argumentos: {error}", file=sys.stderr)
+        return 2
+    _render_model_validation(result, args.format)
+    return 0 if result.generation_ready else 1
+
+
+def _render_model_validation(
+    result: ModelValidationResult,
+    output_format: str,
+) -> None:
+    diagnostic = _safe_validation_diagnostic(result.diagnostic)
+    payload = {
+        "model": result.model,
+        "active": result.active,
+        "available": result.available,
+        "installed": result.installed,
+        "generation_ready": result.generation_ready,
+        "benchmark_eligible": result.benchmark_eligible,
+        "duration_ms": result.duration_ms,
+        "diagnostic_code": result.diagnostic_code,
+        "diagnostic": diagnostic,
+    }
+    if output_format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    print("Validacion de modelo local")
+    print(f"modelo = {result.model}")
+    print(f"activo = {'si' if result.active else 'no'}")
+    for field_name in (
+        "available",
+        "installed",
+        "generation_ready",
+        "benchmark_eligible",
+    ):
+        print(
+            f"{field_name} = "
+            f"{'si' if getattr(result, field_name) else 'no'}"
+        )
+    print(f"duracion_ms = {result.duration_ms}")
+    if result.diagnostic_code is not None:
+        print(f"diagnostico_codigo = {result.diagnostic_code}")
+    if diagnostic is not None:
+        print(f"diagnostico = {diagnostic}")
+    if result.generation_ready:
+        print(
+            "alcance = la sonda acredita generacion minima; "
+            "no acredita calidad RAG"
+        )
+
+
+def _safe_validation_diagnostic(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = " ".join(value.split())
+    return normalized if len(normalized) <= 300 else normalized[:297] + "..."
 
 
 @dataclass(slots=True)
@@ -3242,6 +3312,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="timeout de inactividad; por defecto usa llm.timeout_seconds",
     )
     models_install_parser.set_defaults(handler=_run_models_install)
+
+    models_validate_parser = models_commands.add_parser(
+        "validate",
+        help="valida disponibilidad y generacion minima",
+        description="Valida readiness de generacion de un modelo Ollama local.",
+        add_help=False,
+    )
+    _add_help_option(models_validate_parser)
+    models_validate_parser.add_argument(
+        "model",
+        nargs="?",
+        metavar="MODELO",
+        help="modelo exacto; por defecto usa [llm].model",
+    )
+    models_validate_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida",
+    )
+    models_validate_parser.add_argument(
+        "--timeout",
+        type=_positive_float,
+        metavar="SEGUNDOS",
+        help="timeout; por defecto usa llm.timeout_seconds",
+    )
+    models_validate_parser.set_defaults(handler=_run_models_validate)
 
     ingest_parser = commands.add_parser(
         "ingest",

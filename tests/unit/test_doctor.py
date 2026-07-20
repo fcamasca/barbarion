@@ -192,17 +192,39 @@ def test_probe_ollama_accepts_valid_tags_response(
         """Captura endpoint y timeout sin usar la red."""
         captured["url"] = request.full_url
         captured["timeout"] = timeout
-        return FakeResponse(json.dumps({"models": []}).encode())
+        return FakeResponse(
+            json.dumps({"models": [{"name": "modelo:tag"}]}).encode()
+        )
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     result = probe_ollama("http://127.0.0.1:11434", 2.5)
 
     assert result.available is True
+    assert result.installed_models == ("modelo:tag",)
     assert captured == {
         "url": "http://127.0.0.1:11434/api/tags",
         "timeout": 2.5,
     }
+
+
+def test_doctor_warns_when_active_model_is_not_installed(tmp_path: Path) -> None:
+    settings = prepared_settings(tmp_path)
+    report = run_doctor_checks(
+        settings,
+        initialize_directories(settings),
+        ollama_probe=lambda _url, _timeout: OllamaProbeResult(
+            True,
+            "Disponible.",
+            installed_models=("otro:tag",),
+        ),
+    )
+
+    ollama = report.checks[-1]
+    assert ollama.status == "WARN"
+    assert settings.llm.model in ollama.detail
+    assert ollama.required is False
+    assert report.exit_code == 0
 
 
 @pytest.mark.parametrize(

@@ -19,8 +19,7 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T11 completadas;
-H1.1-T12 pendiente.
+Estado actual del hito: completado. H1.1-T01 a H1.1-T12 completadas.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -191,7 +190,8 @@ fallas, formulas y limites, sin seleccionar automaticamente.
 
 ### H1.1-T12 - Regresion, validacion manual y aceptacion tecnica
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** demostrar el hito completo despues de terminar la implementacion.  
 **Descripcion:** Ejecutar suite, smoke instalado y regresion H1-H5/H4.1; probar
 administracion con fake y realizar una comparacion manual opcional de al menos

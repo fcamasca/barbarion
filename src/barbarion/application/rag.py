@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import time
 from collections.abc import Mapping
@@ -777,8 +778,8 @@ class DataDrivenEvidenceRetriever:
         """
         if limit <= 0 or not _structured_domain_allowed(filters, self.domain):
             return ()
-        question_tokens = _important_tokens(question)
-        if not question_tokens:
+        question_concepts = _query_concept_groups(question)
+        if not question_concepts:
             return ()
         active_symbols = self.repository.active_symbols()
         by_id = {symbol.symbol_id: symbol for symbol in active_symbols}
@@ -788,10 +789,26 @@ class DataDrivenEvidenceRetriever:
             if symbol.technology == "configuration"
             and _structured_symbol_in_scope(symbol, filters)
         )
+        frequency_contexts = _structured_frequency_contexts(
+            configuration_symbols,
+            by_id,
+        )
+        concept_frequencies = _structured_concept_frequencies(
+            question_concepts,
+            frequency_contexts,
+        )
         ranked = [
             (score, symbol)
             for symbol in configuration_symbols
-            if (score := _structured_symbol_score(symbol, question, question_tokens))
+            if (
+                score := _structured_symbol_score(
+                    symbol,
+                    question,
+                    question_concepts,
+                    concept_frequencies,
+                    population_size=len(frequency_contexts),
+                )
+            )
             > 0
         ]
         ranked.sort(key=lambda item: (-item[0], _structured_symbol_sort_key(item[1])))
@@ -905,26 +922,188 @@ def _structured_symbol_in_scope(
 def _structured_symbol_score(
     symbol: TechnicalSymbol,
     question: str,
-    question_tokens: set[str],
+    question_concepts: tuple[frozenset[str], ...],
+    concept_frequencies: tuple[int, ...],
+    *,
+    population_size: int,
 ) -> float:
-    """Calcula un score lexical determinista sobre campos permitidos."""
-    searchable = " ".join(
-        (
-            symbol.original_name,
-            symbol.normalized_name,
-            symbol.symbol_type,
-            _structured_metadata_text(symbol),
-        )
+    """Puntua cobertura, rareza y precision de campos estructurados."""
+    fields = _structured_symbol_token_fields(symbol)
+    matched_indexes = tuple(
+        index
+        for index, variants in enumerate(question_concepts)
+        if variants & fields["all"]
     )
-    symbol_tokens = _important_tokens(searchable)
-    overlap = question_tokens & symbol_tokens
-    if not overlap:
+    if not matched_indexes:
         return 0.0
-    score = 0.55 + (0.35 * len(overlap) / len(question_tokens))
+
+    matched_count = len(matched_indexes)
+    coverage = matched_count / len(question_concepts)
+    quantity = min(1.0, matched_count / 3)
+    rarity = sum(
+        _structured_inverse_frequency(
+            concept_frequencies[index],
+            population_size=population_size,
+        )
+        for index in matched_indexes
+    ) / matched_count
+    field_precision = sum(
+        _structured_concept_field_precision(
+            question_concepts[index],
+            fields,
+        )
+        for index in matched_indexes
+    ) / matched_count
+    multi_concept = min(1.0, max(0, matched_count - 1) / 2)
+    score = (
+        (0.30 * coverage)
+        + (0.15 * quantity)
+        + (0.25 * rarity)
+        + (0.20 * field_precision)
+        + (0.10 * multi_concept)
+    )
     normalized_question = _normalize_text(question)
-    if symbol.normalized_name in normalized_question:
+    if (
+        _normalize_text(symbol.original_name) == normalized_question
+        or _normalize_text(symbol.normalized_name) == normalized_question
+    ):
         score += 0.1
     return min(1.0, score)
+
+
+def _query_concept_groups(text: str) -> tuple[frozenset[str], ...]:
+    """Agrupa cada termino original con sus variantes morfologicas."""
+    groups: list[frozenset[str]] = []
+    seen: set[frozenset[str]] = set()
+    for token in re.findall(r"[a-z0-9_]+", _normalize_text(text)):
+        if (
+            (len(token) < 4 and "_" not in token)
+            or re.fullmatch(r"f\d+", token)
+        ):
+            continue
+        group = frozenset(_concept_token_variants(token))
+        if group & _STOPWORDS:
+            continue
+        if group in seen:
+            continue
+        seen.add(group)
+        groups.append(group)
+    return tuple(groups)
+
+
+def _structured_symbol_token_fields(
+    symbol: TechnicalSymbol,
+) -> dict[str, set[str]]:
+    """Separa tokens por precision general del campo estructurado."""
+    names = _important_tokens(f"{symbol.original_name} {symbol.normalized_name}")
+    declared_values = _important_tokens(
+        _metadata_values_text(symbol, ("identity", "values", "value"))
+    )
+    descriptive = _important_tokens(
+        _metadata_values_text(symbol, ("display_values",))
+    )
+    structural = _important_tokens(
+        " ".join(
+            (
+                symbol.symbol_type,
+                _metadata_values_text(
+                    symbol,
+                    (
+                        "configuration_name",
+                        "table_name",
+                        "declared_columns",
+                        "column",
+                    ),
+                ),
+            )
+        )
+    )
+    return {
+        "names": names,
+        "declared_values": declared_values,
+        "descriptive": descriptive,
+        "structural": structural,
+        "all": names | declared_values | descriptive | structural,
+    }
+
+
+def _metadata_values_text(
+    symbol: TechnicalSymbol,
+    keys: tuple[str, ...],
+) -> str:
+    """Serializa valores de metadata seleccionados para tokenizacion."""
+    selected = {
+        key: _plain_metadata_value(symbol.metadata[key])
+        for key in keys
+        if key in symbol.metadata
+    }
+    return json.dumps(selected, ensure_ascii=True, sort_keys=True)
+
+
+def _structured_frequency_contexts(
+    symbols: tuple[TechnicalSymbol, ...],
+    active_symbols: dict[str, TechnicalSymbol],
+) -> tuple[set[str], ...]:
+    """Agrupa tokens por registro para estimar frecuencia sin contar hijos."""
+    contexts: dict[str, set[str]] = {}
+    for symbol in symbols:
+        record_key = _structured_record_key(symbol, active_symbols)
+        contexts.setdefault(record_key, set()).update(
+            _structured_symbol_token_fields(symbol)["all"]
+        )
+    return tuple(contexts[key] for key in sorted(contexts))
+
+
+def _structured_record_key(
+    symbol: TechnicalSymbol,
+    active_symbols: dict[str, TechnicalSymbol],
+) -> str:
+    """Obtiene el registro ancestro usado como unidad de frecuencia."""
+    current = symbol
+    while current.symbol_type != "configuration_record":
+        if current.parent_symbol_id is None:
+            return current.symbol_id
+        parent = active_symbols.get(current.parent_symbol_id)
+        if parent is None:
+            return current.symbol_id
+        current = parent
+    return current.symbol_id
+
+
+def _structured_concept_frequencies(
+    concepts: tuple[frozenset[str], ...],
+    contexts: tuple[set[str], ...],
+) -> tuple[int, ...]:
+    """Cuenta en cuantos registros aparece cada concepto de la consulta."""
+    return tuple(
+        sum(1 for context in contexts if variants & context)
+        for variants in concepts
+    )
+
+
+def _structured_inverse_frequency(frequency: int, *, population_size: int) -> float:
+    """Normaliza IDF a 0..1 para reducir terminos muy frecuentes."""
+    if population_size <= 1 or frequency <= 1:
+        return 1.0
+    numerator = math.log((population_size + 1) / (frequency + 0.5))
+    denominator = math.log((population_size + 1) / 1.5)
+    return max(0.0, min(1.0, numerator / denominator))
+
+
+def _structured_concept_field_precision(
+    concept: frozenset[str],
+    fields: dict[str, set[str]],
+) -> float:
+    """Asigna mayor peso a identidad, nombres y valores declarados."""
+    if concept & fields["names"]:
+        return 1.0
+    if concept & fields["declared_values"]:
+        return 0.9
+    if concept & fields["descriptive"]:
+        return 0.7
+    if concept & fields["structural"]:
+        return 0.5
+    return 0.0
 
 
 def _structured_metadata_text(symbol: TechnicalSymbol) -> str:
@@ -2079,11 +2258,13 @@ def _important_tokens(text: str) -> set[str]:
     for token in re.findall(r"[a-z0-9_]+", _normalize_text(text)):
         if (
             (len(token) < 4 and "_" not in token)
-            or token in _STOPWORDS
             or re.fullmatch(r"f\d+", token)
         ):
             continue
-        tokens.update(_concept_token_variants(token))
+        variants = _concept_token_variants(token)
+        if variants & _STOPWORDS:
+            continue
+        tokens.update(variants)
     return tokens
 
 
@@ -2100,7 +2281,12 @@ def _concept_token_variants(token: str) -> set[str]:
         Token original y, cuando aplica, una variante singular conservadora.
     """
     variants = {token}
-    if "_" in token or len(token) < 5:
+    if "_" in token:
+        for component in token.split("_"):
+            if len(component) >= 4:
+                variants.update(_concept_token_variants(component))
+        return variants
+    if len(token) < 5:
         return variants
     if token.endswith("iones") and len(token) > 6:
         variants.add(token[:-2])

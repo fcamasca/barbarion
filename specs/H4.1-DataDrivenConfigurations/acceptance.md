@@ -340,6 +340,15 @@ codigo relacionado, con archivo, lineas y chunk. Hasta entonces T10 sigue
 reabierta y T12 permanece pendiente, aunque las regresiones automatizadas sean
 verdes. Ningun nombre ni valor del corpus local se incorpora al repositorio.
 
+Tras corregir el ranking por cobertura, frecuencia y precision de campo, se
+repitio localmente la misma pregunta natural de forma anonimizada. `ask
+--no-llm` termino en estado `completed` con cinco fuentes estructuradas; el
+primer bloque correspondio al concepto dominante y conservo metadata,
+relaciones y lineas. No hubo un chunk de codigo relacionado entre esas cinco
+fuentes. Las regresiones sinteticas verifican que los chunks relacionados se
+conservan cuando existen y no son redundantes. T10 permanece reabierta hasta
+que el usuario confirme visualmente el resultado manual; T12 sigue pendiente.
+
 `spec create --no-llm` genero una spec piloto para modificar
 `pricing_rules.r1`. El diseno identifico como afectados:
 

@@ -319,6 +319,96 @@ def test_concept_query_matches_plural_question_to_singular_declared_metadata(
     assert "relacion_id=" in content
 
 
+def test_structured_ranking_prefers_rare_concepts_over_frequent_generic_terms(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Prioriza cobertura discriminante sobre coincidencias genericas aisladas."""
+    config = _prepare_workspace(tmp_path)
+    _run_pipeline(config, capsys, index=False)
+    settings = load_settings(config, environ={}, cwd=tmp_path)
+    retriever = _structured_retriever(
+        settings,
+        SQLiteRagRepository(settings.database_path),
+    )
+
+    candidates = retriever.retrieve(
+        "Que variables de configuracion intervienen en calculos y "
+        "bonificaciones preferentes?",
+        filters=RetrievalFilter(),
+        limit=12,
+    )
+    structured = tuple(
+        candidate
+        for candidate in candidates
+        if candidate.source.get("evidence_kind") == "structured_symbol"
+    )
+
+    assert len(structured) >= 2
+    assert "Calculo de bonificacion preferente" in str(
+        structured[0].source["content"]
+    )
+    generic = next(
+        candidate
+        for candidate in structured
+        if "Variables de configuracion para calculos generales"
+        in str(candidate.source["content"])
+    )
+    assert structured[0].combined_score > generic.combined_score
+
+
+def test_structured_ranking_is_stable_for_singular_plural_and_exact_identity(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Conserva orden morfologico, consulta especifica e identidad exacta."""
+    config = _prepare_workspace(tmp_path)
+    _run_pipeline(config, capsys, index=False)
+    settings = load_settings(config, environ={}, cwd=tmp_path)
+    retriever = _structured_retriever(
+        settings,
+        SQLiteRagRepository(settings.database_path),
+    )
+
+    singular = retriever.retrieve(
+        "bonificacion preferente",
+        filters=RetrievalFilter(),
+        limit=8,
+    )
+    plural = retriever.retrieve(
+        "bonificaciones preferentes",
+        filters=RetrievalFilter(),
+        limit=8,
+    )
+    one_term = retriever.retrieve(
+        "bonificacion",
+        filters=RetrievalFilter(),
+        limit=8,
+    )
+    exact = retriever.retrieve(
+        "calculation_templates.template_main",
+        filters=RetrievalFilter(),
+        limit=8,
+    )
+    composite_concept = retriever.retrieve(
+        "templates",
+        filters=RetrievalFilter(),
+        limit=8,
+    )
+
+    assert singular and plural and one_term and exact and composite_concept
+    assert singular[0].source["symbol_id"] == plural[0].source["symbol_id"]
+    assert "Calculo de bonificacion preferente" in str(
+        one_term[0].source["content"]
+    )
+    assert "calculation_templates.template_main" in str(
+        exact[0].source["content"]
+    )
+    assert "calculation_templates" in str(
+        composite_concept[0].source["content"]
+    )
+
+
 def test_structured_retrieval_excludes_stale_out_of_scope_and_unselected_values(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -439,6 +529,18 @@ def _prepare_workspace(tmp_path: Path) -> Path:
                 "(TEMPLATE_ID, TEMPLATE_NAME, DESCRIPTION_TEXT, STATUS_CODE) VALUES ",
                 "('TEMPLATE_OLD', 'Plantilla retirada', 'Concepto retirado', "
                 "'INACTIVE');",
+                "INSERT INTO APP_CONFIG.CALCULATION_TEMPLATES ",
+                "(TEMPLATE_ID, TEMPLATE_NAME, DESCRIPTION_TEXT, VARIABLE_KEY, "
+                "STATUS_CODE) VALUES ",
+                "('TEMPLATE_GENERIC_A', 'Variables comunes A', "
+                "'Variables de configuracion para calculos generales', "
+                "'INPUT_COMMON_A', 'ACTIVE');",
+                "INSERT INTO APP_CONFIG.CALCULATION_TEMPLATES ",
+                "(TEMPLATE_ID, TEMPLATE_NAME, DESCRIPTION_TEXT, VARIABLE_KEY, "
+                "STATUS_CODE) VALUES ",
+                "('TEMPLATE_GENERIC_B', 'Variables comunes B', "
+                "'Variables de configuracion para calculos generales', "
+                "'INPUT_COMMON_B', 'ACTIVE');",
             )
         ),
         encoding="utf-8",

@@ -264,27 +264,30 @@ class ValidateModelService:
                 diagnostic_code=LocalModelErrorCode.MODEL_NOT_FOUND.value,
                 diagnostic="El modelo no esta instalado en Ollama.",
             )
-        try:
-            generation = self.provider.generate_detailed(
-                ModelGenerationRequest(
-                    model=model,
-                    prompt=VALIDATION_PROMPT,
-                    timeout_seconds=timeout_seconds,
-                    temperature=0.0,
-                    max_output_tokens=_VALIDATION_MAX_OUTPUT_TOKENS,
-                    think=self.think,
+        request = ModelGenerationRequest(
+            model=model,
+            prompt=VALIDATION_PROMPT,
+            timeout_seconds=timeout_seconds,
+            temperature=0.0,
+            max_output_tokens=_VALIDATION_MAX_OUTPUT_TOKENS,
+            think=self.think,
+        )
+        for attempt in range(2):
+            try:
+                generation = self.provider.generate_detailed(request)
+                break
+            except LocalModelProviderError as error:
+                if error.code is LocalModelErrorCode.TIMEOUT and attempt == 0:
+                    continue
+                return self._result(
+                    model,
+                    started,
+                    available=True,
+                    installed=True,
+                    generation_ready=False,
+                    diagnostic_code=error.code.value,
+                    diagnostic=error.detail,
                 )
-            )
-        except LocalModelProviderError as error:
-            return self._result(
-                model,
-                started,
-                available=True,
-                installed=True,
-                generation_ready=False,
-                diagnostic_code=error.code.value,
-                diagnostic=error.detail,
-            )
         ready = generation.response.strip() == VALIDATION_MARKER
         return self._result(
             model,

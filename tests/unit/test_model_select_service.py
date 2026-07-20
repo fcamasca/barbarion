@@ -13,6 +13,7 @@ from barbarion.application.local_models import (
 from barbarion.config import load_settings
 from barbarion.domain.local_models import (
     LocalModel,
+    LocalModelErrorCode,
     LocalModelProviderError,
     ModelGenerationResult,
 )
@@ -36,6 +37,16 @@ class FakeProvider:
     def generate_detailed(self, request):  # noqa: ANN001, ANN201
         self.calls.append("generate")
         return ModelGenerationResult(self.response)
+
+
+class TimeoutProvider(FakeProvider):
+    """Simula dos timeouts consecutivos durante la validacion."""
+
+    def generate_detailed(self, request):  # noqa: ANN001, ANN201
+        """Registra el intento y devuelve el timeout controlado."""
+        del request
+        self.calls.append("generate")
+        raise LocalModelProviderError(LocalModelErrorCode.TIMEOUT, "timeout")
 
 
 def _settings(tmp_path: Path):  # noqa: ANN202
@@ -149,4 +160,26 @@ def test_select_rejects_missing_or_not_ready_and_preserves_file(
             timeout_seconds=8,
         )
 
+    assert source.read_bytes() == before
+
+
+def test_select_preserves_file_after_cold_start_retry_times_out(
+    tmp_path: Path,
+) -> None:
+    source, settings = _settings(tmp_path)
+    before = source.read_bytes()
+    provider = TimeoutProvider(
+        (LocalModel("modelo-nuevo:tag"),),
+        VALIDATION_MARKER,
+    )
+
+    with pytest.raises(LocalModelProviderError) as captured:
+        _service(provider).run(
+            settings,
+            "modelo-nuevo:tag",
+            timeout_seconds=8,
+        )
+
+    assert captured.value.code is LocalModelErrorCode.TIMEOUT
+    assert provider.calls == ["list", "generate", "generate"]
     assert source.read_bytes() == before

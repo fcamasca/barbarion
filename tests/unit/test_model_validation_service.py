@@ -47,6 +47,18 @@ class FakeValidationProvider:
         return ModelGenerationResult(self.response)
 
 
+class TimeoutOnceValidationProvider(FakeValidationProvider):
+    """Simula la carga en frio que termina despues del primer timeout."""
+
+    def generate_detailed(self, request):  # noqa: ANN001, ANN201
+        """Falla una vez y responde normalmente en el reintento."""
+        self.calls.append(("generate", request.model, request.timeout_seconds))
+        self.generation_request = request
+        if sum(call[0] == "generate" for call in self.calls) == 1:
+            raise LocalModelProviderError(LocalModelErrorCode.TIMEOUT, "timeout")
+        return ModelGenerationResult(self.response)
+
+
 def _clock(values: tuple[float, ...]):  # noqa: ANN202
     iterator: Iterator[float] = iter(values)
     return lambda: next(iterator)
@@ -163,6 +175,28 @@ def test_generation_error_preserves_available_and_installed() -> None:
     assert result.generation_ready is False
     assert result.benchmark_eligible is False
     assert result.diagnostic_code == "OLLAMA_TIMEOUT"
+    assert provider.calls == [
+        ("list", 5),
+        ("generate", "modelo", 5),
+        ("generate", "modelo", 5),
+    ]
+
+
+def test_validation_retries_once_after_cold_start_timeout() -> None:
+    provider = TimeoutOnceValidationProvider(models=(LocalModel("modelo"),))
+
+    result = ValidateModelService(
+        provider,
+        "activo",
+        clock=_clock((1.0, 2.0)),
+    ).run("modelo", timeout_seconds=5)
+
+    assert result.generation_ready is True
+    assert provider.calls == [
+        ("list", 5),
+        ("generate", "modelo", 5),
+        ("generate", "modelo", 5),
+    ]
 
 
 @pytest.mark.parametrize("name", ["https://invalid/model", "bad\nmodel"])

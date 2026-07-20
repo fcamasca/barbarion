@@ -19,8 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T08 completadas;
-H1.1-T09 a H1.1-T12 pendientes.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T10 completadas;
+H1.1-T11 a H1.1-T12 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -148,7 +148,8 @@ caso y H3 conserva comportamiento exacto.
 
 ### H1.1-T09 - Implementar runner y `models benchmark`
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** ejecutar comparaciones secuenciales reproducibles.  
 **Descripcion:** Validar opciones/modelos, ejecutar una generacion por caso y
 modelo, aplicar rotacion determinista, timeouts, resultado parcial simple y Ctrl+C.
@@ -161,7 +162,8 @@ identico y salidas validadas.
 
 ### H1.1-T10 - Implementar scoring y agregacion
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** calcular metricas objetivas y transparentes sin LLM juez.  
 **Descripcion:** Implementar normalizacion, evaluacion de hechos, prohibiciones,
 instrucciones, groundedness acotado, uso de contexto, citas, validador, score v1,

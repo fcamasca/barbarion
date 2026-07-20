@@ -73,6 +73,37 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
     )
 
 
+def test_source_json_keeps_content_path_and_lines_as_separate_fields() -> None:
+    """Impide reemplazar silenciosamente contenido de evidencia por su ruta."""
+    content = "CREATE FUNCTION synthetic_rule RETURN NUMBER AS BEGIN RETURN 1; END;"
+    candidate = RetrievalCandidate(
+        chunk_id="chunk-source-contract",
+        content_sha256="a" * 64,
+        combined_score=0.9,
+        source={
+            "relative_path": "oracle/synthetic_rule.fnc",
+            "start_line": 4,
+            "end_line": 7,
+            "content": content,
+        },
+    )
+    source = ContextSource(
+        source_id="F1",
+        candidate=candidate,
+        content=content,
+        token_estimate=17,
+        original_token_estimate=17,
+    )
+
+    rendered = cli._source_json(source)
+
+    assert rendered["content"] == content
+    assert rendered["relative_path"] == "oracle/synthetic_rule.fnc"
+    assert rendered["start_line"] == 4
+    assert rendered["end_line"] == 7
+    assert rendered["content"] != rendered["relative_path"]
+
+
 @pytest.mark.parametrize(
     ("args", "expected_text"),
     [

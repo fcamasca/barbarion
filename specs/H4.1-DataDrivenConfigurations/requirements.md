@@ -480,24 +480,39 @@ de forma incremental e idempotente.
 **Pruebas:** H4.1-TP-024, H4.1-TP-025.  
 **Tareas:** H4.1-T09.
 
-### H4.1-REQ-014 - Integracion minima con H3 y H5
+### H4.1-REQ-014 - Integracion semantica con RAG y H5
 
-**Descripcion:** El conocimiento Data-Driven debe quedar disponible para RAG y
-Spec Mode mediante contratos existentes.
+**Descripcion:** `ask` debe usar el conocimiento Data-Driven estructurado y el
+codigo relacionado, no solo recuperar texto DML por coincidencia.
 
-**Prioridad:** Should.
+**Prioridad:** Must.
 
 **Criterios de aceptacion:**
 
-- chunks DML conservan contenido y metadata indexable;
-- `search` y `ask` pueden recuperar archivos DML por keyword y, si indexados,
-  por modo semantico/hibrido;
+- chunks DML conservan contenido y metadata indexable como regresion de search;
+- `search` conserva recuperacion keyword, semantica e hibrida de chunks;
+- `ask` recupera simbolos Data-Driven activos por nombre original, nombre
+  normalizado, tipo, configuracion, valores visibles y metadata declarada;
+- una pregunta por concepto funcional puede recuperar un registro aunque no
+  contenga nombres de tabla o columna;
+- los simbolos recuperados se expanden por jerarquia y relaciones activas hacia
+  configuraciones, Oracle y PowerBuilder;
+- el contexto combina bloques estructurados legibles con chunks de codigo
+  relacionados, conservando archivo, lineas, chunk, simbolo y relacion;
+- `ask --no-llm` permite inspeccionar esa evidencia y `ask` con LLM exige citas
+  validas para cada afirmacion;
+- simbolos `stale`, valores no declarados y fuentes fuera del filtro efectivo
+  no se incorporan;
+- retrieval estructurado respeta top-k, deduplicacion y presupuesto de contexto;
 - H5 recibe simbolos, relaciones e impacto Data-Driven desde H4 sin pipeline
   nuevo;
+- recuperar el archivo DML sin usar simbolos o relaciones no satisface este
+  requisito;
+- no se ejecuta SQL ni formulas y no se consulta una base externa;
 - H4.1 no rediseña ranking RAG ni plantillas H5.
 
 **Diseno:** H4.1-DD-016.  
-**Pruebas:** H4.1-TP-026, INT-H4.1-10.  
+**Pruebas:** H4.1-TP-026, INT-H4.1-10, INT-H4.1-12.
 **Tareas:** H4.1-T10.
 
 ### H4.1-REQ-015 - CLI y mensajes
@@ -686,7 +701,7 @@ universales.
 | H4.1-REQ-011 | DD-012 | TP-021, INT-09 | T01, T05 |
 | H4.1-REQ-012 | DD-013 | TP-022, TP-023, INT-03..08 | T08 |
 | H4.1-REQ-013 | DD-015 | TP-024, TP-025 | T09 |
-| H4.1-REQ-014 | DD-016 | TP-026, INT-10 | T10 |
+| H4.1-REQ-014 | DD-016 | TP-026, INT-10, INT-12 | T10 |
 | H4.1-REQ-015 | DD-017 | TP-027 | T09, T11 |
 | H4.1-REQ-016 | DD-014 | TP-028 | T11 |
 | H4.1-REQ-017 | DD-018 | TP-029, INT-11 | T03, T12 |

@@ -48,7 +48,7 @@ Limitaciones actuales relevantes:
 | H4.1-DD-013 | Integrar Data-Driven en `AnalyzeService`, con firma propia y re-resolucion afectada | H4.1-REQ-012 |
 | H4.1-DD-014 | Registrar metricas y warnings por archivo, sentencia y configuracion, sin volcar valores completos por defecto | H4.1-REQ-005, H4.1-REQ-016 |
 | H4.1-DD-015 | Extender servicios y renderers H4 existentes para tecnologia `configuration` | H4.1-REQ-013 |
-| H4.1-DD-016 | Integrar H3/H5 solo mediante chunks, metadata, simbolos y relaciones existentes | H4.1-REQ-014 |
+| H4.1-DD-016 | Enriquecer `ask` con simbolos activos, expansion de relaciones y chunks de codigo relacionados sin reemplazar keyword/vector/hybrid | H4.1-REQ-014 |
 | H4.1-DD-017 | No crear comando nuevo; extender `ingest`, `analyze`, `inventory`, `describe`, `impact` y `stats` | H4.1-REQ-015 |
 | H4.1-DD-018 | Mantener procesamiento local, no ejecucion y limites de recursos heredados de H2 | H4.1-REQ-017 |
 
@@ -500,10 +500,39 @@ H4.1 no reconoce ni introduce la extension `.dml`, y no agrega `.dml` a
 H3:
 
 - indexa chunks DML como cualquier chunk vigente;
-- keyword search funciona por texto original;
+- keyword, vector e hybrid mantienen sus contratos de recuperacion de chunks;
 - filtros pueden usar `artifact_kind=configuration` para archivos `.sql`
   declarados;
-- no cambia ranking.
+- `ask` agrega un recuperador local sobre `symbols` y `relations` activos;
+- el matching usa `original_name`, `normalized_name`, tipo,
+  `configuration_name`, `display_values`, identidad, valores y metadata
+  declarada persistida;
+- los matches se agrupan por registro para evitar repetir cada simbolo hijo;
+- la expansion incluye padres activos y relaciones activas adyacentes en ambas
+  direcciones;
+- destinos Oracle y PowerBuilder aportan su chunk de codigo cuando existe y
+  cumple los filtros efectivos;
+- el DML crudo de configuracion se omite del contexto cuando ya existe un bloque
+  estructurado equivalente, evitando filtrar columnas no declaradas;
+- cada bloque incluye archivo, lineas, chunk, `symbol_id`, `relation_id`, tipo y
+  estado de resolucion;
+- `ContextBuilder` aplica el mismo threshold, deduplicacion, limite por fuente y
+  presupuesto global a evidencia estructurada y chunks;
+- el retrieval estructurado es determinista, de solo lectura y no participa en
+  reconciliacion ni modifica identidades.
+
+Flujo de `ask`:
+
+```text
+pregunta natural
+    + SearchService keyword/vector/hybrid
+    + simbolos configuration activos por concepto
+    -> expansion jerarquica y relacional de un salto
+    -> bloques estructurados + chunks de codigo relacionados
+    -> deduplicacion y presupuesto de contexto
+    -> inspeccion --no-llm o prompt LLM
+    -> validacion y reparacion de citas
+```
 
 H5:
 

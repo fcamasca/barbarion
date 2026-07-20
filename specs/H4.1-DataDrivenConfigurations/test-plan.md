@@ -226,7 +226,21 @@ unresolved, dynamic y external.
 
 ### H4.1-TP-026 - H3/H5
 
-RAG recupera chunks DML y H5 recibe componentes Data-Driven desde H4.
+La recuperacion textual del DML se conserva como regresion, pero no acredita por
+si sola integracion semantica. Las pruebas deben demostrar:
+
+- pregunta natural sin tablas ni columnas recupera un registro por concepto;
+- `ask --no-llm` combina bloque estructurado y chunks de codigo relacionado;
+- un LLM fake recibe simbolos, valores declarados y relaciones, responde sobre
+  la configuracion y el codigo, y usa citas validas;
+- jerarquia y relaciones hacia configuration, Oracle y PowerBuilder son
+  visibles con IDs y ubicacion trazable;
+- simbolos `stale`, fuentes fuera de alcance y valores no declarados quedan
+  excluidos;
+- formulas y SQL no se ejecutan;
+- top-k, deduplicacion, presupuesto y orden permanecen deterministas;
+- keyword, vector, hybrid, reparacion de citas y fuentes no Data-Driven no
+  cambian.
 
 ### H4.1-TP-027 - CLI
 
@@ -293,6 +307,13 @@ verifica que no se requiere migracion ni tabla `configuration_records`.
 
 La suite con fakes no intenta internet ni servicios cloud.
 
+### INT-H4.1-12 - Ask Data-Driven estructurado
+
+Un corpus totalmente sintetico declara una plantilla, variable, formula,
+jerarquia y referencias hacia codigo Oracle y PowerBuilder. Una pregunta por
+concepto funcional verifica los casos con y sin LLM, expansion relacional,
+trazabilidad, vigencia, alcance y no filtracion de columnas no declaradas.
+
 ## 8. Pruebas CLI
 
 - `barbarion config show`;
@@ -305,7 +326,7 @@ La suite con fakes no intenta internet ni servicios cloud.
 - `barbarion impact PKG_PRICING.CALCULATE --direction incoming --no-llm`;
 - `barbarion stats --format json`;
 - `barbarion search "pricing_rules" --mode keyword`;
-- `barbarion ask "Donde se configura pricing_rules?" --no-llm`;
+- `barbarion ask "Que configuracion participa en este comportamiento?" --no-llm`;
 - `barbarion spec create "Cambiar regla pricing_rules" --no-llm`;
 - configuracion invalida;
 - carpeta existente sin overwrite en artefactos Markdown;
@@ -447,7 +468,7 @@ La evidencia se registra en `acceptance.md` solo durante H4.1-T12.
 | H4.1-REQ-011 | TP-021, INT-09 |
 | H4.1-REQ-012 | TP-022, TP-023, INT-03..08 |
 | H4.1-REQ-013 | TP-024, TP-025 |
-| H4.1-REQ-014 | TP-026, INT-10 |
+| H4.1-REQ-014 | TP-026, INT-10, INT-12 |
 | H4.1-REQ-015 | TP-027 |
 | H4.1-REQ-016 | TP-028 |
 | H4.1-REQ-017 | TP-029, INT-11 |

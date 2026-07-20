@@ -2,11 +2,12 @@
 
 ## Estado
 
-**Estado tecnico y funcional:** aprobado con limitaciones conocidas aceptadas.
+**Estado tecnico y funcional:** pendiente; T10 formalmente reabierta por fallo
+del flujo CLI real.
 
-**Estado de T12:** completada. El mantenedor aprobo la evidencia tecnica y
-funcional despues de revisar el corpus piloto, las salidas y los hallazgos
-descritos aqui.
+**Estado de T12:** pendiente. La aceptacion anterior no cubrio uso semantico del
+conocimiento Data-Driven por `ask`; T10 debe cerrarse antes de repetir la
+aceptacion final.
 
 La validacion cubre instalacion editable real, suite completa, smoke CLI,
 regresion H1-H5, flujo Data-Driven integral, incrementalidad, reconciliacion,
@@ -67,6 +68,24 @@ Resultado:
 
 La suite completa incluye la regresion H1-H5. No se observaron regresiones en
 simbolos no Data-Driven, RAG, Spec Mode ni contratos CLI existentes.
+
+Tras reabrir la integracion semantica se ejecuto la prueba sintetica dedicada:
+
+```text
+7 passed in 11.82s
+```
+
+Tambien se repitio la suite completa con el candidato actualizado:
+
+```text
+565 passed, 12 skipped in 76.39s
+```
+
+La `.venv` presente vuelve a apuntar a un interprete base inexistente. Esta
+corrida uso el runtime Python local de Codex con rutas absolutas a `src` y a
+los paquetes ya instalados. El fallo de entorno no afecta el resultado de la
+suite, pero impide considerar completa la aceptacion en el entorno instalado y
+debe corregirse antes de cerrar T12.
 
 ## Hallazgo corregido durante T12
 
@@ -290,9 +309,36 @@ Artefactos revisables:
 
 ## RAG y Spec Mode
 
-El indice local proceso 4 chunks y genero 4 vectores sin fallos. La busqueda
-keyword por `pricing_rules` recupero el DML con metadata `configuration`.
-`ask --no-llm` devolvio respuesta con citas al archivo Data-Driven.
+La evidencia anterior demostro que RAG podia recuperar el archivo DML como
+texto, pero no que `ask` utilizara simbolos, metadata o relaciones persistidas.
+Por tanto, esa recuperacion no acredita integracion semantica y T10 fue reabierta.
+
+La repeticion manual del 2026-07-19, despues de ejecutar nuevamente `analyze`,
+confirmo que el defecto seguia presente. El catalogo estaba reconciliado con
+163 simbolos, 202 referencias y 96 relaciones resueltas, pero `ask --no-llm`
+devolvio cinco fuentes sin simbolos Data-Driven, metadata, valores, relaciones
+ni lineas. El contenido visible de cada evidencia era solamente la ruta del
+archivo. Este resultado invalida como evidencia de ensamblaje las pruebas que
+instanciaban `AskService` manualmente o sustituian builders del CLI.
+
+La nueva validacion automatizada sintetica demuestra:
+
+- pregunta natural por concepto, sin nombres de tablas ni columnas;
+- recuperacion de simbolos activos por metadata y valores declarados;
+- expansion por jerarquia y relaciones hacia configuration, Oracle y
+  PowerBuilder;
+- contexto combinado con bloques estructurados y chunks de codigo;
+- inspeccion mediante `ask --no-llm` con archivo, lineas, chunk, simbolo y
+  relacion;
+- prompt y respuesta con LLM fake determinista y citas validas;
+- exclusion de `stale`, fuentes fuera de alcance y columnas no declaradas;
+- ausencia de ejecucion de SQL o formulas.
+
+La siguiente aprobacion de T10 exige repetir exactamente la misma pregunta
+natural sobre los datos locales y observar evidencia estructurada legible y
+codigo relacionado, con archivo, lineas y chunk. Hasta entonces T10 sigue
+reabierta y T12 permanece pendiente, aunque las regresiones automatizadas sean
+verdes. Ningun nombre ni valor del corpus local se incorpora al repositorio.
 
 `spec create --no-llm` genero una spec piloto para modificar
 `pricing_rules.r1`. El diseno identifico como afectados:
@@ -374,11 +420,15 @@ ignorados por Git y no fueron modificados durante esta auditoria.
 | RNF-009 seguridad y recuperacion | Cumple | parsing estatico, errores parciales y cancelacion probados |
 | RNF-010 mantenibilidad | Cumple | capas existentes, parser acotado y docstrings Google Style |
 
-## Decision final
+## Decision tecnica y funcional
 
-El mantenedor aprobo la aceptacion tecnica y funcional. Las salidas de
-inventario, descripcion e impacto, la spec piloto y sus dependencias fueron
-consideradas adecuadas. Las limitaciones conocidas se aceptan para H4.1 y
-pueden registrarse como trabajo posterior sin bloquear el cierre.
+La aprobacion anterior queda parcialmente supersedida por la reapertura de T10:
+demostro inventario, descripcion, impacto y recuperacion textual del DML, pero
+no el uso semantico de simbolos, metadata y relaciones Data-Driven por `ask`.
 
-H4.1 queda completado con todas las tareas H4.1-T01 a H4.1-T12 cerradas.
+Las pruebas sinteticas de la integracion estructurada, la suite completa y las
+verificaciones estaticas deben quedar verdes. Ademas, una validacion manual con
+datos reales locales debe demostrar que una pregunta natural obtiene una
+respuesta sustentada por configuraciones Data-Driven y codigo legado, sin
+incorporar esos datos al repositorio. Hasta completar y aprobar esa evidencia,
+T10 y T12 permanecen pendientes.

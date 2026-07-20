@@ -417,6 +417,9 @@ Usalo para diagnosticar el estado del indice. No modifica SQLite, no requiere em
 
 ### Notas operativas Data-Driven
 
+La guia completa para modelar tablas, columnas, identidades y referencias esta
+en [Configuracion del analisis Data-Driven](data-driven-configuration.md).
+
 Cuando `data_driven.enabled = true`, `ingest` clasifica como `configuration`
 solo los `.sql` que coinciden con los patrones declarados y afectan una tabla
 configurada. `analyze` procesa cada documento completo; los chunks se conservan

@@ -20,6 +20,7 @@ from barbarion.application.rag import (
     AskService,
     CitationValidator,
     ContextBuilder,
+    DataDrivenEvidenceRetriever,
     IndexService,
     PromptBuilder,
     SearchService,
@@ -1358,8 +1359,9 @@ def _build_llm_provider(settings: Settings) -> OllamaLlmProvider:
 
 
 def _build_ask_service(settings: Settings) -> AskService:
+    search_service = _build_search_service(settings)
     return AskService(
-        search_service=_build_search_service(settings),
+        search_service=search_service,
         context_builder=ContextBuilder(
             token_budget=settings.rag.context_token_budget,
             max_chunk_tokens=settings.rag.max_chunk_tokens,
@@ -1370,6 +1372,11 @@ def _build_ask_service(settings: Settings) -> AskService:
         citation_validator=CitationValidator(),
         llm_provider=_build_llm_provider(settings),
         settings=settings,
+        structured_retriever=DataDrivenEvidenceRetriever(
+            repository=SQLiteReverseEngineeringRepository(settings.database_path),
+            rag_repository=search_service.repository,
+            domain=settings.domain,
+        ),
     )
 
 
@@ -1747,11 +1754,16 @@ def _candidate_json(candidate) -> dict[str, object]:
 
 
 def _source_json(source) -> dict[str, object]:
+    metadata = dict(source.candidate.source)
     return {
         "source_id": source.source_id,
         "chunk_id": source.candidate.chunk_id,
         "score": source.candidate.combined_score,
-        "source": dict(source.candidate.source),
+        "content": source.content,
+        "relative_path": metadata.get("relative_path"),
+        "start_line": metadata.get("start_line"),
+        "end_line": metadata.get("end_line"),
+        "source": metadata,
         "token_estimate": source.token_estimate,
         "original_token_estimate": source.original_token_estimate,
         "content_truncated": source.content_truncated,

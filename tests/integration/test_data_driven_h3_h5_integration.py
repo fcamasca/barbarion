@@ -17,12 +17,12 @@ from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 
 
-def test_data_driven_dml_is_available_to_rag_ask_and_spec_mode(
+def test_data_driven_chunks_regressions_and_structured_ask_spec_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Recorre DML desde ingesta hasta evidencia y componentes de una spec.
+    """Conserva retrieval de chunks y exige conocimiento estructurado en ask.
 
     Args:
         tmp_path: Workspace temporal aislado usado por la integracion.
@@ -93,6 +93,9 @@ def test_data_driven_dml_is_available_to_rag_ask_and_spec_mode(
     assert answer["status"] == "completed"
     assert "[F1]" in answer["answer"]
     assert answer["sources"][0]["source"]["artifact_kind"] == "configuration"
+    assert answer["sources"][0]["source"]["evidence_kind"] == "structured_symbol"
+    assert "Evidencia estructurada del catalogo tecnico" in answer["answer"]
+    assert "simbolo_id=" in answer["answer"]
 
     output_dir = tmp_path / "output" / "specs" / "pricing-change"
     assert cli.main(

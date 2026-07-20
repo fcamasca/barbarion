@@ -259,6 +259,7 @@ La estimación histórica de 12 semanas y 120 horas se conserva en [`docs/ROADMA
 - [Aceptación H3](specs/H3-RAG/acceptance.md)
 - [Aceptación H4](specs/H4-ReverseEngineering/acceptance.md)
 - [Validación H5](specs/H5-SpecMode/acceptance.md)
+- [Configuracion del analisis Data-Driven](docs/data-driven-configuration.md)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)
 

@@ -18,7 +18,8 @@
 
 Estados iniciales: `pendiente`.
 
-Estado final del hito: H4.1-T01 a H4.1-T12 completadas.
+Estado actual del hito: H4.1-T10 reabierta; H4.1-T12 pendiente. Las demas
+tareas permanecen completadas.
 
 ## 2. Tareas
 
@@ -154,19 +155,28 @@ configuraciones.
 **Requisitos:** H4.1-REQ-013, H4.1-REQ-015.  
 **Checkpoint:** `python -m pytest tests/unit/test_data_driven_inventory_describe_impact.py tests/golden/test_data_driven_markdown.py`.
 
-### H4.1-T10 - Validar integracion minima con H3 y H5
+### H4.1-T10 - Integrar conocimiento Data-Driven estructurado con RAG y H5
 
-**Estado:** completada.
+**Estado:** reabierta; pendiente de revalidacion manual.
 
-**Objetivo:** comprobar que RAG y Spec Mode consumen conocimiento Data-Driven
-por contratos existentes.  
-**Descripcion:** Cubrir busqueda keyword/hybrid de DML, evidencia en `ask` y
-componentes afectados en `spec create` sin redisenar H3/H5.  
+**Objetivo:** lograr que preguntas naturales consuman simbolos, metadata y
+relaciones Data-Driven junto con codigo relacionado.
+**Descripcion:** Incorporar simbolos activos al retrieval de `ask`, matching por
+concepto, expansion relacional, bloques de evidencia citables y chunks Oracle o
+PowerBuilder relacionados. Mantener keyword/vector/hybrid, `ask --no-llm`,
+validacion de citas, limites y comportamiento no Data-Driven.
 **Dependencias:** H4.1-T09.  
-**Resultado esperado:** H3 recupera chunks de configuracion y H5 puede citar
-impacto Data-Driven.  
+**Resultado esperado:** `ask --no-llm` muestra conocimiento estructurado y
+codigo relacionado; un LLM controlado responde con citas validas. La prueba
+manual real debe confirmar una pregunta natural sin incorporar sus datos al
+repositorio.
+La validacion manual del 2026-07-19 fallo aun con el catalogo reconciliado: el
+CLI devolvio cinco fuentes formadas solo por rutas, sin simbolos, metadata,
+relaciones, lineas ni codigo. Las pruebas sinteticas anteriores no recorrian el
+composition root real y no acreditan T10. La correccion requiere una regresion
+CLI integral y repetir exactamente la pregunta manual antes de cerrar la tarea.
 **Requisitos:** H4.1-REQ-014.  
-**Checkpoint:** `python -m pytest tests/integration/test_data_driven_h3_h5_integration.py`.
+**Checkpoint:** `python -m pytest tests/integration/test_data_driven_structured_rag.py tests/integration/test_data_driven_h3_h5_integration.py`.
 
 ### H4.1-T11 - Completar observabilidad, errores y documentacion operativa
 
@@ -185,7 +195,7 @@ que, sin tracebacks en errores esperados.
 
 ### H4.1-T12 - Validacion y aceptacion tecnica H4.1
 
-**Estado:** completada.
+**Estado:** pendiente.
 **Objetivo:** ejecutar aceptacion tecnica integral solo despues de concluir la
 implementacion.  
 **Descripcion:** Ejecutar pruebas, validar criterios de aceptacion, correr

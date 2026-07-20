@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
+import hashlib
+import json
 import re
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import PurePosixPath
 
 from barbarion.config import Settings
 from barbarion.domain.progress import (
@@ -30,15 +34,25 @@ from barbarion.domain.rag import (
     IndexScope,
     IndexableChunk,
     RagQueryStatus,
+    RetrievalCandidate,
     RetrievalFilter,
     RetrievalMode,
     SearchRequest,
     SearchResponse,
     SearchTimings,
+    SymbolMetadata,
     combine_hybrid_candidates,
     decide_index_plan,
 )
-from barbarion.infrastructure.sqlite import SQLiteRagRepository
+from barbarion.domain.reverse_engineering import (
+    DependencyDirection,
+    TechnicalRelation,
+    TechnicalSymbol,
+)
+from barbarion.infrastructure.sqlite import (
+    SQLiteRagRepository,
+    SQLiteReverseEngineeringRepository,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -726,6 +740,447 @@ def _with_mode(candidate, mode: RetrievalMode):
 
 
 @dataclass(frozen=True, slots=True)
+class DataDrivenEvidenceRetriever:
+    """Recupera evidencia estructurada Data-Driven para preguntas RAG.
+
+    El recuperador consulta exclusivamente el catalogo tecnico persistido. Solo
+    considera simbolos activos, aplica filtros RAG compatibles y expande las
+    coincidencias mediante jerarquia y relaciones activas. Las expresiones y el
+    SQL se presentan como evidencia; nunca se ejecutan.
+
+    Attributes:
+        repository: Repositorio de simbolos y relaciones reverse engineering.
+        rag_repository: Repositorio usado para cargar chunks de codigo trazables.
+        domain: Dominio local efectivo de la consulta.
+    """
+
+    repository: SQLiteReverseEngineeringRepository
+    rag_repository: SQLiteRagRepository
+    domain: str
+
+    def retrieve(
+        self,
+        question: str,
+        *,
+        filters: RetrievalFilter,
+        limit: int,
+    ) -> tuple[RetrievalCandidate, ...]:
+        """Recupera simbolos por concepto y expande sus relaciones vigentes.
+
+        Args:
+            question: Pregunta natural usada para el matching lexical.
+            filters: Alcance RAG que tambien debe respetar la evidencia H4.
+            limit: Cantidad maxima de candidatos estructurados y de codigo.
+
+        Returns:
+            Candidatos citables ordenados de forma determinista.
+        """
+        if limit <= 0 or not _structured_domain_allowed(filters, self.domain):
+            return ()
+        question_tokens = _important_tokens(question)
+        if not question_tokens:
+            return ()
+        active_symbols = self.repository.active_symbols()
+        by_id = {symbol.symbol_id: symbol for symbol in active_symbols}
+        configuration_symbols = tuple(
+            symbol
+            for symbol in active_symbols
+            if symbol.technology == "configuration"
+            and _structured_symbol_in_scope(symbol, filters)
+        )
+        ranked = [
+            (score, symbol)
+            for symbol in configuration_symbols
+            if (score := _structured_symbol_score(symbol, question, question_tokens))
+            > 0
+        ]
+        ranked.sort(key=lambda item: (-item[0], _structured_symbol_sort_key(item[1])))
+
+        candidates: list[RetrievalCandidate] = []
+        seen_chunks: set[str] = set()
+        seen_records: set[str] = set()
+        for score, seed in ranked:
+            if len(candidates) >= limit:
+                break
+            roots = _structured_relation_roots(seed, by_id)
+            record_key = next(
+                (
+                    root.symbol_id
+                    for root in roots
+                    if root.symbol_type == "configuration_record"
+                ),
+                seed.symbol_id,
+            )
+            if record_key in seen_records:
+                continue
+            seen_records.add(record_key)
+            relations = _active_relations_for_roots(self.repository, roots)
+            related = _active_related_symbols(relations, by_id)
+            block = _render_structured_evidence(seed, roots, relations, by_id)
+            structured = _structured_candidate(
+                seed,
+                relations,
+                block,
+                score,
+                domain=self.domain,
+            )
+            candidates.append(structured)
+            seen_chunks.add(structured.chunk_id)
+
+            for related_symbol, relation_ids in related:
+                if len(candidates) >= limit:
+                    break
+                if related_symbol.technology == "configuration":
+                    continue
+                if not _structured_symbol_in_scope(related_symbol, filters):
+                    continue
+                chunk_candidate = _related_code_candidate(
+                    related_symbol,
+                    relation_ids=relation_ids,
+                    score=max(0.01, score * 0.95),
+                )
+                if chunk_candidate is None or chunk_candidate.chunk_id in seen_chunks:
+                    continue
+                enriched = self.rag_repository.enrich_candidates(
+                    (chunk_candidate,),
+                    include_snippets=True,
+                )[0]
+                if not enriched.source.get("content"):
+                    continue
+                candidates.append(enriched)
+                seen_chunks.add(enriched.chunk_id)
+        return tuple(candidates[:limit])
+
+
+_STRUCTURED_METADATA_KEYS = (
+    "configuration_name",
+    "table_name",
+    "declared_columns",
+    "display_values",
+    "identity",
+    "values",
+    "value",
+    "column",
+    "operation",
+    "partial",
+)
+
+
+def _structured_domain_allowed(filters: RetrievalFilter, domain: str) -> bool:
+    """Comprueba el filtro de dominio antes de consultar simbolos."""
+    return filters.domain is None or filters.domain == domain
+
+
+def _structured_symbol_in_scope(
+    symbol: TechnicalSymbol,
+    filters: RetrievalFilter,
+) -> bool:
+    """Aplica al simbolo los filtros RAG que tienen equivalente trazable."""
+    metadata = symbol.metadata
+    path = str(metadata.get("relative_path") or "").replace("\\", "/")
+    artifact_kind = str(metadata.get("artifact_kind") or symbol.technology)
+    language = {
+        "oracle": "plsql",
+        "powerbuilder": "powerscript",
+    }.get(artifact_kind)
+    if filters.artifact_kind is not None and filters.artifact_kind != artifact_kind:
+        return False
+    if filters.language is not None and filters.language != language:
+        return False
+    if filters.document_id is not None and filters.document_id != symbol.document_id:
+        return False
+    if filters.folder is not None:
+        folder = str(PurePosixPath(path).parent)
+        if folder == ".":
+            folder = ""
+        if not folder.startswith(filters.folder.rstrip("/")):
+            return False
+    if filters.extension is not None and not path.lower().endswith(
+        filters.extension.lower()
+    ):
+        return False
+    return True
+
+
+def _structured_symbol_score(
+    symbol: TechnicalSymbol,
+    question: str,
+    question_tokens: set[str],
+) -> float:
+    """Calcula un score lexical determinista sobre campos permitidos."""
+    searchable = " ".join(
+        (
+            symbol.original_name,
+            symbol.normalized_name,
+            symbol.symbol_type,
+            _structured_metadata_text(symbol),
+        )
+    )
+    symbol_tokens = _important_tokens(searchable)
+    overlap = question_tokens & symbol_tokens
+    if not overlap:
+        return 0.0
+    score = 0.55 + (0.35 * len(overlap) / len(question_tokens))
+    normalized_question = _normalize_text(question)
+    if symbol.normalized_name in normalized_question:
+        score += 0.1
+    return min(1.0, score)
+
+
+def _structured_metadata_text(symbol: TechnicalSymbol) -> str:
+    """Serializa solo metadata seleccionada para recuperacion y evidencia."""
+    selected = {
+        key: _plain_metadata_value(symbol.metadata[key])
+        for key in _STRUCTURED_METADATA_KEYS
+        if key in symbol.metadata
+    }
+    return json.dumps(selected, ensure_ascii=True, sort_keys=True)
+
+
+def _plain_metadata_value(value):
+    """Convierte metadata congelada en estructuras JSON deterministas."""
+    if isinstance(value, Mapping):
+        return {
+            str(key): _plain_metadata_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_plain_metadata_value(item) for item in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _structured_relation_roots(
+    seed: TechnicalSymbol,
+    active_symbols: dict[str, TechnicalSymbol],
+) -> tuple[TechnicalSymbol, ...]:
+    """Incluye la semilla y sus padres activos para encontrar relaciones."""
+    roots: list[TechnicalSymbol] = [seed]
+    current = seed
+    while current.parent_symbol_id is not None:
+        parent = active_symbols.get(current.parent_symbol_id)
+        if parent is None or parent in roots:
+            break
+        roots.append(parent)
+        current = parent
+    return tuple(roots)
+
+
+def _active_relations_for_roots(
+    repository: SQLiteReverseEngineeringRepository,
+    roots: tuple[TechnicalSymbol, ...],
+) -> tuple[TechnicalRelation, ...]:
+    """Carga y deduplica relaciones activas adyacentes a las raices."""
+    relations: dict[str, TechnicalRelation] = {}
+    for root in roots:
+        for relation in repository.active_relations_for_symbol(
+            root.symbol_id,
+            direction=DependencyDirection.BOTH,
+        ):
+            relations.setdefault(relation.relation_id, relation)
+    return tuple(
+        sorted(
+            relations.values(),
+            key=lambda relation: (
+                relation.relation_type,
+                relation.resolution_status.value,
+                relation.target_key or "",
+                relation.relation_id,
+            ),
+        )
+    )
+
+
+def _active_related_symbols(
+    relations: tuple[TechnicalRelation, ...],
+    active_symbols: dict[str, TechnicalSymbol],
+) -> tuple[tuple[TechnicalSymbol, tuple[str, ...]], ...]:
+    """Agrupa simbolos activos alcanzados por las relaciones recuperadas."""
+    relation_ids: dict[str, list[str]] = {}
+    for relation in relations:
+        for symbol_id in (relation.source_symbol_id, relation.target_symbol_id):
+            if symbol_id is not None and symbol_id in active_symbols:
+                relation_ids.setdefault(symbol_id, []).append(relation.relation_id)
+    return tuple(
+        (
+            active_symbols[symbol_id],
+            tuple(sorted(set(ids))),
+        )
+        for symbol_id, ids in sorted(
+            relation_ids.items(),
+            key=lambda item: _structured_symbol_sort_key(active_symbols[item[0]]),
+        )
+    )
+
+
+def _render_structured_evidence(
+    seed: TechnicalSymbol,
+    roots: tuple[TechnicalSymbol, ...],
+    relations: tuple[TechnicalRelation, ...],
+    active_symbols: dict[str, TechnicalSymbol],
+) -> str:
+    """Genera un bloque legible y citable desde simbolos y relaciones."""
+    metadata = _structured_metadata_text(seed)
+    lines = [
+        "Evidencia estructurada del catalogo tecnico",
+        f"simbolo_id={seed.symbol_id}",
+        f"nombre_original={seed.original_name}",
+        f"nombre_normalizado={seed.normalized_name}",
+        f"tipo={seed.symbol_type}",
+        f"tecnologia={seed.technology}",
+        f"estado={seed.status.value}",
+        f"archivo={seed.metadata.get('relative_path') or 'desconocido'}",
+        f"lineas={seed.start_line or 'n/a'}-{seed.end_line or 'n/a'}",
+        f"chunk={seed.chunk_id or 'n/a'}",
+        f"metadata_declarada={metadata}",
+    ]
+    hierarchy = [
+        f"{symbol.symbol_type}:{symbol.normalized_name}:{symbol.symbol_id}"
+        for symbol in roots
+    ]
+    lines.append("jerarquia=" + " -> ".join(hierarchy))
+    lines.append("relaciones:")
+    if not relations:
+        lines.append("- ninguna relacion activa adyacente")
+    for relation in relations:
+        source = active_symbols.get(relation.source_symbol_id or "")
+        target = active_symbols.get(relation.target_symbol_id or "")
+        source_label = source.normalized_name if source is not None else "desconocido"
+        target_label = (
+            target.normalized_name
+            if target is not None
+            else relation.target_key or "sin_destino"
+        )
+        target_detail = (
+            f"{target.technology}/{target.symbol_type}"
+            if target is not None
+            else "sin_simbolo_activo"
+        )
+        lines.append(
+            "- "
+            f"relacion_id={relation.relation_id}; "
+            f"tipo={relation.relation_type}; "
+            f"estado={relation.resolution_status.value}; "
+            f"origen={source_label}; destino={target_label}; "
+            f"destino_tecnico={target_detail}; "
+            f"archivo_id={relation.evidence_file_id}; "
+            f"chunk={relation.evidence_chunk_id or 'n/a'}; "
+            f"lineas={relation.start_line or 'n/a'}-{relation.end_line or 'n/a'}"
+        )
+    related_ids = {
+        symbol_id
+        for relation in relations
+        for symbol_id in (relation.source_symbol_id, relation.target_symbol_id)
+        if symbol_id is not None
+        and symbol_id in active_symbols
+        and symbol_id not in {root.symbol_id for root in roots}
+    }
+    lines.append("simbolos_relacionados:")
+    if not related_ids:
+        lines.append("- ninguno")
+    for symbol_id in sorted(
+        related_ids,
+        key=lambda item: _structured_symbol_sort_key(active_symbols[item]),
+    ):
+        related = active_symbols[symbol_id]
+        lines.append(
+            "- "
+            f"simbolo_id={related.symbol_id}; "
+            f"nombre={related.normalized_name}; "
+            f"tecnologia={related.technology}; tipo={related.symbol_type}; "
+            f"metadata_declarada={_structured_metadata_text(related)}"
+        )
+    return "\n".join(lines)
+
+
+def _structured_candidate(
+    symbol: TechnicalSymbol,
+    relations: tuple[TechnicalRelation, ...],
+    content: str,
+    score: float,
+    *,
+    domain: str,
+) -> RetrievalCandidate:
+    """Convierte un bloque estructurado en candidato RAG trazable."""
+    return RetrievalCandidate(
+        chunk_id=f"symbol:{symbol.symbol_id}",
+        content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        combined_score=score,
+        keyword_score=score,
+        metadata=SymbolMetadata(
+            symbol_name=symbol.normalized_name,
+            symbol_kind=symbol.symbol_type,
+            parent_symbol=symbol.container_name,
+        ),
+        source={
+            "evidence_kind": "structured_symbol",
+            "retrieval_mode": "structured",
+            "symbol_id": symbol.symbol_id,
+            "relation_ids": tuple(
+                relation.relation_id for relation in relations
+            ),
+            "domain": domain,
+            "artifact_kind": "configuration",
+            "language": "sql",
+            "document_id": symbol.document_id,
+            "file_id": symbol.file_id,
+            "relative_path": symbol.metadata.get("relative_path")
+            or "catalogo-tecnico",
+            "folder": str(
+                PurePosixPath(
+                    str(symbol.metadata.get("relative_path") or "")
+                ).parent
+            ),
+            "extension": ".sql",
+            "ordinal": -1,
+            "start_line": symbol.start_line,
+            "end_line": symbol.end_line,
+            "content": content,
+        },
+    )
+
+
+def _related_code_candidate(
+    symbol: TechnicalSymbol,
+    *,
+    relation_ids: tuple[str, ...],
+    score: float,
+) -> RetrievalCandidate | None:
+    """Prepara un chunk de codigo relacionado para enriquecimiento RAG."""
+    if symbol.chunk_id is None:
+        return None
+    return RetrievalCandidate(
+        chunk_id=symbol.chunk_id,
+        content_sha256=symbol.symbol_id,
+        combined_score=score,
+        keyword_score=score,
+        metadata=SymbolMetadata(
+            symbol_name=symbol.normalized_name,
+            symbol_kind=symbol.symbol_type,
+            parent_symbol=symbol.container_name,
+        ),
+        source={
+            "evidence_kind": "related_code",
+            "retrieval_mode": "structured_expansion",
+            "symbol_id": symbol.symbol_id,
+            "relation_ids": relation_ids,
+        },
+    )
+
+
+def _structured_symbol_sort_key(symbol: TechnicalSymbol) -> tuple[str, ...]:
+    """Ordena simbolos estructurados de forma estable."""
+    return (
+        symbol.technology,
+        symbol.container_name or "",
+        symbol.normalized_name,
+        symbol.symbol_type,
+        symbol.symbol_id,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ContextBuilder:
     """Construye el contexto final que recibira el LLM.
 
@@ -761,11 +1216,15 @@ class ContextBuilder:
         ordered = self._stable_document_order(deduped)
         sources: list[ContextSource] = []
         budget_omitted: list[dict[str, object]] = []
+        content_omitted: list[dict[str, object]] = []
         used_tokens = 0
         for candidate in ordered:
             content = str(candidate.source.get("content") or candidate.source.get("snippet") or "")
             if not content:
-                content = str(candidate.source.get("relative_path") or candidate.chunk_id)
+                content_omitted.append(
+                    {"chunk_id": candidate.chunk_id, "reason": "missing_content"}
+                )
+                continue
             original_token_estimate = _estimate_tokens(content)
             source_id = f"F{len(sources) + 1}"
             content = _truncate_to_tokens(content, self.max_chunk_tokens)
@@ -787,7 +1246,14 @@ class ContextBuilder:
             token_estimate = _estimate_tokens(_render_source_context(source))
             sources.append(source)
             used_tokens += token_estimate
-        omitted = tuple((*score_omitted, *duplicate_omitted, *budget_omitted))
+        omitted = tuple(
+            (
+                *score_omitted,
+                *duplicate_omitted,
+                *content_omitted,
+                *budget_omitted,
+            )
+        )
         duplicate_ratio = (
             len(duplicate_omitted) / len(candidates) if candidates else 0.0
         )
@@ -859,6 +1325,9 @@ class ContextBuilder:
             sorted(
                 candidates,
                 key=lambda candidate: (
+                    0
+                    if candidate.source.get("evidence_kind") == "structured_symbol"
+                    else 1,
                     int(candidate.source.get("document_id") or 0),
                     int(candidate.source.get("ordinal") or 0),
                     -candidate.combined_score,
@@ -1022,6 +1491,7 @@ class AskService:
         citation_validator: Validador de citas y soporte.
         llm_provider: Proveedor local de generacion.
         settings: Configuracion efectiva de Barbarion.
+        structured_retriever: Recuperador opcional de conocimiento Data-Driven.
     """
 
     search_service: SearchService
@@ -1030,6 +1500,7 @@ class AskService:
     citation_validator: CitationValidator
     llm_provider: LlmProviderPort
     settings: Settings
+    structured_retriever: DataDrivenEvidenceRetriever | None = None
 
     def ask(
         self,
@@ -1059,11 +1530,12 @@ class AskService:
             Resultado con respuesta, fuentes, estado y debug opcional.
         """
         started = time.monotonic()
+        effective_filters = filters or RetrievalFilter()
         search = self.search_service.search(
             SearchRequest(
                 query=question,
                 mode=mode,
-                filters=filters or RetrievalFilter(),
+                filters=effective_filters,
                 top_k=top_k,
                 candidate_k=candidate_k,
                 similarity_threshold=threshold,
@@ -1072,8 +1544,26 @@ class AskService:
                 debug=debug,
             )
         )
+        structured_candidates = (
+            self.structured_retriever.retrieve(
+                question,
+                filters=effective_filters,
+                limit=candidate_k,
+            )
+            if self.structured_retriever is not None
+            else ()
+        )
+        chunk_candidates = self.search_service.repository.enrich_candidates(
+            search.candidates,
+            include_snippets=True,
+        )
+        candidates = _merge_ask_candidates(
+            structured_candidates,
+            chunk_candidates,
+            limit=top_k,
+        )
         context_started = time.monotonic()
-        context = self.context_builder.build(search.candidates, debug=debug)
+        context = self.context_builder.build(candidates, debug=debug)
         context_ms = _duration_ms(context_started)
         base_debug_payload = (
             _ask_debug_payload(
@@ -1086,6 +1576,11 @@ class AskService:
             if debug
             else {}
         )
+        if debug:
+            base_debug_payload["structured_candidates"] = len(
+                structured_candidates
+            )
+            base_debug_payload["combined_candidates"] = len(candidates)
         if not context.sources:
             answer = _insufficient_evidence_answer()
             self.search_service.repository.update_rag_query_metrics(
@@ -1208,6 +1703,35 @@ class AskService:
         )
 
 
+def _merge_ask_candidates(
+    structured: tuple[RetrievalCandidate, ...],
+    chunks: tuple[RetrievalCandidate, ...],
+    *,
+    limit: int,
+) -> tuple[RetrievalCandidate, ...]:
+    """Combina evidencia estructurada y chunks sin duplicar ni exceder top-k."""
+    merged: list[RetrievalCandidate] = []
+    seen_chunks: set[str] = set()
+    has_structured_configuration = any(
+        candidate.source.get("evidence_kind") == "structured_symbol"
+        for candidate in structured
+    )
+    for candidate in (*structured, *chunks):
+        if (
+            has_structured_configuration
+            and candidate.source.get("artifact_kind") == "configuration"
+            and candidate.source.get("evidence_kind") is None
+        ):
+            continue
+        if candidate.chunk_id in seen_chunks:
+            continue
+        merged.append(candidate)
+        seen_chunks.add(candidate.chunk_id)
+        if len(merged) >= limit:
+            break
+    return tuple(merged)
+
+
 def _estimate_tokens(text: str) -> int:
     return max(1, (len(text) + 3) // 4)
 
@@ -1262,11 +1786,21 @@ def _render_source_context(source: ContextSource) -> str:
     pages = ""
     if page_start is not None and page_end is not None:
         pages = f"\npaginas={page_start}-{page_end}"
+    symbol_id = candidate.source.get("symbol_id")
+    symbol_trace = f"\nsimbolo={symbol_id}" if symbol_id else ""
+    relation_ids = candidate.source.get("relation_ids")
+    relation_trace = (
+        "\nrelaciones=" + ",".join(str(item) for item in relation_ids)
+        if isinstance(relation_ids, (list, tuple)) and relation_ids
+        else ""
+    )
+    evidence_kind = candidate.source.get("evidence_kind")
+    evidence_trace = f"\nevidencia={evidence_kind}" if evidence_kind else ""
     return (
         f"[{source.source_id}] {path}\n"
         f"chunk={candidate.chunk_id}\n"
         f"score={candidate.combined_score:.3f}"
-        f"{lines}{pages}\n"
+        f"{lines}{pages}{symbol_trace}{relation_trace}{evidence_trace}\n"
         f"contenido_truncado={str(source.content_truncated).lower()}\n"
         f"{source.content}"
     )
@@ -1541,13 +2075,40 @@ def _important_tokens(text: str) -> set[str]:
     Returns:
         Conjunto de tokens relevantes sin stopwords operativas.
     """
-    return {
-        token
-        for token in re.findall(r"[a-z0-9_]+", _normalize_text(text))
-        if (len(token) >= 4 or "_" in token)
-        and token not in _STOPWORDS
-        and not re.fullmatch(r"f\d+", token)
-    }
+    tokens: set[str] = set()
+    for token in re.findall(r"[a-z0-9_]+", _normalize_text(text)):
+        if (
+            (len(token) < 4 and "_" not in token)
+            or token in _STOPWORDS
+            or re.fullmatch(r"f\d+", token)
+        ):
+            continue
+        tokens.update(_concept_token_variants(token))
+    return tokens
+
+
+def _concept_token_variants(token: str) -> set[str]:
+    """Conserva un token y agrega su variante singular espanola predecible.
+
+    La normalizacion es morfologica y agnostica al dominio. No intenta inferir
+    sinonimos ni traducir identificadores tecnicos.
+
+    Args:
+        token: Token ya normalizado, sin espacios ni tildes.
+
+    Returns:
+        Token original y, cuando aplica, una variante singular conservadora.
+    """
+    variants = {token}
+    if "_" in token or len(token) < 5:
+        return variants
+    if token.endswith("iones") and len(token) > 6:
+        variants.add(token[:-2])
+    elif token.endswith("ces") and len(token) > 5:
+        variants.add(token[:-3] + "z")
+    elif token.endswith("s") and not token.endswith("sis"):
+        variants.add(token[:-1])
+    return variants
 
 
 def _normalize_text(text: str) -> str:
@@ -1617,8 +2178,12 @@ def _no_llm_answer(context: ContextBuildResult) -> str:
         "Modo sin LLM: se muestra el contexto recuperado para inspeccion.\n\n"
         "## Evidencia\n"
         + "\n".join(
-            f"- [{source.source_id}] {source.candidate.source.get('relative_path')} "
-            f"chunk {source.candidate.chunk_id}, score {source.candidate.combined_score:.3f}"
+            f"### [{source.source_id}] "
+            f"{source.candidate.source.get('relative_path')}\n"
+            f"chunk={source.candidate.chunk_id}; "
+            f"lineas={_line_range(source)}; "
+            f"score={source.candidate.combined_score:.3f}\n"
+            f"{source.content}"
             for source in context.sources
         )
         + "\n\n## Supuestos y limites\n- No se genero respuesta natural."

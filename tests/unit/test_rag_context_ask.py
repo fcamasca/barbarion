@@ -96,6 +96,29 @@ def test_context_builder_respects_max_chunk_tokens() -> None:
     assert "x" * 80 not in result.rendered_context
 
 
+def test_context_builder_omits_candidate_without_evidence_content() -> None:
+    """Una ruta nunca debe convertirse en contenido aparente de evidencia."""
+    builder = ContextBuilder(
+        token_budget=200,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    )
+    missing_content = RetrievalCandidate(
+        chunk_id="missing-content",
+        content_sha256=SHA_A,
+        combined_score=0.9,
+        source={"relative_path": "oracle/only-a-path.fnc"},
+    )
+
+    result = builder.build((missing_content,), debug=True)
+
+    assert result.sources == ()
+    assert result.rendered_context == ""
+    assert result.omitted == (
+        {"chunk_id": "missing-content", "reason": "missing_content"},
+    )
+
+
 def test_context_builder_respects_global_context_budget() -> None:
     builder = ContextBuilder(
         token_budget=20,

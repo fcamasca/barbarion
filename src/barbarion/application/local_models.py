@@ -13,6 +13,11 @@ from barbarion.domain.local_models import (
     PullProgress,
     ModelGenerationRequest,
 )
+from barbarion.config import Settings, load_settings
+from barbarion.infrastructure.model_config import (
+    LlmModelConfigChange,
+    TomlLlmModelEditor,
+)
 
 
 _MAX_METADATA_CHARS = 128
@@ -79,6 +84,18 @@ class ModelValidationResult:
     duration_ms: int
     diagnostic_code: str | None = None
     diagnostic: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SelectModelResult:
+    """Resumen de una seleccion previsualizada o aplicada."""
+
+    config_path: str
+    previous_model: str
+    new_model: str
+    changed: bool
+    dry_run: bool
+    generation_validated: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,6 +323,71 @@ class ValidateModelService:
             diagnostic_code=diagnostic_code,
             diagnostic=diagnostic,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class SelectModelService:
+    """Selecciona el modelo activo solo despues de una sonda satisfactoria."""
+
+    validator: ValidateModelService
+    editor: TomlLlmModelEditor
+
+    def run(
+        self,
+        settings: Settings,
+        name: str,
+        *,
+        timeout_seconds: float,
+        dry_run: bool = False,
+    ) -> SelectModelResult:
+        model = _validated_model_name(name)
+        preview = self.editor.edit(settings, model, dry_run=True)
+        if dry_run:
+            return _select_result(preview, generation_validated=False)
+
+        validation = self.validator.run(model, timeout_seconds=timeout_seconds)
+        if not validation.generation_ready:
+            code = validation.diagnostic_code or (
+                LocalModelErrorCode.NOT_GENERATION_READY.value
+            )
+            detail = validation.diagnostic or (
+                "El modelo no supero la validacion minima de generacion."
+            )
+            raise LocalModelProviderError(_error_code(code), detail)
+
+        change = self.editor.edit(settings, model)
+        reloaded = load_settings(
+            change.config_path,
+            environ={},
+            cwd=change.config_path.parent,
+        )
+        if reloaded.llm.model != model:
+            raise RuntimeError(
+                "La configuracion recargada no conserva el modelo seleccionado."
+            )
+        return _select_result(change, generation_validated=True)
+
+
+def _select_result(
+    change: LlmModelConfigChange,
+    *,
+    generation_validated: bool,
+) -> SelectModelResult:
+    return SelectModelResult(
+        config_path=str(change.config_path),
+        previous_model=change.previous_model,
+        new_model=change.new_model,
+        changed=change.changed,
+        dry_run=change.dry_run,
+        generation_validated=generation_validated,
+    )
+
+
+def _error_code(value: str) -> LocalModelErrorCode:
+    try:
+        return LocalModelErrorCode(value)
+    except ValueError:
+        return LocalModelErrorCode.OPERATION_FAILED
 
 
 def _model_view(model, active_model: str) -> LocalModelView:  # noqa: ANN001

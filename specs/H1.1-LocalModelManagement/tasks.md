@@ -19,8 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T05 completadas;
-H1.1-T06 a H1.1-T12 pendientes.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T06 completadas;
+H1.1-T07 a H1.1-T12 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -104,7 +104,8 @@ generacion sin exponer respuesta completa.
 
 ### H1.1-T06 - Agregar `models select`
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** seleccionar el LLM generativo activo con validacion previa.  
 **Descripcion:** Orquestar presencia, sonda de H1.1-T05 y editor TOML; implementar
 `--dry-run`, mensajes de anterior/nuevo, codigos de salida y verificacion final

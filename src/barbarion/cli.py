@@ -23,6 +23,8 @@ from barbarion.application.local_models import (
     ModelDetailsView,
     ModelListResult,
     ModelValidationResult,
+    SelectModelResult,
+    SelectModelService,
     ShowModelService,
     ValidateModelService,
 )
@@ -116,6 +118,10 @@ from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.infrastructure.ollama_models import OllamaModelClient
+from barbarion.infrastructure.model_config import (
+    ModelConfigEditError,
+    TomlLlmModelEditor,
+)
 from barbarion.infrastructure.markdown import (
     SafeSpecWriter,
     SpecDocumentReader,
@@ -286,6 +292,50 @@ def _run_models_validate(args: argparse.Namespace) -> int:
         return 2
     _render_model_validation(result, args.format)
     return 0 if result.generation_ready else 1
+
+
+def _run_models_select(args: argparse.Namespace) -> int:
+    """Selecciona el modelo activo sin instalarlo ni alterar embeddings."""
+    settings = load_settings(args.config)
+    validator = ValidateModelService(
+        OllamaModelClient(settings.ollama_url),
+        settings.llm.model,
+    )
+    service = SelectModelService(validator, TomlLlmModelEditor())
+    try:
+        result = service.run(
+            settings,
+            args.model,
+            timeout_seconds=settings.llm.timeout_seconds,
+            dry_run=args.dry_run,
+        )
+    except ValueError as error:
+        print(f"Error de argumentos: {error}", file=sys.stderr)
+        return 2
+    except ModelConfigEditError as error:
+        print(f"{error.code}: {error.detail}", file=sys.stderr)
+        return 1
+    except LocalModelProviderError as error:
+        _print_local_model_error(error)
+        return 1
+    _render_model_selection(result)
+    return 0
+
+
+def _render_model_selection(result: SelectModelResult) -> None:
+    """Muestra solo ruta y resumen del cambio, nunca el TOML completo."""
+    print("Seleccion de modelo local")
+    print(f"configuracion = {result.config_path}")
+    print(f"modelo_anterior = {result.previous_model}")
+    print(f"modelo_nuevo = {result.new_model}")
+    print(f"cambio = {'si' if result.changed else 'no'}")
+    print(f"dry_run = {'si' if result.dry_run else 'no'}")
+    print(
+        "generation_ready_validado = "
+        f"{'si' if result.generation_validated else 'no'}"
+    )
+    if result.dry_run:
+        print("accion = no se escribio el archivo ni se ejecuto generacion")
 
 
 def _render_model_validation(
@@ -3339,6 +3389,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="timeout; por defecto usa llm.timeout_seconds",
     )
     models_validate_parser.set_defaults(handler=_run_models_validate)
+
+    models_select_parser = models_commands.add_parser(
+        "select",
+        help="selecciona el modelo generativo activo",
+        description="Valida y selecciona [llm].model de forma atomica.",
+        add_help=False,
+    )
+    _add_help_option(models_select_parser)
+    models_select_parser.add_argument(
+        "model",
+        metavar="MODELO",
+        help="nombre exacto de un modelo instalado",
+    )
+    models_select_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="muestra el cambio sin escribir ni ejecutar generacion",
+    )
+    models_select_parser.set_defaults(handler=_run_models_select)
 
     ingest_parser = commands.add_parser(
         "ingest",

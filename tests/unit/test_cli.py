@@ -115,6 +115,7 @@ def test_source_json_keeps_content_path_and_lines_as_separate_fields() -> None:
         (("models", "show", "--help"), "Muestra metadata segura"),
         (("models", "install", "--help"), "Solicita a Ollama"),
         (("models", "validate", "--help"), "Valida readiness"),
+        (("models", "select", "--help"), "Valida y selecciona"),
         (("doctor", "--help"), "Diagnostica el entorno local"),
         (("ingest", "--help"), "Ejecuta ingesta local"),
         (("index", "--help"), "Ejecuta indexacion RAG incremental"),

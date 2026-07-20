@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import re
 import time
@@ -34,6 +35,7 @@ from barbarion.domain.rag import (
     IndexRunSummary,
     IndexScope,
     IndexableChunk,
+    LlmProviderError,
     RagQueryStatus,
     RetrievalCandidate,
     RetrievalFilter,
@@ -54,6 +56,8 @@ from barbarion.infrastructure.sqlite import (
     SQLiteRagRepository,
     SQLiteReverseEngineeringRepository,
 )
+
+_LOGGER = logging.getLogger("barbarion")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1681,6 +1685,72 @@ class AskService:
     settings: Settings
     structured_retriever: DataDrivenEvidenceRetriever | None = None
 
+    def _generate_with_observability(self, prompt: str, *, stage: str) -> str:
+        """Genera una respuesta registrando métricas sin contenido sensible.
+
+        Args:
+            prompt: Prompt que se enviará al proveedor local.
+            stage: Etapa de generación, `generation` o `repair`.
+
+        Returns:
+            Respuesta completa entregada por el proveedor.
+
+        Raises:
+            Exception: Conserva sin cambios cualquier error del proveedor.
+        """
+        timeout_seconds = self.settings.llm.timeout_seconds
+        prompt_chars = len(prompt)
+        prompt_tokens_est = _estimate_tokens(prompt)
+        _LOGGER.info(
+            "ask_llm_started stage=%s model=%s timeout_seconds=%g "
+            "prompt_chars=%d prompt_tokens_est=%d",
+            stage,
+            self.settings.llm.model,
+            timeout_seconds,
+            prompt_chars,
+            prompt_tokens_est,
+        )
+        started = time.monotonic()
+        try:
+            response = self.llm_provider.generate(
+                prompt=prompt,
+                timeout_seconds=timeout_seconds,
+            )
+        except Exception as error:
+            duration_ms = _duration_ms(started)
+            result = (
+                "timeout"
+                if isinstance(error, LlmProviderError)
+                and "OLLAMA_LLM_TIMEOUT" in str(error)
+                else "error"
+            )
+            log = _LOGGER.warning if result == "timeout" else _LOGGER.error
+            log(
+                "ask_llm_finished stage=%s model=%s timeout_seconds=%g "
+                "prompt_chars=%d prompt_tokens_est=%d duration_ms=%d result=%s",
+                stage,
+                self.settings.llm.model,
+                timeout_seconds,
+                prompt_chars,
+                prompt_tokens_est,
+                duration_ms,
+                result,
+            )
+            raise
+        _LOGGER.info(
+            "ask_llm_finished stage=%s model=%s timeout_seconds=%g "
+            "prompt_chars=%d prompt_tokens_est=%d duration_ms=%d "
+            "result=completed response_chars=%d",
+            stage,
+            self.settings.llm.model,
+            timeout_seconds,
+            prompt_chars,
+            prompt_tokens_est,
+            _duration_ms(started),
+            len(response),
+        )
+        return response
+
     def ask(
         self,
         question: str,
@@ -1803,10 +1873,7 @@ class AskService:
             debug_payload["prompt_chars"] = len(prompt)
             debug_payload["prompt_tokens_est"] = _estimate_tokens(prompt)
         llm_started = time.monotonic()
-        answer = self.llm_provider.generate(
-            prompt=prompt,
-            timeout_seconds=self.settings.llm.timeout_seconds,
-        )
+        answer = self._generate_with_observability(prompt, stage="generation")
         validation = self.citation_validator.validate(
             answer,
             context,
@@ -1828,9 +1895,9 @@ class AskService:
                 context=context,
                 answer=answer,
             )
-            repaired_answer = self.llm_provider.generate(
-                prompt=repair_prompt,
-                timeout_seconds=self.settings.llm.timeout_seconds,
+            repaired_answer = self._generate_with_observability(
+                repair_prompt,
+                stage="repair",
             )
             validation = self.citation_validator.validate(
                 repaired_answer,

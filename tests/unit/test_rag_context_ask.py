@@ -1,6 +1,9 @@
 """Pruebas de contexto, prompts, citas y ask RAG."""
 
+import logging
 import sqlite3
+
+import pytest
 
 from barbarion.application.rag import (
     AskService,
@@ -8,7 +11,12 @@ from barbarion.application.rag import (
     ContextBuilder,
     PromptBuilder,
 )
-from barbarion.domain.rag import RagQueryStatus, RetrievalCandidate, RetrievalMode
+from barbarion.domain.rag import (
+    LlmProviderError,
+    RagQueryStatus,
+    RetrievalCandidate,
+    RetrievalMode,
+)
 from tests.unit.test_rag_search_service import service_for
 
 
@@ -20,15 +28,21 @@ class FakeLlm:
     provider = "fake"
     model = "responder"
 
-    def __init__(self, answer: str | tuple[str, ...]) -> None:
-        self.answers = [answer] if isinstance(answer, str) else list(answer)
+    def __init__(
+        self,
+        answer: str | Exception | tuple[str | Exception, ...],
+    ) -> None:
+        self.answers = list(answer) if isinstance(answer, tuple) else [answer]
         self.prompts: list[str] = []
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
         del timeout_seconds
         self.prompts.append(prompt)
         index = min(len(self.prompts) - 1, len(self.answers) - 1)
-        return self.answers[index]
+        answer = self.answers[index]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
 
 def candidate(
@@ -235,7 +249,10 @@ def test_prompt_builder_lists_allowed_sources_and_inline_citation_rule() -> None
     assert "## Conclusion\n... [F1]" in prompt
 
 
-def ask_service(tmp_path, answer: str | tuple[str, ...]) -> tuple[AskService, FakeLlm]:
+def ask_service(
+    tmp_path,
+    answer: str | Exception | tuple[str | Exception, ...],
+) -> tuple[AskService, FakeLlm]:
     search_service = service_for(tmp_path)
     fake_llm = FakeLlm(answer)
     service = AskService(
@@ -252,6 +269,100 @@ def ask_service(tmp_path, answer: str | tuple[str, ...]) -> tuple[AskService, Fa
         settings=search_service.settings,
     )
     return service, fake_llm
+
+
+def test_ask_logs_success_without_prompt_or_response_content(tmp_path, caplog) -> None:
+    prompt_secret = "order_total"
+    response_secret = "order_total se selecciona desde dual [F1]."
+    service, _fake_llm = ask_service(tmp_path, response_secret)
+
+    with caplog.at_level(logging.INFO, logger="barbarion"):
+        service.ask(
+            prompt_secret,
+            mode=RetrievalMode.KEYWORD,
+            top_k=3,
+            candidate_k=3,
+            threshold=0,
+        )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("ask_llm_started stage=generation" in item for item in messages)
+    assert any(
+        "ask_llm_finished stage=generation" in item
+        and "result=completed" in item
+        and "response_chars=" in item
+        and "duration_ms=" in item
+        for item in messages
+    )
+    log_text = "\n".join(messages)
+    assert "model=" in log_text
+    assert "timeout_seconds=" in log_text
+    assert "prompt_chars=" in log_text
+    assert "prompt_tokens_est=" in log_text
+    assert prompt_secret not in log_text
+    assert response_secret not in log_text
+
+
+def test_ask_logs_timeout_during_initial_generation(tmp_path, caplog) -> None:
+    service, _fake_llm = ask_service(
+        tmp_path,
+        LlmProviderError("OLLAMA_LLM_TIMEOUT: timeout inicial"),
+    )
+
+    with caplog.at_level(logging.INFO, logger="barbarion"):
+        with pytest.raises(LlmProviderError):
+            service.ask(
+                "order_total",
+                mode=RetrievalMode.KEYWORD,
+                top_k=3,
+                candidate_k=3,
+                threshold=0,
+            )
+
+    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    assert "stage=generation" in log_text
+    assert "result=timeout" in log_text
+    assert "model=" in log_text
+    assert "timeout_seconds=" in log_text
+    assert "duration_ms=" in log_text
+    assert "prompt_chars=" in log_text
+    assert "prompt_tokens_est=" in log_text
+    assert "stage=repair" not in log_text
+    assert "timeout inicial" not in log_text
+
+
+def test_ask_logs_timeout_during_repair(tmp_path, caplog) -> None:
+    service, _fake_llm = ask_service(
+        tmp_path,
+        (
+            "Respuesta original sin cita.",
+            LlmProviderError("OLLAMA_LLM_TIMEOUT: timeout reparacion"),
+        ),
+    )
+
+    with caplog.at_level(logging.INFO, logger="barbarion"):
+        with pytest.raises(LlmProviderError):
+            service.ask(
+                "order_total",
+                mode=RetrievalMode.KEYWORD,
+                top_k=3,
+                candidate_k=3,
+                threshold=0,
+            )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "stage=generation" in item and "result=completed" in item
+        for item in messages
+    )
+    assert any(
+        "stage=repair" in item
+        and "result=timeout" in item
+        and "duration_ms=" in item
+        and "prompt_tokens_est=" in item
+        for item in messages
+    )
+    assert "timeout reparacion" not in "\n".join(messages)
 
 
 def test_ask_no_llm_returns_context_and_updates_metrics(tmp_path) -> None:

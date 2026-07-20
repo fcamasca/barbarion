@@ -100,6 +100,19 @@ def test_list_models_tolerates_optional_and_unknown_fields() -> None:
     assert timeout == 2
 
 
+def test_server_version_keeps_only_bounded_version() -> None:
+    opener = FakeOpener(
+        [FakeResponse(json.dumps({"version": "1.2.3", "extra": "ignored"}).encode())]
+    )
+    client = OllamaModelClient("http://127.0.0.1:11434", _opener=opener)
+
+    assert client.server_version(timeout_seconds=2) == "1.2.3"
+    request, timeout = opener.requests[0]
+    assert request.full_url.endswith("/api/version")
+    assert request.method == "GET"
+    assert timeout == 2
+
+
 def test_show_model_normalizes_safe_details() -> None:
     opener = FakeOpener(
         [

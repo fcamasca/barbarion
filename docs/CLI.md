@@ -198,6 +198,51 @@ barbarion config show
 
 Usalo para verificar rutas, modelos y parametros antes de ejecutar ingesta o RAG. No modifica SQLite, no requiere embeddings y no requiere LLM. Codigos de salida: `0` si la configuracion es valida, `2` si hay error de configuracion.
 
+### models
+
+Proposito: descubrir, instalar, validar, seleccionar y comparar modelos
+generativos administrados por la instancia Ollama local.
+
+Sintaxis principal:
+
+```bash
+barbarion models list [--format text|json]
+barbarion models show MODELO [--format text|json]
+barbarion models install MODELO [--dry-run] [--timeout SEGUNDOS]
+barbarion models validate [MODELO] [--format text|json] [--timeout SEGUNDOS]
+barbarion models select MODELO [--dry-run]
+barbarion models benchmark --models M1 M2 [M3 ...] [--dataset RUTA] [--timeout SEGUNDOS] [--output DIRECTORIO_PADRE]
+```
+
+`list` y `show` no modifican estado. `install` solicita un pull mediante la API
+local de Ollama y no cambia `[llm].model`. Si se interrumpe un pull, Barbarion
+deja de esperar, pero Ollama podria continuar la descarga localmente.
+
+`validate` distingue `available`, `installed`, `generation_ready` y
+`benchmark_eligible`. La sonda solo demuestra generacion minima; no acredita
+calidad RAG. `select` exige validacion satisfactoria antes de editar atomicamente
+el TOML. Su `--dry-run` no genera ni escribe.
+
+El benchmark requiere al menos dos modelos distintos; el limite operativo actual
+es 10. Ejecuta una vez cada caso/modelo, con temperatura cero, contexto congelado
+y orden rotado. `--dataset` acepta el esquema sintetico cerrado v1. `--output`
+cambia el directorio padre; cada corrida crea un `run-id` nuevo y nunca
+sobrescribe otra corrida.
+
+Artefactos:
+
+```text
+<output>/model-benchmarks/<run-id>/model-benchmark.json
+<output>/model-benchmarks/<run-id>/model-benchmark.md
+```
+
+El Markdown documenta condiciones, fallas, cobertura, formulas y limitaciones.
+El candidato recomendado solo se calcula para una corrida completa con todos los
+casos terminados y aceptacion `>= 0.90`. No selecciona automaticamente el modelo;
+la adopcion requiere revision humana y un `models select` posterior. Una
+interrupcion devuelve `130` y escribe un parcial con `resumable: false`. Una
+corrida con fallas devuelve `1`; argumentos o dataset invalidos devuelven `2`.
+
 ### doctor
 
 Proposito: inicializar recursos locales minimos y diagnosticar el entorno.

@@ -59,6 +59,14 @@ class OllamaModelClient:
             )
         return tuple(parsed)
 
+    def server_version(self, *, timeout_seconds: float) -> str:
+        """Consulta `/api/version` sin conservar campos adicionales."""
+        payload = self._request_json("/api/version", timeout_seconds=timeout_seconds)
+        version = _optional_str(payload.get("version"))
+        if version is None:
+            raise _invalid_response("Ollama no devolvio una version valida.")
+        return version[:128]
+
     def show_model(
         self,
         name: str,

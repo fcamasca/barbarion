@@ -7,7 +7,11 @@ import pytest
 
 from barbarion import cli
 from barbarion.application.local_models import VALIDATION_MARKER, VALIDATION_PROMPT
-from barbarion.domain.local_models import LocalModel, ModelGenerationResult
+from barbarion.domain.local_models import (
+    LocalModel,
+    LocalModelDetails,
+    ModelGenerationResult,
+)
 
 
 class FakeBenchmarkClient:
@@ -19,6 +23,21 @@ class FakeBenchmarkClient:
     def list_models(self, *, timeout_seconds: float):  # noqa: ANN201
         del timeout_seconds
         return self.models
+
+    def server_version(self, *, timeout_seconds: float) -> str:
+        del timeout_seconds
+        return "test-version"
+
+    def show_model(self, name: str, *, timeout_seconds: float) -> LocalModelDetails:
+        del timeout_seconds
+        return LocalModelDetails(
+            model=LocalModel(name),
+            format="gguf",
+            family="synthetic",
+            parameter_size="small",
+            quantization_level="Q4",
+            capabilities=("completion",),
+        )
 
     def generate_detailed(self, request):  # noqa: ANN001, ANN201
         if request.prompt == VALIDATION_PROMPT:
@@ -72,15 +91,20 @@ def test_models_benchmark_writes_safe_json_and_stdout_summary(
     ) == 0
     captured = capsys.readouterr()
     artifact = output / "model-benchmarks" / "fixed-complete" / "model-benchmark.json"
+    markdown = output / "model-benchmarks" / "fixed-complete" / "model-benchmark.md"
     payload = json.loads(artifact.read_text(encoding="utf-8"))
 
     assert "estado = completed" in captured.out
     assert str(artifact.resolve()) in captured.out
+    assert str(markdown.resolve()) in captured.out
+    assert markdown.exists()
     assert payload["status"] == "completed"
     assert payload["resumable"] is False
     assert payload["planned_units"] == 16
     assert payload["confirmed_units"] == 16
     assert payload["scoring_version"] == 1
+    assert payload["environment"]["ollama_version"] == "test-version"
+    assert payload["recommendation"]["automatic_selection"] is False
     assert all(unit["score"] is not None for unit in payload["units"])
     assert all(
         aggregate["prompt_tokens_total"] is None
@@ -125,12 +149,14 @@ def test_models_benchmark_interrupt_writes_non_resumable_partial_and_returns_130
     ) == 130
     captured = capsys.readouterr()
     artifact = output / "model-benchmarks" / "fixed-interrupted" / "model-benchmark.json"
+    markdown = output / "model-benchmarks" / "fixed-interrupted" / "model-benchmark.md"
     payload = json.loads(artifact.read_text(encoding="utf-8"))
 
     assert payload["status"] == "interrupted"
     assert payload["resumable"] is False
     assert payload["planned_units"] == 16
     assert payload["confirmed_units"] == 2
+    assert markdown.exists()
     assert "parcial no reanudable" in captured.err
 
 

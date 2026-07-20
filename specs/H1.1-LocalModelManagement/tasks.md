@@ -19,8 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T10 completadas;
-H1.1-T11 a H1.1-T12 pendientes.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T11 completadas;
+H1.1-T12 pendiente.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -177,7 +177,8 @@ ningun dato ausente se convierte en cero.
 
 ### H1.1-T11 - Generar reporte comparativo y documentacion operativa
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** entregar JSON/Markdown seguro que facilite la decision humana.  
 **Descripcion:** Implementar renderers, regla de elegibilidad/recomendacion,
 directorio unico por `run-id`, resumen stdout, escritura segura y golden files.

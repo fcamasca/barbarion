@@ -4,6 +4,7 @@ import argparse
 import ctypes
 import json
 import logging
+import platform
 import re
 import signal
 import shutil
@@ -39,10 +40,13 @@ from barbarion.application.model_benchmark_dataset import (
     ModelBenchmarkDatasetError,
     load_model_benchmark_dataset,
 )
-from barbarion.application.model_benchmark_scoring import (
-    SCORING_VERSION,
-    aggregate_model_benchmark,
+from barbarion.application.model_benchmark_reporting import (
+    BenchmarkModelMetadata,
+    BenchmarkReportConditions,
+    recommend_model,
+    write_model_benchmark_report,
 )
+from barbarion.application.model_benchmark_scoring import aggregate_model_benchmark
 from barbarion.application.rag import (
     AskService,
     CitationValidator,
@@ -373,8 +377,9 @@ def _run_models_benchmark(args: argparse.Namespace) -> int:
             prompt_builder=PromptBuilder(),
             citation_validator=CitationValidator(),
         )
+        client = OllamaModelClient(settings.ollama_url)
         result = ModelBenchmarkService(
-            OllamaModelClient(settings.ollama_url),
+            client,
             adapter,
         ).run(
             run_id=_benchmark_run_id(),
@@ -382,8 +387,15 @@ def _run_models_benchmark(args: argparse.Namespace) -> int:
             model_names=args.models,
             timeout_seconds=timeout,
         )
-        artifact = _write_benchmark_result(
+        conditions = _benchmark_report_conditions(
+            client,
             result,
+            timeout_seconds=timeout,
+            metadata_timeout=settings.ollama_timeout_seconds,
+        )
+        artifacts = write_model_benchmark_report(
+            result,
+            conditions,
             Path(args.output) if args.output else settings.output_dir,
         )
     except ModelBenchmarkDatasetError as error:
@@ -399,7 +411,7 @@ def _run_models_benchmark(args: argparse.Namespace) -> int:
     except OSError as error:
         print(f"MODEL_BENCHMARK_INCOMPLETE: no se pudo escribir el resultado: {error}", file=sys.stderr)
         return 1
-    _render_benchmark_summary(result, artifact)
+    _render_benchmark_summary(result, artifacts)
     if result.status is BenchmarkRunStatus.INTERRUPTED:
         print(
             "Benchmark interrumpido; se guardo un resultado parcial no reanudable.",
@@ -414,158 +426,104 @@ def _benchmark_run_id() -> str:
     return f"{timestamp}-{uuid.uuid4().hex[:8]}"
 
 
-def _write_benchmark_result(
+def _benchmark_report_conditions(
+    client: OllamaModelClient,
     result: ModelBenchmarkRunResult,
-    output_parent: Path,
-) -> Path:
-    """Escribe JSON v1 sin prompts, contexto ni respuestas completas."""
-    run_directory = (
-        output_parent.expanduser().resolve()
-        / "model-benchmarks"
-        / result.run_id
+    *,
+    timeout_seconds: float,
+    metadata_timeout: float,
+) -> BenchmarkReportConditions:
+    metadata: list[BenchmarkModelMetadata] = []
+    ollama_version: str | None = None
+    if result.status is BenchmarkRunStatus.INTERRUPTED:
+        metadata = [
+            BenchmarkModelMetadata(
+                model=model,
+                diagnostic_code="MODEL_BENCHMARK_INCOMPLETE",
+            )
+            for model in result.models
+        ]
+    else:
+        try:
+            ollama_version = client.server_version(timeout_seconds=metadata_timeout)
+        except LocalModelProviderError:
+            ollama_version = None
+        for model in result.models:
+            try:
+                details = client.show_model(model, timeout_seconds=metadata_timeout)
+            except LocalModelProviderError as error:
+                metadata.append(
+                    BenchmarkModelMetadata(
+                        model=model,
+                        diagnostic_code=error.code.value,
+                    )
+                )
+                continue
+            metadata.append(
+                BenchmarkModelMetadata(
+                    model=model,
+                    format=_bounded_report_text(details.format),
+                    family=_bounded_report_text(details.family),
+                    parameter_size=_bounded_report_text(details.parameter_size),
+                    quantization_level=_bounded_report_text(
+                        details.quantization_level
+                    ),
+                    capabilities=tuple(
+                        value
+                        for value in (
+                            _bounded_report_text(item)
+                            for item in details.capabilities[:20]
+                        )
+                        if value is not None
+                    ),
+                )
+            )
+    return BenchmarkReportConditions(
+        generated_at_utc=datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
+        barbarion_version=__version__,
+        python_version=platform.python_version(),
+        platform_system=platform.system() or "unknown",
+        platform_release=platform.release() or "unknown",
+        platform_machine=platform.machine() or "unknown",
+        ollama_version=ollama_version,
+        timeout_seconds=timeout_seconds,
+        model_metadata=tuple(metadata),
     )
-    run_directory.mkdir(parents=True, exist_ok=False)
-    artifact = run_directory / "model-benchmark.json"
-    payload = {
-        "schema_version": 1,
-        "run_id": result.run_id,
-        "status": result.status.value,
-        "resumable": False,
-        "dataset_id": result.dataset_id,
-        "dataset_hash": result.dataset_hash,
-        "models": list(result.models),
-        "planned_units": result.planned_units,
-        "confirmed_units": len(result.units),
-        "completed_units": result.completed_units,
-        "failed_units": result.failed_units,
-        "scoring_version": SCORING_VERSION,
-        "aggregates": [
-            _benchmark_aggregate_payload(item)
-            for item in aggregate_model_benchmark(result)
-        ],
-        "units": [_benchmark_unit_payload(unit) for unit in result.units],
-    }
-    artifact.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    return artifact.resolve()
 
 
-def _benchmark_unit_payload(unit) -> dict[str, object]:  # noqa: ANN001
-    validation = unit.validation
-    telemetry = unit.telemetry
-    return {
-        "case_id": unit.case_id,
-        "category": unit.category.value,
-        "model": unit.model,
-        "execution_order": unit.execution_order,
-        "status": unit.status.value,
-        "question_hash": unit.question_hash,
-        "context_hash": unit.context_hash,
-        "prompt_hash": unit.prompt_hash,
-        "duration_ms": unit.duration_ms,
-        "validator": (
-            None
-            if validation is None
-            else {
-                "accepted": validation.valid,
-                "missing_source_ids": list(validation.missing_source_ids),
-                "cited_source_ids": list(validation.cited_source_ids),
-                "unsupported_claims_count": len(validation.unsupported_claims),
-                "contradiction_claims_count": len(
-                    validation.contradiction_claims
-                ),
-                "reason": validation.reason,
-            }
-        ),
-        "telemetry": (
-            None
-            if telemetry is None
-            else {
-                "total_duration_ns": telemetry.total_duration_ns,
-                "load_duration_ns": telemetry.load_duration_ns,
-                "prompt_eval_duration_ns": telemetry.prompt_eval_duration_ns,
-                "eval_duration_ns": telemetry.eval_duration_ns,
-                "prompt_eval_count": telemetry.prompt_eval_count,
-                "eval_count": telemetry.eval_count,
-            }
-        ),
-        "score": _benchmark_score_payload(unit.score),
-        "error_code": unit.error_code,
-        "error_detail": unit.error_detail,
-    }
-
-
-def _benchmark_score_payload(score) -> dict[str, object] | None:  # noqa: ANN001
-    if score is None:
+def _bounded_report_text(value: str | None) -> str | None:
+    if value is None:
         return None
-    return {
-        "metrics": {
-            name: getattr(score.metrics, name)
-            for name in (
-                "answer_quality",
-                "instruction_following",
-                "groundedness",
-                "context_use",
-                "citation_score",
-                "validator_acceptance",
-            )
-        },
-        "quality_score": score.quality_score,
-        "recommendation_score": score.recommendation_score,
-        "applied_weight": score.applied_weight,
-        "satisfied_facts": list(score.satisfied_facts),
-        "missed_facts": list(score.missed_facts),
-        "detected_forbidden_claims": list(score.detected_forbidden_claims),
-        "satisfied_instructions": list(score.satisfied_instructions),
-        "failed_instructions": list(score.failed_instructions),
-    }
+    normalized = " ".join(value.split())
+    return normalized if len(normalized) <= 128 else normalized[:125] + "..."
 
 
-def _benchmark_aggregate_payload(item) -> dict[str, object]:  # noqa: ANN001
-    return {
-        "model": item.model,
-        "planned_units": item.planned_units,
-        "confirmed_units": item.confirmed_units,
-        "completed_units": item.completed_units,
-        "failed_units": item.failed_units,
-        "completion_rate": item.completion_rate,
-        "acceptance_rate": item.acceptance_rate,
-        "mean_metrics": {
-            name: getattr(item.mean_metrics, name)
-            for name in (
-                "answer_quality",
-                "instruction_following",
-                "groundedness",
-                "context_use",
-                "citation_score",
-                "validator_acceptance",
-            )
-        },
-        "mean_quality_score": item.mean_quality_score,
-        "recommendation_quality_score": item.recommendation_quality_score,
-        "recommendation_eligible": item.recommendation_eligible,
-        "average_duration_ms": item.average_duration_ms,
-        "median_duration_ms": item.median_duration_ms,
-        "prompt_tokens_total": item.prompt_tokens_total,
-        "prompt_tokens_median": item.prompt_tokens_median,
-        "prompt_tokens_coverage": item.prompt_tokens_coverage,
-        "output_tokens_total": item.output_tokens_total,
-        "output_tokens_median": item.output_tokens_median,
-        "output_tokens_coverage": item.output_tokens_coverage,
-        "failures_by_code": dict(item.failures_by_code),
-    }
-
-
-def _render_benchmark_summary(result: ModelBenchmarkRunResult, artifact: Path) -> None:
+def _render_benchmark_summary(
+    result: ModelBenchmarkRunResult,
+    artifacts: tuple[Path, Path],
+) -> None:
     print("Benchmark de modelos locales")
     print(f"run_id = {result.run_id}")
     print(f"estado = {result.status.value}")
     print(f"unidades_planificadas = {result.planned_units}")
     print(f"unidades_confirmadas = {len(result.units)}")
     print(f"unidades_fallidas = {result.failed_units}")
-    print(f"resultado_json = {artifact}")
+    aggregates = aggregate_model_benchmark(result)
+    for item in aggregates:
+        print(
+            f"modelo = {item.model}; aceptacion = "
+            f"{item.acceptance_rate if item.acceptance_rate is not None else 'null'}; "
+            f"quality = {item.mean_quality_score if item.mean_quality_score is not None else 'null'}; "
+            f"latencia_mediana_ms = {item.median_duration_ms if item.median_duration_ms is not None else 'null'}"
+        )
+    recommendation = recommend_model(result, aggregates)
+    print(f"candidato_informativo = {recommendation.candidate or 'ninguno'}")
+    print("seleccion_automatica = no")
+    print(f"resultado_json = {artifacts[0]}")
+    print(f"resultado_markdown = {artifacts[1]}")
 
 
 def _render_model_validation(

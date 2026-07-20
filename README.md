@@ -135,6 +135,10 @@ Las pruebas automatizadas no requieren un Ollama real ni acceso a servicios exte
 | `barbarion --version` | Muestra la versión instalada | Ninguno |
 | `barbarion config show` | Valida y muestra la configuración efectiva | Ninguno |
 | `barbarion doctor` | Inicializa recursos y diagnostica el entorno | Crea directorios, SQLite y log si faltan |
+| `barbarion models list/show/validate` | Consulta modelos Ollama locales y readiness de generacion | Ninguno |
+| `barbarion models install MODELO` | Solicita explicitamente un pull a Ollama | Descarga local; no cambia el modelo activo |
+| `barbarion models select MODELO` | Valida y cambia solamente `[llm].model` | Edita atomicamente el TOML efectivo |
+| `barbarion models benchmark --models M1 M2` | Compara modelos con un dataset sintetico | Escribe JSON y Markdown locales; no selecciona candidato |
 | `barbarion ingest` | Ejecuta ingesta incremental del corpus configurado | Lee corpus y escribe metadata/chunks en SQLite |
 | `barbarion index` | Indexa chunks vigentes para RAG | Escribe manifests, estados y vectores locales |
 | `barbarion search "consulta"` | Recupera evidencia RAG | Registra métricas de consulta |
@@ -169,6 +173,40 @@ Para inspeccionar los valores efectivos:
 barbarion config show
 barbarion --config ruta/al/archivo.toml config show
 ```
+
+## Modelos locales y benchmark
+
+La administracion de modelos usa exclusivamente la instancia Ollama configurada.
+No ejecuta comandos shell ni envia prompts, contexto o respuestas a servicios
+cloud.
+
+```bash
+barbarion models list
+barbarion models show modelo-local:tag
+barbarion models install modelo-local:tag --dry-run
+barbarion models validate modelo-local:tag
+barbarion models select modelo-local:tag --dry-run
+barbarion models benchmark --models modelo-a:tag modelo-b:tag
+```
+
+`models validate` solo acredita generacion minima. La adecuacion funcional se
+evalua con `models benchmark`, que usa ocho casos sinteticos, temperatura cero,
+una ejecucion por caso/modelo y rotacion secuencial determinista. Por defecto
+crea:
+
+```text
+output/model-benchmarks/<run-id>/model-benchmark.json
+output/model-benchmarks/<run-id>/model-benchmark.md
+```
+
+El reporte compara calidad lexical, instrucciones, groundedness, uso de contexto,
+citas, validador, latencia y tokens cuando Ollama los informa. Los datos ausentes
+permanecen `null`; no se calcula p95 en H1.1. Un candidato solo aparece si la
+corrida esta completa, todos sus casos terminaron y la aceptacion es al menos
+0.90. Es una recomendacion para revision humana: Barbarion nunca cambia el modelo
+activo desde el benchmark: el benchmark nunca cambia el modelo activo. Para
+adoptarlo, ejecuta despues `models select` de
+forma explicita.
 
 ## Configuraciones Data-Driven
 

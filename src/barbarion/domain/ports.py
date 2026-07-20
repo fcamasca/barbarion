@@ -234,6 +234,9 @@ class LocalModelProvider(Protocol):
     def list_models(self, *, timeout_seconds: float) -> tuple[LocalModel, ...]:
         """Lista modelos instalados reportados por la instancia local."""
 
+    def server_version(self, *, timeout_seconds: float) -> str:
+        """Obtiene la version declarada por la instancia Ollama local."""
+
     def show_model(
         self,
         name: str,

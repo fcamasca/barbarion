@@ -43,3 +43,15 @@ def test_readme_documents_data_driven_operation() -> None:
     assert "barbarion analyze --dry-run" in readme
     assert "barbarion inventory --technology configuration" in readme
     assert "barbarion stats --format json" in readme
+
+
+def test_readme_documents_local_model_benchmark_operation() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "## Modelos locales y benchmark" in readme
+    assert "barbarion models list" in readme
+    assert "barbarion models benchmark --models" in readme
+    assert "model-benchmark.json" in readme
+    assert "model-benchmark.md" in readme
+    assert "no se calcula p95" in readme
+    assert "nunca cambia el modelo activo" in readme

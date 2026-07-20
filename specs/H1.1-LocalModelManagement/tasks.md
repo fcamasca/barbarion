@@ -19,8 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T07 completadas;
-H1.1-T08 a H1.1-T12 pendientes.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T08 completadas;
+H1.1-T09 a H1.1-T12 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -132,7 +132,8 @@ sintetico.
 
 ### H1.1-T08 - Reutilizar constructor y validador RAG con contexto congelado
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** preparar la misma solicitud RAG para cada modelo sin tocar
 retrieval ni duplicar prompts.  
 **Descripcion:** Adaptar fragmentos sinteticos a contratos de contexto vigentes,

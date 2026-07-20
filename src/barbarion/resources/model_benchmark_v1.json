@@ -32,7 +32,7 @@
     {
       "id": "syn-003",
       "category": "instrucciones",
-      "question": "Resume las etiquetas del Elemento C respetando las instrucciones indicadas.",
+      "question": "En español, resume las etiquetas del Elemento C en un máximo de dos oraciones y conserva el formato requerido.",
       "context": [
         {"citation_id": "F1", "content": "El Elemento C tiene las etiquetas alfa y beta.", "source": "synthetic/element_c.txt"}
       ],
@@ -40,7 +40,7 @@
       "forbidden_claims": [{"id": "forbidden-label", "any_terms": ["gamma"]}],
       "instructions": [
         {"id": "ins-language", "kind": "language", "value": "es"},
-        {"id": "ins-section", "kind": "required_section", "value": "Resumen"},
+        {"id": "ins-section", "kind": "required_section", "value": "Conclusion"},
         {"id": "ins-length", "kind": "max_sentences", "value": "2"}
       ],
       "expected_validator": "accepted"

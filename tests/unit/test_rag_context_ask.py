@@ -418,6 +418,29 @@ def test_ask_accepts_llm_answer_with_valid_inline_citation(tmp_path) -> None:
     assert result.answer == "order_total se selecciona desde dual [F1]."
 
 
+def test_ask_sends_exact_prompt_produced_by_its_prompt_builder(tmp_path) -> None:
+    """Caracteriza el seam reutilizado por el benchmark sin cambiar `ask`."""
+    service, fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1].",
+    )
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+    )
+
+    assert fake_llm.prompts == [
+        service.prompt_builder.build(
+            question="order_total",
+            context=result.context,
+        )
+    ]
+
+
 def test_ask_debug_reports_size_metrics_without_context_dump(tmp_path) -> None:
     service, _fake_llm = ask_service(
         tmp_path,

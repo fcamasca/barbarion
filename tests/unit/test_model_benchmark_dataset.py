@@ -157,3 +157,12 @@ def test_rejects_duplicate_json_keys_before_schema_validation(tmp_path: Path) ->
 
     with pytest.raises(ModelBenchmarkDatasetError, match="duplicada"):
         load_model_benchmark_dataset(path)
+
+
+def test_rejects_non_consecutive_context_citations(tmp_path: Path) -> None:
+    payload = _payload()
+    payload["cases"][0]["context"][0]["citation_id"] = "F2"
+    payload["cases"][0]["expected_facts"][0]["citations"] = ["F2"]
+
+    with pytest.raises(ModelBenchmarkDatasetError, match="desde F1"):
+        load_model_benchmark_dataset(_write(tmp_path, payload))

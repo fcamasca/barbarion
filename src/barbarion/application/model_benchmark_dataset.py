@@ -137,6 +137,11 @@ def _case(value: Any, index: int) -> ModelBenchmarkCase:
         for position, entry in enumerate(_list(item["context"], f"{path}.context", maximum=20))
     )
     _unique((entry.citation_id for entry in context), f"{path}.context[].citation_id")
+    expected_citations = tuple(f"F{position}" for position in range(1, len(context) + 1))
+    if tuple(entry.citation_id for entry in context) != expected_citations:
+        raise ModelBenchmarkDatasetError(
+            f"{path}.context debe estar numerado consecutivamente desde F1."
+        )
     allowed = {entry.citation_id for entry in context}
     facts = tuple(
         _fact(entry, f"{path}.expected_facts[{position}]", allowed)

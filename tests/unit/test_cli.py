@@ -240,6 +240,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "llm.model",
         "llm.timeout_seconds",
         "llm.temperature",
+        "llm.think",
         "data_driven.enabled",
         "data_driven.file_patterns",
         "data_driven.max_statements_per_file",
@@ -888,6 +889,18 @@ class RaisingAskService:
         raise self.error
 
 
+class LoggingAskService(FakeAskService):
+    """Emite los eventos públicos de observabilidad durante una llamada CLI."""
+
+    def ask(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+        """Registra eventos INFO y devuelve una respuesta válida."""
+        logger = logging.getLogger(LOGGER_NAME)
+        logger.info("ask_llm_started stage=generation")
+        logger.info("ask_llm_finished stage=generation result=completed")
+        logger.info("ask_citation_validation stage=generation result=PASS")
+        return super().ask(*args, **kwargs)
+
+
 def test_ask_no_llm_markdown_invokes_service(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -917,6 +930,35 @@ def test_ask_no_llm_markdown_invokes_service(
     assert "## Conclusion" in captured.out
     assert "## Fuentes" in captured.out
     assert "lineas=10-12" in captured.out
+
+
+def test_ask_configures_info_events_for_console_and_file_without_duplicates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "logs").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    monkeypatch.setattr(
+        cli,
+        "_build_ask_service",
+        lambda settings: LoggingAskService(),
+    )
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?"])
+    captured = capsys.readouterr()
+    log_content = (tmp_path / "logs" / LOG_FILENAME).read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    for event in (
+        "ask_llm_started",
+        "ask_llm_finished",
+        "ask_citation_validation",
+    ):
+        assert captured.err.count(event) == 1
+        assert log_content.count(event) == 1
 
 
 def _ask_debug_payload(

@@ -67,12 +67,16 @@ def test_info_is_written_to_console_and_file(tmp_path: Path) -> None:
     logger = configure_logging(settings, stream=console)
 
     logger.info("inicio de prueba")
+    logger.warning("advertencia de prueba")
 
     log_path = settings.logs_dir / LOG_FILENAME
     assert "INFO barbarion inicio de prueba" in console.getvalue()
-    assert "INFO barbarion inicio de prueba" in log_path.read_text(
-        encoding="utf-8"
-    )
+    assert "WARNING barbarion advertencia de prueba" in console.getvalue()
+    content = log_path.read_text(encoding="utf-8")
+    assert "INFO barbarion inicio de prueba" in content
+    assert "WARNING barbarion advertencia de prueba" in content
+    assert console.getvalue().count("inicio de prueba") == 1
+    assert content.count("inicio de prueba") == 1
 
 
 def test_log_file_creation_is_delayed_until_first_record(tmp_path: Path) -> None:

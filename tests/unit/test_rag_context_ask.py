@@ -2,6 +2,8 @@
 
 import logging
 import sqlite3
+from collections.abc import Iterator
+from dataclasses import replace
 
 import pytest
 
@@ -12,6 +14,7 @@ from barbarion.application.rag import (
     PromptBuilder,
 )
 from barbarion.domain.rag import (
+    CitationValidation,
     LlmProviderError,
     RagQueryStatus,
     RetrievalCandidate,
@@ -22,6 +25,40 @@ from tests.unit.test_rag_search_service import service_for
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64
+
+
+class _ListHandler(logging.Handler):
+    """Captura registros sin depender del logger raíz de pytest."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Conserva un registro emitido para las aserciones."""
+        self.records.append(record)
+
+
+@pytest.fixture
+def ask_log_records() -> Iterator[list[logging.LogRecord]]:
+    """Aísla y captura directamente los eventos del logger de Barbarion."""
+    logger = logging.getLogger("barbarion")
+    original_handlers = list(logger.handlers)
+    original_level = logger.level
+    original_propagate = logger.propagate
+    original_disabled = logger.disabled
+    handler = _ListHandler()
+    logger.handlers[:] = [handler]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.disabled = False
+    try:
+        yield handler.records
+    finally:
+        logger.handlers[:] = original_handlers
+        logger.setLevel(original_level)
+        logger.propagate = original_propagate
+        logger.disabled = original_disabled
 
 
 class FakeLlm:
@@ -43,6 +80,18 @@ class FakeLlm:
         if isinstance(answer, Exception):
             raise answer
         return answer
+
+
+class FakeCitationValidator:
+    """Devuelve resultados controlados sin inspeccionar respuestas sensibles."""
+
+    def __init__(self, results: tuple[CitationValidation, ...]) -> None:
+        self.results = list(results)
+
+    def validate(self, answer, context, *, question=""):  # noqa: ANN001, ANN201
+        """Entrega el siguiente resultado configurado."""
+        del answer, context, question
+        return self.results.pop(0)
 
 
 def candidate(
@@ -271,21 +320,23 @@ def ask_service(
     return service, fake_llm
 
 
-def test_ask_logs_success_without_prompt_or_response_content(tmp_path, caplog) -> None:
+def test_ask_logs_success_without_prompt_or_response_content(
+    tmp_path,
+    ask_log_records,
+) -> None:
     prompt_secret = "order_total"
     response_secret = "order_total se selecciona desde dual [F1]."
     service, _fake_llm = ask_service(tmp_path, response_secret)
 
-    with caplog.at_level(logging.INFO, logger="barbarion"):
-        service.ask(
-            prompt_secret,
-            mode=RetrievalMode.KEYWORD,
-            top_k=3,
-            candidate_k=3,
-            threshold=0,
-        )
+    service.ask(
+        prompt_secret,
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+    )
 
-    messages = [record.getMessage() for record in caplog.records]
+    messages = [record.getMessage() for record in ask_log_records]
     assert any("ask_llm_started stage=generation" in item for item in messages)
     assert any(
         "ask_llm_finished stage=generation" in item
@@ -303,23 +354,25 @@ def test_ask_logs_success_without_prompt_or_response_content(tmp_path, caplog) -
     assert response_secret not in log_text
 
 
-def test_ask_logs_timeout_during_initial_generation(tmp_path, caplog) -> None:
+def test_ask_logs_timeout_during_initial_generation(
+    tmp_path,
+    ask_log_records,
+) -> None:
     service, _fake_llm = ask_service(
         tmp_path,
         LlmProviderError("OLLAMA_LLM_TIMEOUT: timeout inicial"),
     )
 
-    with caplog.at_level(logging.INFO, logger="barbarion"):
-        with pytest.raises(LlmProviderError):
-            service.ask(
-                "order_total",
-                mode=RetrievalMode.KEYWORD,
-                top_k=3,
-                candidate_k=3,
-                threshold=0,
-            )
+    with pytest.raises(LlmProviderError):
+        service.ask(
+            "order_total",
+            mode=RetrievalMode.KEYWORD,
+            top_k=3,
+            candidate_k=3,
+            threshold=0,
+        )
 
-    log_text = "\n".join(record.getMessage() for record in caplog.records)
+    log_text = "\n".join(record.getMessage() for record in ask_log_records)
     assert "stage=generation" in log_text
     assert "result=timeout" in log_text
     assert "model=" in log_text
@@ -331,7 +384,7 @@ def test_ask_logs_timeout_during_initial_generation(tmp_path, caplog) -> None:
     assert "timeout inicial" not in log_text
 
 
-def test_ask_logs_timeout_during_repair(tmp_path, caplog) -> None:
+def test_ask_logs_timeout_during_repair(tmp_path, ask_log_records) -> None:
     service, _fake_llm = ask_service(
         tmp_path,
         (
@@ -340,17 +393,16 @@ def test_ask_logs_timeout_during_repair(tmp_path, caplog) -> None:
         ),
     )
 
-    with caplog.at_level(logging.INFO, logger="barbarion"):
-        with pytest.raises(LlmProviderError):
-            service.ask(
-                "order_total",
-                mode=RetrievalMode.KEYWORD,
-                top_k=3,
-                candidate_k=3,
-                threshold=0,
-            )
+    with pytest.raises(LlmProviderError):
+        service.ask(
+            "order_total",
+            mode=RetrievalMode.KEYWORD,
+            top_k=3,
+            candidate_k=3,
+            threshold=0,
+        )
 
-    messages = [record.getMessage() for record in caplog.records]
+    messages = [record.getMessage() for record in ask_log_records]
     assert any(
         "stage=generation" in item and "result=completed" in item
         for item in messages
@@ -363,6 +415,58 @@ def test_ask_logs_timeout_during_repair(tmp_path, caplog) -> None:
         for item in messages
     )
     assert "timeout reparacion" not in "\n".join(messages)
+
+
+def test_ask_logs_citation_validation_reasons_without_response(
+    tmp_path,
+    ask_log_records,
+) -> None:
+    initial_secret = "respuesta_inicial_secreta"
+    repair_secret = "respuesta_reparada_secreta"
+    service, _fake_llm = ask_service(
+        tmp_path,
+        (initial_secret, repair_secret),
+    )
+    service = replace(
+        service,
+        citation_validator=FakeCitationValidator(
+            (
+                CitationValidation(
+                    valid=False,
+                    cited_source_ids=("F1",),
+                    unsupported_claims=("contenido no respaldado",),
+                    contradiction_claims=("contenido contradictorio",),
+                    reason="detalle sensible del rechazo",
+                ),
+                CitationValidation(valid=True, cited_source_ids=("F1",)),
+            )
+        ),
+    )
+
+    service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+    )
+
+    messages = [record.getMessage() for record in ask_log_records]
+    validation_logs = [
+        item for item in messages if item.startswith("ask_citation_validation")
+    ]
+    assert len(validation_logs) == 2
+    assert "stage=generation result=FAIL" in validation_logs[0]
+    assert "reasons=unsupported_claims,contradiction_claims" in validation_logs[0]
+    assert "unsupported_claims_count=1" in validation_logs[0]
+    assert "contradiction_claims_count=1" in validation_logs[0]
+    assert "stage=repair result=PASS reasons=ok" in validation_logs[1]
+    log_text = "\n".join(messages)
+    assert initial_secret not in log_text
+    assert repair_secret not in log_text
+    assert "detalle sensible del rechazo" not in log_text
+    assert "contenido no respaldado" not in log_text
+    assert "contenido contradictorio" not in log_text
 
 
 def test_ask_no_llm_returns_context_and_updates_metrics(tmp_path) -> None:

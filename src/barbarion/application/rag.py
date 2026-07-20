@@ -1751,6 +1751,42 @@ class AskService:
         )
         return response
 
+    def _log_citation_validation(
+        self,
+        validation: CitationValidation,
+        *,
+        stage: str,
+    ) -> None:
+        """Registra el resultado del validador sin contenido de la respuesta.
+
+        Args:
+            validation: Resultado estructurado del validador de citas.
+            stage: Etapa validada, `generation` o `repair`.
+        """
+        reasons: list[str] = []
+        if validation.missing_source_ids:
+            reasons.append("missing_source_ids")
+        if not validation.cited_source_ids:
+            reasons.append("no_valid_citations")
+        if validation.unsupported_claims:
+            reasons.append("unsupported_claims")
+        if validation.contradiction_claims:
+            reasons.append("contradiction_claims")
+        if not reasons:
+            reasons.append("ok" if validation.valid else "validation_failed")
+        _LOGGER.info(
+            "ask_citation_validation stage=%s result=%s reasons=%s "
+            "cited_source_ids_count=%d missing_source_ids_count=%d "
+            "unsupported_claims_count=%d contradiction_claims_count=%d",
+            stage,
+            "PASS" if validation.valid else "FAIL",
+            ",".join(reasons),
+            len(validation.cited_source_ids),
+            len(validation.missing_source_ids),
+            len(validation.unsupported_claims),
+            len(validation.contradiction_claims),
+        )
+
     def ask(
         self,
         question: str,
@@ -1879,6 +1915,7 @@ class AskService:
             context,
             question=question,
         )
+        self._log_citation_validation(validation, stage="generation")
         if debug:
             debug_payload["llm_response"] = answer
             debug_payload["validation"] = _citation_validation_debug(
@@ -1904,6 +1941,7 @@ class AskService:
                 context,
                 question=question,
             )
+            self._log_citation_validation(validation, stage="repair")
             repair_valid = validation.valid
             if debug:
                 debug_payload["repair_prompt"] = repair_prompt

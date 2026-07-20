@@ -59,6 +59,8 @@ provider = "ollama"
 model = "llama3.1:8b"
 timeout_seconds = 600.0
 temperature = 0.1
+# Desactiva el razonamiento interno en modelos compatibles para reducir latencia.
+think = false
 
 [data_driven]
 enabled = false

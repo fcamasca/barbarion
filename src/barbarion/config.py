@@ -99,6 +99,7 @@ _DEFAULT_LLM: dict[str, object] = {
     "model": "llama3.1:8b",
     "timeout_seconds": 120.0,
     "temperature": 0.1,
+    "think": None,
 }
 _DEFAULT_DATA_DRIVEN: dict[str, object] = {
     "enabled": False,
@@ -244,6 +245,7 @@ class LlmSettings:
     model: str
     timeout_seconds: float
     temperature: float
+    think: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -475,6 +477,12 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("llm.model", settings.llm.model),
         ("llm.timeout_seconds", str(settings.llm.timeout_seconds)),
         ("llm.temperature", str(settings.llm.temperature)),
+        (
+            "llm.think",
+            "no configurado"
+            if settings.llm.think is None
+            else str(settings.llm.think).lower(),
+        ),
         ("data_driven.enabled", str(settings.data_driven.enabled).lower()),
         (
             "data_driven.file_patterns",
@@ -869,6 +877,7 @@ def _build_llm_settings(value: object) -> LlmSettings:
             "llm.timeout_seconds",
         ),
         temperature=_validate_unit_float(values["temperature"], "llm.temperature"),
+        think=_validate_optional_bool(values["think"], "llm.think"),
     )
 
 
@@ -1077,6 +1086,13 @@ def _validate_bool(value: object, key: str) -> bool:
     if not isinstance(value, bool):
         raise ConfigError(f"La clave '{key}' debe ser booleana.")
     return value
+
+
+def _validate_optional_bool(value: object, key: str) -> bool | None:
+    """Valida un booleano TOML opcional."""
+    if value is None:
+        return None
+    return _validate_bool(value, key)
 
 
 def _validate_float(value: object, key: str) -> float:

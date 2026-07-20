@@ -1,6 +1,7 @@
 """Pruebas del adaptador LLM local."""
 
 import io
+import json
 import urllib.error
 
 import pytest
@@ -48,6 +49,31 @@ def test_ollama_llm_provider_generates_text() -> None:
 
     assert answer == "Respuesta [F1]"
     assert opener.requests[0][1] == 2
+    payload = json.loads(opener.requests[0][0].data)
+    assert "think" not in payload
+    assert payload["options"] == {"temperature": 0.1}
+
+
+def test_ollama_llm_provider_sends_disabled_thinking_on_every_generation() -> None:
+    opener = FakeOpener(FakeResponse(b'{"response":"Respuesta [F1]"}'))
+    provider = OllamaLlmProvider(
+        base_url="http://localhost:11434",
+        model="modelo-local",
+        temperature=0.2,
+        think=False,
+        _opener=opener,
+    )
+
+    first = provider.generate(prompt="generacion", timeout_seconds=600)
+    second = provider.generate(prompt="reparacion", timeout_seconds=600)
+
+    assert first == second == "Respuesta [F1]"
+    assert [timeout for _request, timeout in opener.requests] == [600, 600]
+    payloads = [json.loads(request.data) for request, _timeout in opener.requests]
+    assert [payload["think"] for payload in payloads] == [False, False]
+    assert all(
+        payload["options"] == {"temperature": 0.2} for payload in payloads
+    )
 
 
 def test_ollama_llm_provider_maps_model_not_found() -> None:

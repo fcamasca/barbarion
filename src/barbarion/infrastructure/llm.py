@@ -18,18 +18,22 @@ class OllamaLlmProvider:
     base_url: str
     model: str
     temperature: float
+    think: bool | None = None
     provider: str = "ollama"
     _opener: object | None = field(default=None, repr=False, compare=False)
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
         """Genera texto llamando al endpoint local de Ollama."""
+        payload_data: dict[str, object] = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": self.temperature},
+        }
+        if self.think is not None:
+            payload_data["think"] = self.think
         payload = json.dumps(
-            {
-                "model": self.model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": self.temperature},
-            },
+            payload_data,
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")

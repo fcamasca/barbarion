@@ -409,6 +409,7 @@ def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
                 'model = "llama-local"',
                 "timeout_seconds = 90",
                 "temperature = 0.0",
+                "think = false",
             ]
         ),
     )
@@ -446,7 +447,19 @@ def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
         model="llama-local",
         timeout_seconds=90.0,
         temperature=0.0,
+        think=False,
     )
+
+
+def test_llm_think_is_absent_by_default(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "llm-default.toml",
+        '[llm]\nmodel = "modelo-local"\n',
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.llm.think is None
 
 
 @pytest.mark.parametrize(
@@ -470,6 +483,7 @@ def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
         ("[llm]\nprovider = \"other\"\n", "llm.provider"),
         ("[llm]\ntimeout_seconds = 0\n", "llm.timeout_seconds"),
         ("[llm]\ntemperature = 2\n", "llm.temperature"),
+        ("[llm]\nthink = \"false\"\n", "llm.think"),
         ("embeddings = 1\n", "embeddings"),
     ],
 )

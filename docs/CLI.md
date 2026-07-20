@@ -92,6 +92,21 @@ ollama list
 
 `nomic-embed-text` se usa para embeddings. `llama3.1:8b` es una opción local para `ask`; puede cambiarse en `[llm]`.
 
+La generación de `ask` admite una opción explícita para modelos Ollama que
+implementan razonamiento interno:
+
+```toml
+[llm]
+think = false
+```
+
+`think = false` desactiva el razonamiento interno en los modelos compatibles y
+puede reducir significativamente la latencia. La opción se aplica tanto a la
+generación inicial como al único intento de reparación de citas. Si `think` no
+se declara, Barbarion omite el campo del payload y conserva el comportamiento
+predeterminado de Ollama. Los modelos que no utilizan esta capacidad pueden
+ignorar el campo sin cambiar el contrato de respuesta.
+
 ## Operacion con y sin Ollama
 
 | Comando | Requiere embeddings | Requiere LLM | Funciona offline |
@@ -317,6 +332,21 @@ Barbarion no envia corpus a servicios cloud. Los prompts completos no se almacen
 
 Con `--debug`, ask escribe en stderr un diagnostico del flujo RAG: consulta, modelos usados, retrieval, chunks, prompt truncado, respuesta del LLM, validacion de citas, reparacion y resumen final. stdout conserva la salida normal, por lo que JSON y Markdown siguen siendo parseables.
 
+Además del diagnóstico de `--debug`, el log operativo registra las fronteras de
+generación sin copiar contenido sensible:
+
+- `ask_llm_started`: etapa (`generation` o `repair`), modelo, timeout y tamaño
+  estimado del prompt;
+- `ask_llm_finished`: etapa, duración, resultado (`completed`, `timeout` o
+  `error`) y longitud de respuesta cuando existe;
+- `ask_citation_validation`: etapa, resultado `PASS`/`FAIL`, categorías de
+  rechazo y conteos de citas o claims.
+
+Las categorías incluyen `missing_source_ids`, `no_valid_citations`,
+`unsupported_claims` y `contradiction_claims`. Estos eventos no registran el
+prompt, el contexto, la respuesta completa, el texto de los claims ni contenido
+de razonamiento interno devuelto por un modelo.
+
 Errores operativos frecuentes:
 
 - Base ausente: ejecuta `barbarion doctor` e ingesta antes de RAG.
@@ -430,6 +460,13 @@ barbarion ask "donde se calcula el total?" --format markdown
 ```
 
 Usalo cuando necesitas una respuesta sintetizada y trazable. Registra metricas de consulta/contexto en SQLite. `keyword --no-llm` no requiere embeddings ni LLM. Sin `--no-llm`, requiere LLM local. Codigos de salida: `0` si la respuesta pasa validacion de citas, `1` si hay error operativo, error LLM o citas invalidas, `2` si los argumentos son invalidos, `130` si se interrumpe.
+
+Si un modelo con razonamiento interno agota el timeout aun estando disponible,
+configura `llm.think = false` y repite la consulta. No es necesario aumentar el
+timeout ni modificar retrieval. Revisa `ask_llm_finished` para distinguir un
+timeout de `generation` de uno ocurrido durante `repair`, y
+`ask_citation_validation` para conocer si el validador aceptó o rechazó cada
+respuesta candidata.
 
 ### embeddings
 

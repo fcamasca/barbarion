@@ -1363,6 +1363,7 @@ def _run_ask(args: argparse.Namespace) -> int:
         print("No hay base SQLite de Barbarion. Ejecuta ingesta e indexacion.", file=sys.stderr)
         return 1
     initialize_database(settings.database_path)
+    configure_logging(settings)
     service = _build_ask_service(settings)
     try:
         result = service.ask(
@@ -1889,6 +1890,7 @@ def _build_llm_provider(settings: Settings) -> OllamaLlmProvider:
         base_url=settings.ollama_url,
         model=settings.llm.model,
         temperature=settings.llm.temperature,
+        think=settings.llm.think,
     )
 
 

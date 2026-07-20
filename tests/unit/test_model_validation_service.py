@@ -72,11 +72,18 @@ def test_validation_ready_keeps_four_states_explicit() -> None:
     request = provider.generation_request
     assert request.prompt == VALIDATION_PROMPT
     assert request.prompt == (
-        "Diagnostico sintetico local de Barbarion. Responde exactamente "
-        "BARBARION_MODEL_READY y no agregues ningun otro texto."
+        "Devuelve exactamente este texto y nada mas: "
+        "BARBARION_MODEL_READY"
     )
     assert request.temperature == 0.0
-    assert request.max_output_tokens == 16
+    assert request.timeout_seconds == 12
+    assert request.max_output_tokens is None
+
+
+def test_validation_prompt_contains_only_instruction_and_marker() -> None:
+    assert VALIDATION_MARKER in VALIDATION_PROMPT
+    instruction = VALIDATION_PROMPT.replace(VALIDATION_MARKER, "")
+    assert "barbarion" not in instruction.lower()
 
 
 def test_unavailable_is_not_installed_ready_or_eligible() -> None:

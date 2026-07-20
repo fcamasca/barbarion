@@ -17,6 +17,9 @@ def test_readme_documents_portfolio_overview_and_mvp_status() -> None:
     assert "Suite de aceptación del MVP: `502 passed, 2 skipped`" in readme
     assert "Smoke tests instalados: `10 passed`" in readme
     assert "Integración continua: GitHub Actions" in readme
+    assert "H1.1 Gestión y Evaluación de Modelos Locales" in readme
+    assert "Suite oficial H1.1: `713 passed, 3 skipped`" in readme
+    assert "specs/H1.1-LocalModelManagement/acceptance.md" in readme
 
 
 def test_readme_documents_short_quick_start_and_demo_placeholders() -> None:

@@ -7,10 +7,12 @@ Las specs convierten cada hito del roadmap en trabajo pequeño, revisable y veri
 | Hito | Objetivo | Estado |
 |---|---|---|
 | [H1-Foundation](H1-Foundation/) | Base Python, CLI, configuración y pruebas | Completado |
-| [H2-Ingestion](H2-Ingestion/) | Ingesta incremental y metadata trazable | Pendiente |
-| [H3-RAG](H3-RAG/) | Recuperación y respuestas locales con fuentes | Pendiente |
-| [H4-ReverseEngineering](H4-ReverseEngineering/) | Relaciones e impacto técnico básico | Pendiente |
-| [H5-SpecMode](H5-SpecMode/) | Generación guiada de specs Markdown | Pendiente |
+| [H2-Ingestion](H2-Ingestion/) | Ingesta incremental y metadata trazable | Completado |
+| [H3-RAG](H3-RAG/) | Recuperación y respuestas locales con fuentes | Completado |
+| [H4-ReverseEngineering](H4-ReverseEngineering/) | Relaciones e impacto técnico básico | Completado |
+| [H4.1-DataDrivenConfigurations](H4.1-DataDrivenConfigurations/) | Configuraciones persistidas integradas al conocimiento técnico | Completado |
+| [H5-SpecMode](H5-SpecMode/) | Generación guiada de specs Markdown | Completado |
+| [H1.1-LocalModelManagement](H1.1-LocalModelManagement/) | Gestión y evaluación reproducible de modelos Ollama locales | Completado; comparación real pendiente |
 
 ## Estructura de una spec activa
 

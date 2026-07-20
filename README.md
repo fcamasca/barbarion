@@ -79,6 +79,15 @@ El ejemplo usa nombres sanitizados. En un corpus real, las respuestas incluyen r
 - H4.1 Configuraciones Data-Driven: completada y aceptada técnicamente.
 - Suite oficial H4.1: `581 passed, 2 skipped`.
 - Evidencia: [`specs/H4.1-DataDrivenConfigurations/acceptance.md`](specs/H4.1-DataDrivenConfigurations/acceptance.md).
+- H1.1 Gestión y Evaluación de Modelos Locales: completada y aceptada
+  técnicamente, con comparación real entre modelos pendiente por condiciones del
+  entorno de aceptación.
+- Suite oficial H1.1: `713 passed, 3 skipped`; smoke instalado: `10 passed`.
+- Evidencia: [`specs/H1.1-LocalModelManagement/acceptance.md`](specs/H1.1-LocalModelManagement/acceptance.md).
+
+H1.1 no selecciona automáticamente un modelo ni declara un candidato sin una
+corrida real elegible. La aceptación confirma la capacidad; la elección operativa
+continúa siendo explícita y requiere revisión humana.
 
 La evidencia técnica está documentada en [`specs/H5-SpecMode/acceptance.md`](specs/H5-SpecMode/acceptance.md). Ese registro conserva además la nota de revisión humana pendiente para la spec piloto H5.
 

@@ -217,8 +217,8 @@ class InstallModelService:
 
 VALIDATION_MARKER = "BARBARION_MODEL_READY"
 VALIDATION_PROMPT = (
-    "Diagnostico sintetico local de Barbarion. Responde exactamente "
-    f"{VALIDATION_MARKER} y no agregues ningun otro texto."
+    "Devuelve exactamente este texto y nada mas: "
+    "BARBARION_MODEL_READY"
 )
 
 
@@ -269,7 +269,6 @@ class ValidateModelService:
                     prompt=VALIDATION_PROMPT,
                     timeout_seconds=timeout_seconds,
                     temperature=0.0,
-                    max_output_tokens=16,
                 )
             )
         except LocalModelProviderError as error:

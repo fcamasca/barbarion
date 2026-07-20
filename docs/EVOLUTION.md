@@ -127,6 +127,42 @@ utiliza para análisis técnico e impacto.
 
 ------------------------------------------------------------------------
 
+## H1.1 -- Gestión y Evaluación de Modelos Locales
+
+Estado: completada y aceptada técnicamente, con comparación real entre modelos
+pendiente por condiciones del entorno de aceptación.
+
+Pregunta que responde:
+
+**¿Qué modelo local disponible se adecúa mejor al contrato RAG de Barbarion?**
+
+Construye:
+
+- descubrimiento y administración de modelos compatibles con Ollama;
+- selección explícita del modelo generativo activo;
+- validación separada de disponibilidad, instalación y capacidad de generación;
+- benchmark reproducible sobre contexto sintético congelado;
+- scoring determinista, agregación y reporte comparativo;
+- recomendación informativa sujeta a elegibilidad y revisión humana.
+
+H1.1 reutiliza el constructor de mensajes y el validador RAG existentes. No
+modifica retrieval, chunking, embeddings, conocimiento persistido, ingeniería
+inversa ni Spec Mode. La evaluación permanece completamente local y no convierte
+la recomendación en una selección automática.
+
+Resultado:
+
+Barbarion puede comprobar la preparación técnica de un modelo y comparar varios
+modelos locales bajo las mismas condiciones. La calidad funcional solo queda
+demostrada por una corrida elegible del benchmark; `models validate` demuestra
+únicamente `generation_ready`.
+
+Evidencia:
+
+[`../specs/H1.1-LocalModelManagement/acceptance.md`](../specs/H1.1-LocalModelManagement/acceptance.md).
+
+------------------------------------------------------------------------
+
 ## H4.1 -- Configuraciones Data-Driven
 
 Estado: completada y aceptada técnicamente.

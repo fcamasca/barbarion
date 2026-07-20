@@ -19,8 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T06 completadas;
-H1.1-T07 a H1.1-T12 pendientes.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T07 completadas;
+H1.1-T08 a H1.1-T12 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -118,7 +118,8 @@ cualquier falla conserva el archivo original.
 
 ### H1.1-T07 - Definir loader y dataset sintetico v1
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** crear entradas y rubricas reproducibles, genericas y privadas.  
 **Descripcion:** Definir esquema cerrado, validacion estricta, hash canonico y al
 menos 8 casos en cinco categorias. Incorporar recurso operativo y fixture de

@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "dataset_id": "barbarion-local-llm-synthetic-v1",
+  "cases": [
+    {
+      "id": "syn-001",
+      "category": "respuesta_factual",
+      "question": "¿Qué color identifica al Componente A y cuál es su estado?",
+      "context": [
+        {"citation_id": "F1", "content": "El Componente A se identifica con el color ámbar y su estado es estable.", "source": "synthetic/component_a.txt"}
+      ],
+      "expected_facts": [
+        {"id": "fact-color", "all_terms": ["Componente A", "ámbar"], "citations": ["F1"]},
+        {"id": "fact-status", "all_terms": ["estado", "estable"], "citations": ["F1"]}
+      ],
+      "forbidden_claims": [{"id": "forbidden-color", "any_terms": ["azul", "verde"]}],
+      "instructions": [{"id": "ins-language", "kind": "language", "value": "es"}],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-002",
+      "category": "respuesta_factual",
+      "question": "¿Con qué intervalo opera el Módulo B?",
+      "context": [
+        {"citation_id": "F1", "content": "El Módulo B opera con un intervalo fijo de catorce unidades.", "source": "synthetic/module_b.txt"}
+      ],
+      "expected_facts": [{"id": "fact-interval", "all_terms": ["Módulo B", "catorce unidades"], "citations": ["F1"]}],
+      "forbidden_claims": [{"id": "forbidden-interval", "any_terms": ["doce unidades", "variable"]}],
+      "instructions": [{"id": "ins-language", "kind": "language", "value": "es"}],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-003",
+      "category": "instrucciones",
+      "question": "Resume las etiquetas del Elemento C respetando las instrucciones indicadas.",
+      "context": [
+        {"citation_id": "F1", "content": "El Elemento C tiene las etiquetas alfa y beta.", "source": "synthetic/element_c.txt"}
+      ],
+      "expected_facts": [{"id": "fact-labels", "all_terms": ["alfa", "beta"], "citations": ["F1"]}],
+      "forbidden_claims": [{"id": "forbidden-label", "any_terms": ["gamma"]}],
+      "instructions": [
+        {"id": "ins-language", "kind": "language", "value": "es"},
+        {"id": "ins-section", "kind": "required_section", "value": "Resumen"},
+        {"id": "ins-length", "kind": "max_sentences", "value": "2"}
+      ],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-004",
+      "category": "evidencia_insuficiente",
+      "question": "¿De qué material está hecha la Pieza D?",
+      "context": [
+        {"citation_id": "F1", "content": "La ficha de la Pieza D indica su forma triangular, pero no especifica el material.", "source": "synthetic/piece_d.txt"}
+      ],
+      "expected_facts": [{"id": "fact-insufficient", "all_terms": ["no especifica", "material"], "citations": ["F1"]}],
+      "forbidden_claims": [{"id": "forbidden-material", "any_terms": ["acero", "cobre", "madera"]}],
+      "instructions": [{"id": "ins-language", "kind": "language", "value": "es"}],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-005",
+      "category": "evidencia_insuficiente",
+      "question": "¿En qué ubicación se conserva la Unidad E?",
+      "context": [
+        {"citation_id": "F1", "content": "La descripción de la Unidad E registra una masa de cinco unidades y no incluye una ubicación.", "source": "synthetic/unit_e.txt"}
+      ],
+      "expected_facts": [{"id": "fact-location", "all_terms": ["no incluye", "ubicación"], "citations": ["F1"]}],
+      "forbidden_claims": [{"id": "forbidden-location", "any_terms": ["norte", "sur", "centro"]}],
+      "instructions": [{"id": "ins-phrase", "kind": "required_phrase", "value": "evidencia insuficiente"}],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-006",
+      "category": "ambiguedad",
+      "question": "¿Qué opción corresponde al Objeto F?",
+      "context": [
+        {"citation_id": "F1", "content": "La primera nota asocia el Objeto F con la opción alfa.", "source": "synthetic/object_f_note_1.txt"},
+        {"citation_id": "F2", "content": "La segunda nota asocia el mismo Objeto F con la opción beta; la elección definitiva está por confirmar.", "source": "synthetic/object_f_note_2.txt"}
+      ],
+      "expected_facts": [
+        {"id": "fact-option-a", "all_terms": ["opción alfa"], "citations": ["F1"]},
+        {"id": "fact-option-b", "all_terms": ["opción beta"], "citations": ["F2"]}
+      ],
+      "forbidden_claims": [{"id": "forbidden-certainty", "any_terms": ["definitivamente alfa", "definitivamente beta"]}],
+      "instructions": [{"id": "ins-pending", "kind": "required_phrase", "value": "por confirmar"}],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-007",
+      "category": "contexto_y_citas",
+      "question": "¿Cuál es el orden completo entre las Piezas G, H e I?",
+      "context": [
+        {"citation_id": "F1", "content": "La Pieza G se ubica antes que la Pieza H.", "source": "synthetic/pieces_gh.txt"},
+        {"citation_id": "F2", "content": "La Pieza H se ubica antes que la Pieza I.", "source": "synthetic/pieces_hi.txt"}
+      ],
+      "expected_facts": [
+        {"id": "fact-gh", "all_terms": ["Pieza G", "antes", "Pieza H"], "citations": ["F1"]},
+        {"id": "fact-hi", "all_terms": ["Pieza H", "antes", "Pieza I"], "citations": ["F2"]}
+      ],
+      "forbidden_claims": [{"id": "forbidden-order", "any_terms": ["Pieza I antes", "Pieza H antes que la Pieza G"]}],
+      "instructions": [{"id": "ins-language", "kind": "language", "value": "es"}],
+      "expected_validator": "accepted"
+    },
+    {
+      "id": "syn-008",
+      "category": "contexto_y_citas",
+      "question": "Compara la forma del Elemento J con el tono del Elemento K.",
+      "context": [
+        {"citation_id": "F1", "content": "El Elemento J tiene forma circular.", "source": "synthetic/element_j.txt"},
+        {"citation_id": "F2", "content": "El Elemento K tiene tono violeta.", "source": "synthetic/element_k.txt"}
+      ],
+      "expected_facts": [
+        {"id": "fact-shape", "all_terms": ["Elemento J", "circular"], "citations": ["F1"]},
+        {"id": "fact-tone", "all_terms": ["Elemento K", "violeta"], "citations": ["F2"]}
+      ],
+      "forbidden_claims": [{"id": "forbidden-attributes", "any_terms": ["cuadrada", "naranja"]}],
+      "instructions": [{"id": "ins-language", "kind": "language", "value": "es"}],
+      "expected_validator": "accepted"
+    }
+  ]
+}

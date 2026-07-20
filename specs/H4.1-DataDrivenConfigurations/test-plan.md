@@ -112,6 +112,9 @@ archivo coincide con `file_patterns` y la sentencia afecta una tabla declarada;
 Separa por `;` fuera de strings, comentarios y expresiones soportadas. Acepta
 la ultima sentencia sin `;` al final del archivo solo si no quedan strings,
 comentarios o delimitadores abiertos y el parser la interpreta de forma segura.
+Neutraliza lineas SQL*Plus `PROMPT` y `SET` sin modificar su longitud ni los
+saltos de linea. Un caso con comentario de cabecera, directivas antes y entre
+dos `INSERT` verifica que ambos registros conserven sus lineas originales.
 
 ### H4.1-TP-005 - INSERT soportado
 
@@ -121,7 +124,9 @@ placeholders y multilinea.
 ### H4.1-TP-006 - INSERT no soportado
 
 `INSERT ... SELECT`, `INSERT ALL`, subquery y `RETURNING` generan diagnostico
-recuperable.
+recuperable. Los `INSERT` internos de un bloque `BEGIN` o `DECLARE` no se
+interpretan como sentencias independientes. `COMMIT` se omite mediante un
+diagnostico recuperable.
 
 ### H4.1-TP-007 - UPDATE soportado
 
@@ -152,7 +157,9 @@ ambiguedad segun regla.
 ### H4.1-TP-013 - Simbolos Data-Driven
 
 Crea `configuration_entity`, `configuration_record` y simbolos hijos con
-tecnologia `configuration`.
+tecnologia `configuration`. La identidad de cada hijo usa registro padre, tipo
+y columna; cambiar solamente el valor conserva `symbol_id`, nombre canonico,
+padre y tipo, mientras actualiza `metadata.value` y `metadata.source_hash`.
 
 ### H4.1-TP-014 - Estado activo/inactivo
 
@@ -161,7 +168,10 @@ por confirmar.
 
 ### H4.1-TP-015 - Referencias entre configuraciones
 
-`reference_columns` resuelve registro unico, ambiguo y no resuelto.
+`reference_columns` resuelve registro unico, ambiguo y no resuelto. Cuando
+declara `target_configuration` y un `target_type` semantico compatible,
+reutiliza el indice `configuracion.valor` de simbolos activos y restringe la
+busqueda por ambos campos.
 
 ### H4.1-TP-016 - Jerarquia y secuencia
 
@@ -179,7 +189,10 @@ Placeholders, concatenaciones y patrones externos conservan estado correcto.
 
 ### H4.1-TP-019 - Formula tokens
 
-Extrae tokens configurados, variables, parametros y llamadas candidatas.
+Extrae tokens configurados, variables, parametros y llamadas candidatas. Los
+aliases `configuracion.valor` se indexan en memoria solo desde simbolos activos:
+un destino compatible resuelve, varios quedan ambiguos y ninguno queda no
+resuelto. `[@...]` solo busca variables y `[%...]` solo parametros declarados.
 
 ### H4.1-TP-020 - Formula no evaluada
 
@@ -191,16 +204,20 @@ Verifica upsert, FK, metadata JSON, candidatos y ausencia de huerfanos.
 
 ### H4.1-TP-022 - Idempotencia
 
-Dos ejecuciones equivalentes conservan IDs, conteos y orden.
+Dos ejecuciones equivalentes conservan IDs, conteos y orden. Referencias y
+relaciones generales no aumentan en la segunda corrida.
 
 ### H4.1-TP-023 - Reconciliacion
 
-Archivo modificado o eliminado actualiza solo conocimiento afectado.
+Archivo modificado o eliminado actualiza solo conocimiento afectado. Los
+simbolos reemplazados permanecen `stale` para auditoria; referencias obsoletas,
+que no tienen estado de vigencia, se retiran junto con sus relaciones.
 
 ### H4.1-TP-024 - Inventory/describe
 
 Inventario y descripcion muestran configuraciones, columnas clave, formulas,
-referencias y evidencia.
+referencias y evidencia. El inventario sin filtro de estado muestra solo
+simbolos activos; `--status stale` permite consultar el historico.
 
 ### H4.1-TP-025 - Impact
 
@@ -218,7 +235,10 @@ Help en espanol, argumentos invalidos codigo 2, errores codigo 1, exito codigo
 
 ### H4.1-TP-028 - Observabilidad
 
-Conteos y duraciones coinciden con SQLite y salida CLI.
+Conteos y duraciones coinciden con SQLite y salida CLI. El total general usa
+referencias vigentes y cumple `resolved + ambiguous + no_resueltas =
+referencias`, donde `no_resueltas` agrega `unresolved + dynamic + external`.
+El desglose Data-Driven del mismo alcance produce el mismo total sin duplicados.
 
 ### H4.1-TP-029 - Seguridad local
 

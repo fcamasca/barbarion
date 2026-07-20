@@ -18,6 +18,8 @@
 
 Estados iniciales: `pendiente`.
 
+Estado final del hito: H4.1-T01 a H4.1-T12 completadas.
+
 ## 2. Tareas
 
 ### H4.1-T01 - Agregar configuracion TOML Data-Driven
@@ -183,7 +185,7 @@ que, sin tracebacks en errores esperados.
 
 ### H4.1-T12 - Validacion y aceptacion tecnica H4.1
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** ejecutar aceptacion tecnica integral solo despues de concluir la
 implementacion.  
 **Descripcion:** Ejecutar pruebas, validar criterios de aceptacion, correr

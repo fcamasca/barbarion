@@ -127,7 +127,7 @@ def test_describe_configuration_record_uses_data_driven_summary() -> None:
     """Comprueba describe con responsabilidades propias de configuracion."""
     record = _configuration_symbol("pricing_rules.r1")
     formula = _configuration_symbol(
-        "pricing_rules.r1.configuration_formula.formula.amount",
+        "pricing_rules.r1.configuration_formula.formula",
         symbol_type="configuration_formula",
     )
     repository = _FakeRepository(
@@ -155,7 +155,7 @@ def test_describe_configuration_entity_record_and_derived_symbols() -> None:
     entity = _configuration_symbol("pricing_rules", symbol_type="configuration_entity")
     record = _configuration_symbol("pricing_rules.r1")
     formula = _configuration_symbol(
-        "pricing_rules.r1.configuration_formula.formula.amount",
+        "pricing_rules.r1.configuration_formula.formula",
         symbol_type="configuration_formula",
         display_values=("A" * 120,),
     )
@@ -180,7 +180,7 @@ def test_describe_configuration_entity_record_and_derived_symbols() -> None:
     formula_description = service.describe(
         DescribeRequest(
             target=ObjectRequest(
-                query="pricing_rules.r1.configuration_formula.formula.amount"
+                query="pricing_rules.r1.configuration_formula.formula"
             ),
             no_llm=True,
         )

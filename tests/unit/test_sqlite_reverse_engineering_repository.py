@@ -4,7 +4,11 @@ import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
-from barbarion.application.reverse_engineering import AnalyzeService
+from barbarion.application.reverse_engineering import (
+    AnalyzeService,
+    InventoryRequest,
+    InventoryService,
+)
 from barbarion.config import (
     DataDrivenConfiguration,
     DataDrivenReferenceColumn,
@@ -18,6 +22,8 @@ from barbarion.domain.reverse_engineering import (
     AnalysisRunStatus,
     EvidenceClassification,
     DependencyDirection,
+    InventoryFilters,
+    SymbolStatus,
     TechnicalReference,
     TechnicalRelation,
     ResolutionStatus,
@@ -206,11 +212,13 @@ def test_h4_analyze_persists_data_driven_symbols_idempotently(
     }
     entity = by_type[("configuration_entity", "pricing_rules")]
     record = by_type[("configuration_record", "Base Rule")]
-    formula = by_type[("configuration_formula", "{A}+{B}")]
-    mapping = by_type[("configuration_mapping", "CustomerMap")]
+    formula = by_type[("configuration_formula", "FORMULA")]
+    mapping = by_type[("configuration_mapping", "MAPPING_NAME")]
     assert record.parent_symbol_id == entity.symbol_id
     assert formula.parent_symbol_id == record.symbol_id
     assert mapping.parent_symbol_id == record.symbol_id
+    assert formula.metadata["value"] == "'{A}+{B}'"
+    assert mapping.metadata["value"] == "'CustomerMap'"
     assert record.file_id == 1
     assert record.document_id == 1
     assert record.chunk_id == "cfg-chunk-1"
@@ -243,6 +251,101 @@ def test_h4_analyze_persists_data_driven_symbols_idempotently(
     assert "relations" in tables
     assert "symbol_references" in tables
     assert not any(table.startswith("data_driven") for table in tables)
+
+
+def test_inventory_excludes_reconciled_stale_symbols_by_default(
+    tmp_path: Path,
+) -> None:
+    """Conserva el historico stale en SQLite sin mostrarlo por defecto.
+
+    Args:
+        tmp_path: Directorio temporal para la base SQLite aislada.
+    """
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+    seed_chunks(path)
+    repository = SQLiteReverseEngineeringRepository(path)
+    first_run = repository.begin_analysis_run(
+        mode=AnalysisRunMode.INCREMENTAL,
+        scope={"path_prefix": "pkg/"},
+    )
+    stale_formula = _persisted_formula_symbol(
+        "pricing_rules.r1.configuration_formula.formula.round_amount_2",
+        original_name="ROUND(AMOUNT, 2)",
+    )
+    active_formula = _persisted_formula_symbol(
+        "pricing_rules.r1.configuration_formula.formula",
+        original_name="FORMULA",
+    )
+    repository.upsert_symbol(run_id=first_run, symbol=stale_formula)
+    repository.upsert_symbol(run_id=first_run, symbol=active_formula)
+
+    second_run = repository.begin_analysis_run(
+        mode=AnalysisRunMode.INCREMENTAL,
+        scope={"path_prefix": "pkg/"},
+    )
+    repository.upsert_symbol(run_id=second_run, symbol=active_formula)
+    repository.reconcile_analysis_scope(run_id=second_run, file_ids=(1,))
+
+    with sqlite3.connect(path) as connection:
+        stale_status = connection.execute(
+            "SELECT status FROM symbols WHERE id = ?",
+            (stale_formula.symbol_id,),
+        ).fetchone()[0]
+    inventory = InventoryService(repository).inventory(
+        InventoryRequest(filters=InventoryFilters())
+    )
+    stale_items = repository.inventory_items(
+        InventoryFilters(status=SymbolStatus.STALE)
+    )
+
+    assert stale_status == "stale"
+    assert inventory.summary.symbols == 1
+    assert [item.symbol.symbol_id for item in inventory.items] == [
+        active_formula.symbol_id
+    ]
+    assert [item.symbol.symbol_id for item in stale_items] == [
+        stale_formula.symbol_id
+    ]
+
+
+def _persisted_formula_symbol(
+    normalized_name: str,
+    *,
+    original_name: str,
+) -> TechnicalSymbol:
+    """Construye una formula persistible para probar reconciliacion.
+
+    Args:
+        normalized_name: Nombre canonico de la version del simbolo.
+        original_name: Nombre visible persistido por esa version.
+
+    Returns:
+        Simbolo activo asociado al archivo semilla.
+    """
+    return TechnicalSymbol(
+        symbol_id=technical_symbol_id(
+            normalized_name=normalized_name,
+            symbol_type="configuration_formula",
+            technology="configuration",
+            container_name="pricing_rules.r1",
+        ),
+        file_id=1,
+        original_name=original_name,
+        normalized_name=normalized_name,
+        symbol_type="configuration_formula",
+        technology="configuration",
+        extraction_method="data_driven_dml",
+        confidence=Confidence.MEDIUM,
+        container_name="pricing_rules.r1",
+        status=SymbolStatus.ACTIVE,
+        metadata={
+            "configuration_name": "pricing_rules",
+            "column": "FORMULA",
+            "value": "'ROUND(AMOUNT, 2)'",
+            "source_hash": "fixture",
+        },
+    )
 
 
 def _reference(

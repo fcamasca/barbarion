@@ -324,9 +324,10 @@ def _derived_symbols(
             value = values_by_column.get(_normalize_identifier(column))
             if value is None or value.value_type == "null":
                 continue
-            original_name = _display_raw(value.raw)
-            normalized_name = normalize_symbol_name(
-                f"{parent.normalized_name}.{symbol_type}.{column}.{original_name}"
+            normalized_name = _derived_normalized_name(
+                parent.normalized_name,
+                symbol_type,
+                column,
             )
             metadata = {
                 **_record_metadata(configuration, record),
@@ -342,7 +343,7 @@ def _derived_symbols(
                         technology="configuration",
                         container_name=parent.normalized_name,
                     ),
-                    original_name=original_name,
+                    original_name=column,
                     normalized_name=normalized_name,
                     symbol_type=symbol_type,
                     technology="configuration",
@@ -575,30 +576,17 @@ def _formula_token_references(
         expression = _display_raw(value.raw)
         dynamic = _is_dynamic_formula_expression(expression)
         seen_tokens: set[str] = set()
-        for token in _tokens_from_patterns(expression, token_patterns):
+        for token, hinted_kind in _tokens_from_patterns(expression, token_patterns):
             normalized_token = _safe_name_part(token)
-            if normalized_token.lower() in seen_tokens:
+            dedupe_key = f"{hinted_kind or 'unknown'}:{normalized_token.lower()}"
+            if dedupe_key in seen_tokens:
                 continue
-            seen_tokens.add(normalized_token.lower())
-            target = token_targets.get(normalized_token.lower())
-            if target is None:
-                references.append(
-                    _formula_reference(
-                        record=record,
-                        value=value,
-                        source_symbol=source_symbol,
-                        source_file_id=source_file_id,
-                        source_chunk_id=source_chunk_id,
-                        column=column,
-                        raw_text=token,
-                        normalized_target=normalize_symbol_name(token),
-                        reference_type="configuration_token",
-                        resolution_status=ResolutionStatus.DYNAMIC if dynamic else ResolutionStatus.UNRESOLVED,
-                        confidence=Confidence.LOW if dynamic else Confidence.MEDIUM,
-                        metadata={"token_kind": "unknown"},
-                    )
-                )
-                continue
+            seen_tokens.add(dedupe_key)
+            target_kind = _local_token_kind(
+                token_targets,
+                normalized_token,
+                hinted_kind,
+            )
             references.append(
                 _formula_reference(
                     record=record,
@@ -608,11 +596,19 @@ def _formula_token_references(
                     source_chunk_id=source_chunk_id,
                     column=column,
                     raw_text=token,
-                    normalized_target=target[1],
+                    normalized_target=normalize_symbol_name(
+                        f"{configuration.name}.{normalized_token}"
+                    ),
                     reference_type="configuration_token",
                     resolution_status=ResolutionStatus.DYNAMIC if dynamic else ResolutionStatus.UNRESOLVED,
-                    confidence=Confidence.LOW if dynamic else Confidence.HIGH,
-                    metadata={"token_kind": target[0]},
+                    confidence=(
+                        Confidence.LOW
+                        if dynamic
+                        else Confidence.HIGH
+                        if target_kind != "unknown"
+                        else Confidence.MEDIUM
+                    ),
+                    metadata={"token_kind": target_kind},
                 )
             )
         if column in formula_columns:
@@ -700,11 +696,10 @@ def _formula_reference(
 def _token_targets(
     configuration: DataDrivenConfiguration,
     record: Any,
-) -> dict[str, tuple[str, str]]:
+) -> dict[tuple[str, str], str]:
     """Indexa variables y parametros declarados para resolver tokens locales."""
     values_by_column = {value.column: value for value in record.values}
-    targets: dict[str, tuple[str, str]] = {}
-    record_name = _record_normalized_name(configuration.name, record)
+    targets: dict[tuple[str, str], str] = {}
     for kind, symbol_type, columns in (
         ("variable", "configuration_variable", configuration.variable_columns),
         ("parameter", "configuration_parameter", configuration.parameter_columns),
@@ -715,19 +710,70 @@ def _token_targets(
                 continue
             display = _display_raw(value.raw)
             token = _safe_name_part(display).lower()
-            normalized_name = normalize_symbol_name(
-                f"{record_name}.{symbol_type}.{column}.{display}"
-            )
-            targets[token] = (kind, normalized_name)
+            targets[(kind, token)] = symbol_type
     return targets
+
+
+def _local_token_kind(
+    targets: dict[tuple[str, str], str],
+    token: str,
+    hinted_kind: str | None,
+) -> str:
+    """Determina el tipo local sin mezclar variables y parametros.
+
+    Args:
+        targets: Declaraciones locales indexadas por tipo y valor.
+        token: Token normalizado extraido de la expresion.
+        hinted_kind: Tipo impuesto por la sintaxis del token, si existe.
+
+    Returns:
+        `variable`, `parameter` o `unknown` cuando no hay evidencia unica.
+    """
+    normalized_token = token.lower()
+    if hinted_kind is not None:
+        return hinted_kind
+    kinds = {
+        kind
+        for kind in ("variable", "parameter")
+        if (kind, normalized_token) in targets
+    }
+    return next(iter(kinds)) if len(kinds) == 1 else "unknown"
+
+
+def _derived_normalized_name(
+    parent_normalized_name: str,
+    symbol_type: str,
+    column: str,
+) -> str:
+    """Construye una identidad derivada estable e independiente del valor.
+
+    Args:
+        parent_normalized_name: Nombre canonico del registro propietario.
+        symbol_type: Tipo tecnico del simbolo derivado.
+        column: Columna declarada que origina el simbolo.
+
+    Returns:
+        Nombre canonico formado por registro padre, tipo y columna.
+    """
+    return normalize_symbol_name(
+        f"{parent_normalized_name}.{symbol_type}.{column}"
+    )
 
 
 def _tokens_from_patterns(
     expression: str,
     token_patterns: tuple[str, ...],
-) -> tuple[str, ...]:
-    """Aplica patrones configurados y devuelve los grupos capturados utiles."""
-    tokens: list[str] = []
+) -> tuple[tuple[str, str | None], ...]:
+    """Extrae tokens y conserva hints de sintaxis variable/parametro.
+
+    Args:
+        expression: Formula o regla que se analiza estaticamente.
+        token_patterns: Patrones declarados para reconocer tokens.
+
+    Returns:
+        Pares de valor capturado y tipo sugerido por delimitadores conocidos.
+    """
+    tokens: list[tuple[str, str | None]] = []
     for pattern in token_patterns:
         regex = re.compile(pattern)
         for match in regex.finditer(expression):
@@ -739,7 +785,15 @@ def _tokens_from_patterns(
                 ),
                 match.group(0),
             )
-            tokens.append(value.strip())
+            matched_text = match.group(0).strip()
+            hinted_kind = (
+                "variable"
+                if matched_text.startswith("[@")
+                else "parameter"
+                if matched_text.startswith("[%")
+                else None
+            )
+            tokens.append((value.strip(), hinted_kind))
     return tuple(tokens)
 
 

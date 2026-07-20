@@ -243,3 +243,63 @@ def test_split_dml_statements_omits_unsafe_final_fragment() -> None:
             terminated=True,
         ),
     )
+
+
+def test_parse_ignores_sqlplus_lines_and_preserves_insert_locations() -> None:
+    """Ignora directivas SQL*Plus sin desplazar la evidencia DML."""
+    source = "\n".join(
+        [
+            "-- Export de configuraciones",
+            "PROMPT Cargando primera regla",
+            "SET FEEDBACK OFF",
+            "SET DEFINE OFF",
+            "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('R1');",
+            "PROMPT Cargando segunda regla",
+            "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('R2');",
+            "COMMIT;",
+        ]
+    )
+
+    result = parse_dml_configurations(
+        source,
+        (configuration(),),
+        max_statements_per_file=100,
+        max_literal_chars=500,
+    )
+
+    assert [record.identity_values[0].raw for record in result.records] == [
+        "'R1'",
+        "'R2'",
+    ]
+    assert [
+        (record.start_line, record.end_line) for record in result.records
+    ] == [(5, 5), (7, 7)]
+    assert [
+        (
+            diagnostic.statement_type,
+            diagnostic.reason,
+            diagnostic.start_line,
+        )
+        for diagnostic in result.diagnostics
+    ] == [("commit", "unsupported_statement", 8)]
+
+
+def test_parse_does_not_accept_insert_fragments_inside_plsql_block() -> None:
+    """Evita interpretar como registros los INSERT internos de PL/SQL."""
+    result = parse_dml_configurations(
+        "BEGIN\n"
+        "  INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('INNER_1');\n"
+        "  INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('INNER_2');\n"
+        "END;\n"
+        "INSERT INTO APP_CFG.PRICING_RULES (RULE_ID) VALUES ('OUTER');",
+        (configuration(),),
+        max_statements_per_file=100,
+        max_literal_chars=500,
+    )
+
+    assert [record.identity_values[0].raw for record in result.records] == [
+        "'OUTER'"
+    ]
+    assert result.records[0].start_line == 5
+    assert result.diagnostics[0].statement_type == "plsql_block"
+    assert result.diagnostics[0].reason == "unsupported_statement"

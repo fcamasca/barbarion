@@ -46,7 +46,8 @@ def test_analyze_and_stats_report_data_driven_metrics_and_diagnostics(
     assert "Sentencias con error: 1" in dry_run.out
     assert "Registros extraidos: 2" in dry_run.out
     assert "Configuraciones reconciliadas: 1" in dry_run.out
-    assert "Relaciones Data-Driven resueltas: 2" in dry_run.out
+    assert "Relaciones Data-Driven resueltas: 1" in dry_run.out
+    assert "Relaciones Data-Driven ambiguas: 1" in dry_run.out
     assert "Relaciones Data-Driven no resueltas: 1" in dry_run.out
     assert "Advertencias Data-Driven: 1" in dry_run.out
     assert "Diagnosticos Data-Driven: 2" in dry_run.out
@@ -75,5 +76,6 @@ def test_analyze_and_stats_report_data_driven_metrics_and_diagnostics(
     assert metrics["files"] == 1
     assert metrics["symbols_active"] >= 5
     assert metrics["references_active"] == 3
-    assert metrics["relations"]["resolved"] == 2
+    assert metrics["relations"]["resolved"] == 1
+    assert metrics["relations"]["ambiguous"] == 1
     assert metrics["relations"]["unresolved"] == 1

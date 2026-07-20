@@ -180,6 +180,57 @@ def test_sequence_column_is_metadata_until_explicit_next_step_reference() -> Non
     assert candidates == ()
 
 
+def test_explicit_reference_resolves_derived_symbol_by_semantic_alias() -> None:
+    """Resuelve una columna arbitraria con el indice semantico compartido."""
+    variables = alias_target_configuration()
+    bindings = alias_source_configuration()
+    variable_records = parse_dml_configurations(
+        "INSERT INTO APP_CFG.CATALOG_ENTRIES "
+        "(ENTRY_KEY, REVISION, VARIABLE_KEY) "
+        "VALUES ('ENTRY_ALPHA', 1, 'INPUT_ALPHA');",
+        (variables,),
+        max_statements_per_file=100,
+        max_literal_chars=1000,
+    ).records
+    binding_records = parse_dml_configurations(
+        "INSERT INTO APP_CFG.ALIAS_BINDINGS (BINDING_ID, VARIABLE_KEY) "
+        "VALUES ('BINDING_1', 'INPUT_ALPHA');",
+        (bindings,),
+        max_statements_per_file=100,
+        max_literal_chars=1000,
+    ).records
+    configurations = (variables, bindings)
+    symbols = build_configuration_symbols(
+        (*variable_records, *binding_records),
+        configurations,
+    ).symbols
+    reference = build_configuration_references(
+        binding_records,
+        configurations,
+        source_file_id=1,
+    ).references[0]
+
+    relation, candidates = relation_from_reference(reference, symbols) or (
+        None,
+        (),
+    )
+
+    assert reference.normalized_target == "catalog_entries.input_alpha"
+    assert reference.metadata["target_configuration"] == "catalog_entries"
+    assert reference.metadata["target_type"] == "configuration_variable"
+    assert relation is not None
+    assert relation.resolution_status == ResolutionStatus.RESOLVED
+    target = next(
+        symbol
+        for symbol in symbols
+        if symbol.symbol_id == relation.target_symbol_id
+    )
+    assert target.normalized_name == (
+        "catalog_entries.entry_alpha.1.configuration_variable.variable_key"
+    )
+    assert candidates == ()
+
+
 def configuration() -> DataDrivenConfiguration:
     return DataDrivenConfiguration(
         name="pricing_rules",
@@ -218,6 +269,64 @@ def configuration() -> DataDrivenConfiguration:
             ),
         ),
         sequence_columns=("DISPLAY_ORDER",),
+        status_columns=(),
+        effective_from_columns=(),
+        effective_to_columns=(),
+        metadata_columns=(),
+    )
+
+
+def alias_target_configuration() -> DataDrivenConfiguration:
+    """Declara un catalogo sintetico usado como destino semantico."""
+    return DataDrivenConfiguration(
+        name="catalog_entries",
+        symbol_type="configuration_record",
+        tables=("APP_CFG.CATALOG_ENTRIES",),
+        identity_columns=("ENTRY_KEY", "REVISION"),
+        file_patterns=(),
+        default_column_order=(),
+        name_columns=(),
+        description_columns=(),
+        rule_columns=(),
+        formula_columns=(),
+        variable_columns=("VARIABLE_KEY",),
+        parameter_columns=(),
+        mapping_columns=(),
+        reference_columns=(),
+        parent_columns=(),
+        sequence_columns=(),
+        status_columns=(),
+        effective_from_columns=(),
+        effective_to_columns=(),
+        metadata_columns=(),
+    )
+
+
+def alias_source_configuration() -> DataDrivenConfiguration:
+    """Declara registros sinteticos que referencian aliases del catalogo."""
+    return DataDrivenConfiguration(
+        name="alias_bindings",
+        symbol_type="configuration_record",
+        tables=("APP_CFG.ALIAS_BINDINGS",),
+        identity_columns=("BINDING_ID",),
+        file_patterns=(),
+        default_column_order=(),
+        name_columns=(),
+        description_columns=(),
+        rule_columns=(),
+        formula_columns=(),
+        variable_columns=(),
+        parameter_columns=(),
+        mapping_columns=(),
+        reference_columns=(
+            DataDrivenReferenceColumn(
+                column="VARIABLE_KEY",
+                target_configuration="catalog_entries",
+                target_type="configuration_variable",
+            ),
+        ),
+        parent_columns=(),
+        sequence_columns=(),
         status_columns=(),
         effective_from_columns=(),
         effective_to_columns=(),

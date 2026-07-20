@@ -89,12 +89,43 @@ def test_build_configuration_symbols_creates_entity_record_and_children() -> Non
         "owner": "'risk'",
     }
     assert "ignored" not in record.metadata["values"]
-    assert ("configuration_rule", "select 1 from dual") in by_type
-    assert ("configuration_formula", "{A}+{B}") in by_type
-    assert ("configuration_variable", "A") in by_type
-    assert ("configuration_parameter", "TENANT") in by_type
-    assert ("configuration_mapping", "CustomerMap") in by_type
-    assert ("configuration_step", "10") in by_type
+    assert ("configuration_rule", "RULE_SQL") in by_type
+    assert ("configuration_formula", "FORMULA") in by_type
+    assert ("configuration_variable", "VARIABLE_NAME") in by_type
+    assert ("configuration_parameter", "PARAMETER_NAME") in by_type
+    assert ("configuration_mapping", "MAPPING_NAME") in by_type
+    assert ("configuration_step", "DISPLAY_ORDER") in by_type
+    derived = {
+        symbol.symbol_type: symbol
+        for symbol in plan.symbols
+        if symbol.symbol_type.startswith("configuration_")
+        and symbol.symbol_type not in {"configuration_entity", "configuration_record"}
+    }
+    assert derived["configuration_formula"].normalized_name == (
+        "pricing_rules.r1.configuration_formula.formula"
+    )
+    assert derived["configuration_formula"].metadata["value"] == "'{A}+{B}'"
+    assert {
+        symbol_type: symbol.normalized_name
+        for symbol_type, symbol in derived.items()
+    } == {
+        "configuration_rule": "pricing_rules.r1.configuration_rule.rule_sql",
+        "configuration_formula": (
+            "pricing_rules.r1.configuration_formula.formula"
+        ),
+        "configuration_variable": (
+            "pricing_rules.r1.configuration_variable.variable_name"
+        ),
+        "configuration_parameter": (
+            "pricing_rules.r1.configuration_parameter.parameter_name"
+        ),
+        "configuration_mapping": (
+            "pricing_rules.r1.configuration_mapping.mapping_name"
+        ),
+        "configuration_step": (
+            "pricing_rules.r1.configuration_step.display_order"
+        ),
+    }
 
 
 def test_build_configuration_symbols_marks_inactive_status() -> None:
@@ -200,3 +231,53 @@ def test_build_configuration_symbols_is_deterministic() -> None:
         for symbol in second.symbols
     )
     assert first_projection == second_projection
+
+
+def test_derived_formula_identity_is_stable_when_only_value_changes() -> None:
+    """Conserva la identidad derivada y actualiza evidencia de la formula."""
+    first_plan = build_configuration_symbols(
+        records(
+            "INSERT INTO APP_CFG.PRICING_RULES "
+            "(RULE_ID, FORMULA) VALUES ('R5', 'ROUND({AMOUNT}, 2)');"
+        ),
+        (configuration(),),
+    )
+    second_plan = build_configuration_symbols(
+        records(
+            "INSERT INTO APP_CFG.PRICING_RULES "
+            "(RULE_ID, FORMULA) VALUES ('R5', 'ROUND({AMOUNT}, 4)');"
+        ),
+        (configuration(),),
+    )
+
+    first = next(
+        symbol
+        for symbol in first_plan.symbols
+        if symbol.symbol_type == "configuration_formula"
+    )
+    second = next(
+        symbol
+        for symbol in second_plan.symbols
+        if symbol.symbol_type == "configuration_formula"
+    )
+
+    assert (
+        first.symbol_id,
+        first.normalized_name,
+        first.parent_symbol_id,
+        first.symbol_type,
+    ) == (
+        second.symbol_id,
+        second.normalized_name,
+        second.parent_symbol_id,
+        second.symbol_type,
+    )
+    assert first.normalized_name == (
+        "pricing_rules.r5.configuration_formula.formula"
+    )
+    assert first.original_name == second.original_name == "FORMULA"
+    assert "ROUND" not in first.normalized_name
+    assert "ROUND" not in second.normalized_name
+    assert first.metadata["value"] == "'ROUND({AMOUNT}, 2)'"
+    assert second.metadata["value"] == "'ROUND({AMOUNT}, 4)'"
+    assert first.metadata["source_hash"] != second.metadata["source_hash"]

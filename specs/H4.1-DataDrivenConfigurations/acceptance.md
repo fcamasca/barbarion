@@ -2,11 +2,11 @@
 
 ## Estado
 
-**Estado tecnico:** aprobado con limitaciones conocidas.
+**Estado tecnico y funcional:** aprobado con limitaciones conocidas aceptadas.
 
-**Estado de T12:** pendiente de revision humana. Este documento no marca T12
-como completada; la decision final corresponde al mantenedor despues de revisar
-el corpus piloto, las salidas y los hallazgos descritos aqui.
+**Estado de T12:** completada. El mantenedor aprobo la evidencia tecnica y
+funcional despues de revisar el corpus piloto, las salidas y los hallazgos
+descritos aqui.
 
 La validacion cubre instalacion editable real, suite completa, smoke CLI,
 regresion H1-H5, flujo Data-Driven integral, incrementalidad, reconciliacion,
@@ -14,7 +14,7 @@ interfaces H4, RAG, Spec Mode, seguridad y privacidad.
 
 ## Version y entorno
 
-- Fecha: 2026-07-17.
+- Fecha: 2026-07-19.
 - Sistema operativo: Windows.
 - Workspace: `D:\barbarion`.
 - Rama: `feature/H4.1-DataDrivenConfigurations`.
@@ -44,13 +44,13 @@ fueron fallos funcionales. Se creo el directorio y se repitio la validacion.
 Comando final:
 
 ```powershell
-.venv\Scripts\python.exe -m pytest --basetemp .pytest-tmp\h41-final -q
+.venv\Scripts\python.exe -m pytest --basetemp .pytest-tmp\h41-accepted-final -q
 ```
 
 Resultado:
 
 ```text
-558 passed, 2 skipped in 107.88s
+568 passed, 2 skipped in 116.40s
 ```
 
 Smoke del paquete instalado:
@@ -82,6 +82,26 @@ contrato CLI. La prueba focalizada quedo en:
 ```
 
 La suite y el smoke finales se ejecutaron despues de esta correccion.
+
+## Ajuste SQL*Plus posterior
+
+Antes de la revision humana se incorporo una validacion adicional para scripts
+exportados mediante SQL*Plus:
+
+- las lineas `PROMPT` y `SET` se neutralizan antes del splitter conservando su
+  longitud y sus terminadores de linea;
+- los comentarios de cabecera no desplazan el inicio trazable de la sentencia;
+- un `INSERT` solo se despacha como sentencia independiente y no como fragmento
+  interno de un bloque `BEGIN` o `DECLARE`;
+- `COMMIT` se conserva como diagnostico recuperable `unsupported_statement`.
+
+El caso de regresion usa comentario de cabecera, `PROMPT`, `SET FEEDBACK OFF`,
+`SET DEFINE OFF`, dos `INSERT`, otro `PROMPT` intermedio y `COMMIT`. Los dos
+registros se localizaron en sus lineas originales 5 y 7; `COMMIT` quedo
+diagnosticado en la linea 8. Una prueba separada verifico que dos `INSERT`
+internos de PL/SQL no generan registros. La regresion Data-Driven obtuvo 53
+pruebas aprobadas y la suite completa indicada arriba se ejecuto despues del
+ajuste.
 
 ## Corpus sintetico
 
@@ -135,10 +155,111 @@ Al cambiar solo la formula de `R1`:
 - la ingesta proceso un archivo y dejo dos sin cambios;
 - `analyze --path config/pricing` no modifico conocimiento de los otros
   archivos;
-- el simbolo de formula anterior fue retirado;
-- el nuevo simbolo de formula recibio una identidad acorde con su nuevo valor;
 - entidad, registros y jerarquia conservaron sus IDs;
 - las relaciones activas quedaron reconciliadas sin huerfanos.
+
+El piloto original revelo que el simbolo de formula era retirado y recreado
+porque su valor formaba parte del nombre canonico. Ese comportamiento se
+clasifico como defecto y se corrigio antes de la revision humana. La identidad
+de todos los derivados ahora se forma exclusivamente con registro padre, tipo y
+columna. Una regresion que cambia solo `ROUND({AMOUNT}, 2)` por
+`ROUND({AMOUNT}, 4)` confirma que `symbol_id`, `normalized_name`,
+`parent_symbol_id` y `symbol_type` permanecen iguales; `metadata.value` y
+`metadata.source_hash` cambian. El contenido ya no aparece en
+`original_name`, nombre canonico ni inventario.
+
+## Aliases de tokens e inventario vigente
+
+La revision previa a la aceptacion encontro dos defectos adicionales y ambos
+quedaron corregidos:
+
+1. El resolvedor construye una vez por corrida un indice en memoria para
+   aliases `configuration_name + metadata.value` de variables y parametros
+   activos. No consulta `metadata_json` por referencia. La busqueda permanece
+   dentro de la misma configuracion y conserva la identidad estructural del
+   simbolo. Un destino compatible produce `resolved`, varios `ambiguous` y
+   ninguno `unresolved`. `[@...]` solo acepta `configuration_variable` y
+   `[%...]` solo `configuration_parameter` cuando existe una declaracion.
+2. El inventario sin filtro de estado agrega ahora `symbols.status = 'active'`
+   tanto a filas como a resumen. Los simbolos reconciliados siguen almacenados
+   como `stale` y pueden consultarse explicitamente con `--status stale`, pero
+   no contaminan el inventario tecnico vigente.
+
+La prueba sintetica usa un catalogo neutral con `VARIABLE_KEY = 'INPUT_ALPHA'`
+y la expresion `ROUND([@INPUT_ALPHA], 2)`. La referencia por alias resuelve de
+forma unica hacia el hijo estructural de la columna declarada. Casos adicionales
+verifican ambiguedad entre dos activos, exclusion de candidatos `stale` y
+aislamiento de parametros. Una prueba SQLite persiste una identidad reemplazada,
+la reconcilia como `stale` y confirma que `InventoryService` solo devuelve la
+version activa por defecto.
+
+El mismo indice semantico se reutiliza para referencias explicitas que declaran
+`target_configuration` y un `target_type` compatible. La resolucion restringe
+primero por configuracion destino, luego por tipo y finalmente compara el valor
+normalizado de la columna con el alias. El fixture arbitrario conecta un
+registro de bindings con `catalog_entries.input_alpha` y resuelve hacia el hijo
+`configuration_variable` de `VARIABLE_KEY`, sin cambiar la identidad del
+destino ni crear un segundo mecanismo de aliases.
+
+La validacion sobre datos locales ignorados por Git confirmo el mismo contrato.
+Sus nombres, rutas y valores se omiten deliberadamente; solo se registran
+metricas agregadas y anonimizadas. La comprobacion versionada usa datos
+sinteticos y valida:
+
+```text
+resolved + ambiguous + unresolved + dynamic + external = references
+general_unresolved = unresolved + dynamic + external
+```
+
+## Validacion real anonimizada
+
+El corpus local proceso 63 sentencias: 62 fueron soportadas y una se omitio de
+forma recuperable. Se extrajeron 62 registros y quedaron vigentes 163 simbolos
+y 202 referencias.
+
+La resolucion produjo 96 relaciones resueltas, ninguna ambigua y 106 no
+resueltas. El ultimo grupo se descompone en 34 referencias `external`, 72
+`unresolved` y ninguna `dynamic`. Los conteos satisfacen:
+
+```text
+96 + 0 + 106 = 202
+34 + 72 + 0 = 106
+```
+
+Dos ejecuciones persistentes consecutivas conservaron exactamente los mismos
+conteos. Tambien se verifico un registro con una relacion padre resuelta y una
+referencia explicita resuelta hacia un alias semantico. Esta evidencia no
+registra nombres de tablas, columnas, configuraciones, archivos ni valores del
+dominio validado.
+
+## Conteos generales vigentes
+
+La validacion final detecto que `analyze` comparaba referencias extraidas en el
+alcance actual con la resolucion global de referencias persistidas. Ademas, la
+reconciliacion dejaba referencias reemplazadas como `unresolved`; al no existir
+una columna de vigencia en `symbol_references`, esas filas historicas volvian a
+participar y podian duplicar hallazgos y relaciones.
+
+La correccion aplica dos reglas:
+
+- despues de reconciliar, el resumen general usa el numero de referencias
+  vigentes devuelto por `active_references()`, el mismo conjunto que se resuelve;
+- las referencias del alcance no vistas en la corrida se eliminan y sus
+  relaciones desaparecen mediante FK en cascada. Los simbolos mantienen su
+  historia `stale` porque si poseen estado explicito.
+
+Por contrato, los conteos generales cumplen:
+
+```text
+resolved + ambiguous + no_resueltas = referencias
+no_resueltas = unresolved + dynamic + external
+```
+
+Una prueba ejecuta dos veces exactamente el mismo `analyze` y confirma que los
+conteos generales, filas de referencias y relaciones no aumentan. Tambien
+compara el resumen general con el desglose Data-Driven del mismo alcance e
+incluye una referencia `external` para verificar que se agrega una sola vez a
+`no_resueltas`.
 
 Las pruebas automatizadas cubren ademas eliminacion de registros y documentos,
 re-resolucion `unresolved`/`resolved`/`ambiguous`, aislamiento de `--path`,
@@ -230,6 +351,14 @@ del enmascarado y sus aserciones. No se envia corpus a servicios externos; el
 unico proveedor usado por el piloto fue Ollama local mediante la integracion ya
 existente.
 
+Una busqueda global case-insensitive sobre todos los archivos versionados no
+encontro marcadores del dominio usado durante la validacion local. Una segunda
+busqueda en `src` tampoco encontro nombres de configuraciones, tablas, columnas,
+valores ni fixtures sinteticos: la resolucion depende solo de las declaraciones
+TOML, `target_configuration`, `target_type` y la metadata generica. Las fuentes,
+la configuracion, las bases y los artefactos de validacion locales permanecen
+ignorados por Git y no fueron modificados durante esta auditoria.
+
 ## Requisitos no funcionales
 
 | Requisito | Resultado | Evidencia o limitacion |
@@ -245,14 +374,11 @@ existente.
 | RNF-009 seguridad y recuperacion | Cumple | parsing estatico, errores parciales y cancelacion probados |
 | RNF-010 mantenibilidad | Cumple | capas existentes, parser acotado y docstrings Google Style |
 
-## Decision pendiente
+## Decision final
 
-No hay bloqueos tecnicos para aceptar H4.1. Antes de completar T12, la revision
-humana debe confirmar:
+El mantenedor aprobo la aceptacion tecnica y funcional. Las salidas de
+inventario, descripcion e impacto, la spec piloto y sus dependencias fueron
+consideradas adecuadas. Las limitaciones conocidas se aceptan para H4.1 y
+pueden registrarse como trabajo posterior sin bloquear el cierre.
 
-- que las salidas de inventario, descripcion e impacto son utiles y legibles;
-- que la spec piloto representa adecuadamente el cambio y sus dependencias;
-- que las dos limitaciones conocidas son aceptables para H4.1 o se registran
-  como trabajo posterior.
-
-Hasta esa confirmacion, `tasks.md` conserva H4.1-T12 como pendiente.
+H4.1 queda completado con todas las tareas H4.1-T01 a H4.1-T12 cerradas.

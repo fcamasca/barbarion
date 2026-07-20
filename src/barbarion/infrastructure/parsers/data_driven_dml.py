@@ -53,6 +53,14 @@ _NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
 _PLACEHOLDER_RE = re.compile(
     r"^(?::[A-Za-z_][A-Za-z0-9_]*|&[A-Za-z_][A-Za-z0-9_]*|\$\{[^}]+\})$"
 )
+_SQLPLUS_DIRECTIVE_RE = re.compile(
+    r"^[ \t]*(?:PROMPT\b|SET\b(?![^\r\n]*=))",
+    re.IGNORECASE,
+)
+_PLSQL_BLOCK_END_RE = re.compile(
+    r"^END(?:\s+[A-Za-z_][A-Za-z0-9_$#]*)?\s*$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +177,7 @@ def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
     Returns:
         Sentencias detectadas en orden de aparicion.
     """
+    source = _mask_sqlplus_directives(source)
     statements: list[DmlStatement] = []
     buffer: list[str] = []
     state = "normal"
@@ -176,9 +185,9 @@ def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
     start_line: int | None = None
     index = 0
 
-    def append(character: str) -> None:
+    def append(character: str, *, starts_statement: bool = True) -> None:
         nonlocal start_line
-        if start_line is None and not character.isspace():
+        if start_line is None and starts_statement and not character.isspace():
             start_line = line
         buffer.append(character)
 
@@ -203,14 +212,14 @@ def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
 
         if state == "normal":
             if character == "-" and next_character == "-":
-                append(character)
-                append(next_character)
+                append(character, starts_statement=False)
+                append(next_character, starts_statement=False)
                 state = "line_comment"
                 index += 2
                 continue
             if character == "/" and next_character == "*":
-                append(character)
-                append(next_character)
+                append(character, starts_statement=False)
+                append(next_character, starts_statement=False)
                 state = "block_comment"
                 index += 2
                 continue
@@ -236,7 +245,7 @@ def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
             continue
 
         if state == "line_comment":
-            append(character)
+            append(character, starts_statement=False)
             if character == "\n":
                 line += 1
                 state = "normal"
@@ -244,11 +253,11 @@ def split_dml_statements(source: str) -> tuple[DmlStatement, ...]:
             continue
 
         if state == "block_comment":
-            append(character)
+            append(character, starts_statement=False)
             if character == "\n":
                 line += 1
             if character == "*" and next_character == "/":
-                append(next_character)
+                append(next_character, starts_statement=False)
                 state = "normal"
                 index += 2
             else:
@@ -326,7 +335,25 @@ def parse_dml_configurations(
 
     records: list[DmlConfigurationRecord] = []
     diagnostics: list[DmlDiagnostic] = []
+    inside_plsql_block = False
     for ordinal, statement in enumerate(statements, start=1):
+        text = _strip_sql_comments(statement.text).strip()
+        statement_type = _statement_type(text)
+        if inside_plsql_block:
+            if _PLSQL_BLOCK_END_RE.match(text):
+                inside_plsql_block = False
+            continue
+        if statement_type == "plsql_block":
+            inside_plsql_block = True
+            diagnostics.append(
+                _diagnostic(
+                    statement,
+                    ordinal,
+                    statement_type,
+                    "unsupported_statement",
+                )
+            )
+            continue
         record, diagnostic = _parse_statement(
             statement,
             ordinal,
@@ -883,7 +910,34 @@ def _statement_type(text: str) -> str:
         return "update"
     if re.match(r"^(BEGIN|DECLARE)\b", stripped, re.IGNORECASE):
         return "plsql_block"
+    if re.match(r"^COMMIT\b", stripped, re.IGNORECASE):
+        return "commit"
     return "unknown"
+
+
+def _mask_sqlplus_directives(source: str) -> str:
+    """Neutraliza directivas SQL*Plus sin alterar posiciones ni lineas.
+
+    Cada caracter de una linea `PROMPT` o `SET` se sustituye por un espacio,
+    excepto sus terminadores `CR` y `LF`. De esta forma las directivas no se
+    mezclan con una sentencia SQL y la trazabilidad conserva las lineas del
+    documento original.
+
+    Args:
+        source: Contenido completo del documento SQL.
+
+    Returns:
+        Contenido con las directivas SQL*Plus neutralizadas.
+    """
+    masked_lines: list[str] = []
+    for line in source.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        ending = line[len(content) :]
+        if _SQLPLUS_DIRECTIVE_RE.match(content):
+            masked_lines.append((" " * len(content)) + ending)
+        else:
+            masked_lines.append(line)
+    return "".join(masked_lines)
 
 
 def _diagnostic(

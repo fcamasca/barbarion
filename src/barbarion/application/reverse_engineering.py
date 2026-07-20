@@ -65,6 +65,12 @@ from barbarion.infrastructure.parsers.data_driven_dml import (
 from barbarion.infrastructure.parsers.powerbuilder import extract_powerbuilder_references
 
 
+_CONFIGURATION_ALIAS_SYMBOL_TYPES = {
+    "configuration_variable",
+    "configuration_parameter",
+}
+
+
 @dataclass(frozen=True, slots=True)
 class SymbolCatalogSummary:
     """Resume una corrida de catalogacion de simbolos de reverse engineering.
@@ -482,6 +488,10 @@ class AnalyzeService:
         stage_started = time.monotonic()
         all_symbols = self.repository.active_symbols()
         all_references = self.repository.active_references()
+        counters = replace(
+            counters,
+            references_detected=len(all_references),
+        )
         resolved, ambiguous, unresolved = self._resolve_references(
             run_id=run_id,
             references=all_references,
@@ -550,11 +560,16 @@ class AnalyzeService:
             Conteos de referencias resueltas, ambiguas y no resueltas despues de
             actualizar relaciones, candidatos y estado de cada referencia.
         """
+        aliases = _configuration_alias_index(symbols)
         resolved = 0
         ambiguous = 0
         unresolved = 0
         for reference in references:
-            decision = relation_from_reference(reference, symbols)
+            decision = relation_from_reference(
+                reference,
+                symbols,
+                configuration_aliases=aliases,
+            )
             if decision is None:
                 unresolved += 1
                 self.repository.upsert_reference(
@@ -624,13 +639,18 @@ class RelationResolutionService:
         )
         symbols = self.repository.active_symbols()
         references = self.repository.active_references()
+        aliases = _configuration_alias_index(symbols)
         resolved = 0
         ambiguous = 0
         dynamic = 0
         external = 0
         unresolved = 0
         for reference in references:
-            decision = relation_from_reference(reference, symbols)
+            decision = relation_from_reference(
+                reference,
+                symbols,
+                configuration_aliases=aliases,
+            )
             if decision is None:
                 unresolved += 1
                 continue
@@ -981,12 +1001,17 @@ class ImpactService:
 def relation_from_reference(
     reference: TechnicalReference,
     symbols: tuple[TechnicalSymbol, ...],
+    *,
+    configuration_aliases: dict[
+        tuple[str, str], tuple[TechnicalSymbol, ...]
+    ] | None = None,
 ) -> tuple[TechnicalRelation, tuple[RelationCandidate, ...]] | None:
     """Resuelve una referencia contra simbolos compatibles sin inventar destino.
 
     Args:
         reference: Referencia textual detectada por extractores reverse engineering.
         symbols: Catalogo vigente de simbolos candidatos.
+        configuration_aliases: Indice reutilizable de aliases Data-Driven.
 
     Returns:
         Una relacion con sus candidatos ambiguos, o `None` cuando no existe
@@ -1019,7 +1044,12 @@ def relation_from_reference(
             (),
         )
 
-    candidates = _candidate_symbols(reference, symbols)
+    aliases = (
+        _configuration_alias_index(symbols)
+        if configuration_aliases is None
+        else configuration_aliases
+    )
+    candidates = _candidate_symbols(reference, symbols, aliases)
     if not candidates:
         return None
     if len(candidates) == 1:
@@ -1267,10 +1297,15 @@ def _with_data_driven_resolution_counts(
         Copia de las metricas con conteos por estado de resolucion.
     """
     counts = {status: 0 for status in ResolutionStatus}
+    aliases = _configuration_alias_index(symbols)
     for reference in references:
         if not reference.detection_method.startswith("data_driven"):
             continue
-        decision = relation_from_reference(reference, symbols)
+        decision = relation_from_reference(
+            reference,
+            symbols,
+            configuration_aliases=aliases,
+        )
         status = (
             ResolutionStatus.UNRESOLVED
             if decision is None
@@ -2021,11 +2056,16 @@ def _resolution_counts(
     symbols: tuple[TechnicalSymbol, ...],
 ) -> tuple[int, int, int]:
     """Calcula conteos de resolucion sin persistir relaciones ni referencias."""
+    aliases = _configuration_alias_index(symbols)
     resolved = 0
     ambiguous = 0
     unresolved = 0
     for reference in references:
-        decision = relation_from_reference(reference, symbols)
+        decision = relation_from_reference(
+            reference,
+            symbols,
+            configuration_aliases=aliases,
+        )
         if decision is None:
             unresolved += 1
             continue
@@ -2145,21 +2185,62 @@ def _relation(
 def _candidate_symbols(
     reference: TechnicalReference,
     symbols: tuple[TechnicalSymbol, ...],
+    configuration_aliases: dict[
+        tuple[str, str], tuple[TechnicalSymbol, ...]
+    ],
 ) -> tuple[TechnicalSymbol, ...]:
     """Selecciona candidatos por tecnologia, tipo, nombre y contenedor.
 
     Las referencias con tecnologia desconocida, como candidatas `NAME(...)` de
     formulas, se comparan contra cualquier tecnologia compatible del catalogo.
     """
+    explicit_alias_type = _explicit_configuration_alias_type(reference)
     compatible = [
         symbol
         for symbol in symbols
+        if symbol.status == SymbolStatus.ACTIVE
         if (
             reference.technology == "unknown"
             or symbol.technology == reference.technology
         )
-        and _type_compatible(reference.reference_type, symbol.symbol_type)
+        and (
+            symbol.symbol_type == explicit_alias_type
+            if explicit_alias_type is not None
+            else _type_compatible(reference.reference_type, symbol.symbol_type)
+        )
     ]
+    if reference.reference_type == "configuration_token":
+        allowed_types = _configuration_token_symbol_types(reference)
+        compatible = [
+            symbol for symbol in compatible if symbol.symbol_type in allowed_types
+        ]
+        target_alias = normalize_symbol_name(reference.normalized_target)
+        configuration_name = reference.metadata.get("configuration_name")
+        aliases = [target_alias]
+        if isinstance(configuration_name, str):
+            normalized_configuration = normalize_symbol_name(configuration_name)
+            prefix = f"{normalized_configuration}."
+            same_configuration_alias = (
+                target_alias
+                if target_alias.startswith(prefix)
+                else f"{prefix}{target_alias}"
+            )
+            aliases = [same_configuration_alias, target_alias]
+        for alias in dict.fromkeys(aliases):
+            alias_matches = [
+                symbol
+                for symbol_type in allowed_types
+                for symbol in configuration_aliases.get((alias, symbol_type), ())
+            ]
+            if alias_matches:
+                return tuple(_stable_symbols(alias_matches))
+    if explicit_alias_type is not None:
+        target_configuration = normalize_symbol_name(
+            str(reference.metadata["target_configuration"])
+        )
+        alias_value = _configuration_alias_value(reference.raw_text)
+        alias = normalize_symbol_name(f"{target_configuration}.{alias_value}")
+        return configuration_aliases.get((alias, explicit_alias_type), ())
     target = normalize_symbol_name(reference.normalized_target)
     parts = target.split(".")
     if len(parts) > 1:
@@ -2187,6 +2268,83 @@ def _candidate_symbols(
         if same_container:
             matches = same_container
     return tuple(_stable_symbols(matches))
+
+
+def _configuration_alias_index(
+    symbols: tuple[TechnicalSymbol, ...],
+) -> dict[tuple[str, str], tuple[TechnicalSymbol, ...]]:
+    """Indexa aliases Data-Driven activos una vez por corrida de resolucion.
+
+    Args:
+        symbols: Catalogo cargado en memoria para la resolucion actual.
+
+    Returns:
+        Simbolos agrupados por alias `configuracion.valor` y tipo derivado.
+    """
+    grouped: dict[tuple[str, str], list[TechnicalSymbol]] = {}
+    for symbol in symbols:
+        if (
+            symbol.status != SymbolStatus.ACTIVE
+            or symbol.symbol_type not in _CONFIGURATION_ALIAS_SYMBOL_TYPES
+        ):
+            continue
+        configuration_name = symbol.metadata.get("configuration_name")
+        value = symbol.metadata.get("value")
+        if not isinstance(configuration_name, str) or value is None:
+            continue
+        alias_value = _configuration_alias_value(value)
+        if not alias_value:
+            continue
+        alias = normalize_symbol_name(f"{configuration_name}.{alias_value}")
+        grouped.setdefault((alias, symbol.symbol_type), []).append(symbol)
+    return {
+        key: tuple(_stable_symbols(candidates))
+        for key, candidates in grouped.items()
+    }
+
+
+def _configuration_alias_value(value: Any) -> str:
+    """Normaliza el valor persistido usado como hoja de un alias."""
+    text = str(value).strip()
+    if len(text) >= 2 and text[0] == "'" and text[-1] == "'":
+        text = text[1:-1].replace("''", "'")
+    return normalize_symbol_name(text)
+
+
+def _configuration_token_symbol_types(
+    reference: TechnicalReference,
+) -> tuple[str, ...]:
+    """Limita candidatos segun la sintaxis declarada del token."""
+    token_kind = reference.metadata.get("token_kind")
+    if token_kind == "variable":
+        return ("configuration_variable",)
+    if token_kind == "parameter":
+        return ("configuration_parameter",)
+    return ("configuration_variable", "configuration_parameter")
+
+
+def _explicit_configuration_alias_type(
+    reference: TechnicalReference,
+) -> str | None:
+    """Obtiene el tipo derivado declarado para una referencia explicita.
+
+    Args:
+        reference: Referencia construida desde una columna Data-Driven.
+
+    Returns:
+        Tipo compatible con el indice semantico, o `None` si la referencia usa
+        la resolucion nominal tradicional.
+    """
+    if reference.reference_type != "configuration_reference":
+        return None
+    target_configuration = reference.metadata.get("target_configuration")
+    target_type = reference.metadata.get("target_type")
+    if not isinstance(target_configuration, str) or not isinstance(target_type, str):
+        return None
+    normalized_type = normalize_symbol_name(target_type)
+    if normalized_type not in _CONFIGURATION_ALIAS_SYMBOL_TYPES:
+        return None
+    return normalized_type
 
 
 def _stable_symbols(symbols: list[TechnicalSymbol]) -> list[TechnicalSymbol]:

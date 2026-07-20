@@ -1,6 +1,6 @@
 # H4.1 - Configuraciones Data-Driven
 
-**Estado:** implementacion concluida, aceptacion tecnica T12 en revision humana.
+**Estado:** hito completado con aceptacion tecnica y funcional aprobada.
 
 H4.1 extiende la ingenieria inversa H4 para incorporar conocimiento tecnico
 definido como datos de configuracion exportados en archivos `.sql`. El hito
@@ -30,7 +30,8 @@ no esta expresada directamente en codigo Oracle/PLSQL o PowerBuilder.
 
 La evidencia integral de la implementacion, regresion, smoke instalado, corpus
 piloto y limitaciones conocidas se consolida en [acceptance.md](acceptance.md).
-T12 permanece pendiente hasta que una persona revise esa evidencia.
+Las tareas H4.1-T01 a H4.1-T12 estan completadas y la evidencia fue aprobada por
+el mantenedor.
 
 ## Alcance resumido
 

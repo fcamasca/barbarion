@@ -2651,7 +2651,20 @@ class SQLiteReverseEngineeringRepository:
         run_id: int,
         file_ids: tuple[int, ...],
     ) -> tuple[int, int, int]:
-        """Marca obsoletas filas reverse engineering de archivos del scope no vistas en el run."""
+        """Reconcilia filas del alcance que no fueron vistas en la corrida.
+
+        Los simbolos y relaciones conservan estado historico `stale`. Las
+        referencias reemplazadas se eliminan porque no tienen columna de
+        vigencia y mantenerlas como `unresolved` las haria participar otra vez
+        en la resolucion. Sus relaciones se retiran mediante la FK en cascada.
+
+        Args:
+            run_id: Corrida que publico el conocimiento vigente.
+            file_ids: Archivos incluidos en el alcance reconciliado.
+
+        Returns:
+            Cantidades de simbolos, referencias y relaciones reconciliadas.
+        """
         if not file_ids:
             return (0, 0, 0)
         placeholders = ", ".join("?" for _ in file_ids)
@@ -2669,12 +2682,11 @@ class SQLiteReverseEngineeringRepository:
             )
             reference_cursor = connection.execute(
                 f"""
-                UPDATE symbol_references
-                SET resolution_status = 'unresolved', updated_at = ?
+                DELETE FROM symbol_references
                 WHERE source_file_id IN ({placeholders})
                   AND last_run_id <> ?
                 """,
-                (now, *file_ids, run_id),
+                (*file_ids, run_id),
             )
             relation_cursor = connection.execute(
                 f"""
@@ -3012,7 +3024,7 @@ def _relation_candidate_from_row(row: sqlite3.Row) -> RelationCandidate:
 
 
 def _inventory_where(filters: InventoryFilters) -> tuple[str, list[object]]:
-    clauses = ["1 = 1"]
+    clauses: list[str] = []
     parameters: list[object] = []
     if filters.technology is not None:
         clauses.append("symbols.technology = ?")
@@ -3033,6 +3045,8 @@ def _inventory_where(filters: InventoryFilters) -> tuple[str, list[object]]:
     if filters.status is not None:
         clauses.append("symbols.status = ?")
         parameters.append(filters.status.value)
+    else:
+        clauses.append("symbols.status = 'active'")
     if filters.confidence is not None:
         clauses.append("symbols.confidence = ?")
         parameters.append(filters.confidence.value)

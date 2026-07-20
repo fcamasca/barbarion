@@ -65,11 +65,11 @@ def test_data_driven_analyze_cli_is_idempotent_and_respects_dry_run(
     assert first_counts["symbol_references"] == 3
     assert first_counts["relations"] == 2
     assert _reference_statuses(db_path) == {
-        "configuration_token": ("resolved",),
+        "configuration_token": ("ambiguous",),
         "function_candidate": ("unresolved",),
         "precedes": ("resolved",),
     }
-    assert _active_relation_statuses(db_path) == ("resolved", "resolved")
+    assert _active_relation_statuses(db_path) == ("resolved", "ambiguous")
 
     second_code = cli.main(
         ["--config", str(config), "analyze", "--path", "config/pricing"]
@@ -100,6 +100,81 @@ def test_data_driven_analyze_cli_is_idempotent_and_respects_dry_run(
         db_path,
         "SELECT COUNT(*) FROM symbols WHERE technology = 'configuration' AND last_run_id = 3",
     )
+
+
+def test_analyze_general_counts_are_current_and_idempotent(
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    """Mantiene conteos generales coherentes entre corridas identicas.
+
+    Args:
+        tmp_path: Workspace temporal con corpus Data-Driven aislado.
+        capsys: Capturador usado para limpiar la salida de ingesta.
+    """
+    config = _prepare_workspace(tmp_path)
+    db_path = tmp_path / "data" / "barbarion.db"
+    rules = tmp_path / "sources" / "config" / "pricing" / "rules.sql"
+    rules.write_text(
+        rules.read_text(encoding="utf-8").replace(
+            "TAX_RATE()",
+            "ROUND(AMOUNT)",
+        ),
+        encoding="utf-8",
+    )
+    assert cli.main(["--config", str(config), "ingest"]) == 0
+    capsys.readouterr()
+    settings = load_settings(config_path=config, environ={}, cwd=tmp_path)
+    service = AnalyzeService(
+        settings=settings,
+        repository=SQLiteReverseEngineeringRepository(db_path),
+    )
+    scope = AnalyzeScope(path_prefix="config/pricing")
+
+    first = service.run(scope=scope)
+    first_counts = _counts(db_path)
+    second = service.run(scope=scope)
+    second_counts = _counts(db_path)
+
+    first_projection = (
+        first.references_detected,
+        first.relations_resolved,
+        first.relations_ambiguous,
+        first.relations_unresolved,
+    )
+    second_projection = (
+        second.references_detected,
+        second.relations_resolved,
+        second.relations_ambiguous,
+        second.relations_unresolved,
+    )
+    assert first_projection == second_projection
+    assert (
+        second.relations_resolved
+        + second.relations_ambiguous
+        + second.relations_unresolved
+        == second.references_detected
+    )
+    metrics = second.data_driven
+    assert (
+        metrics.relations_resolved
+        + metrics.relations_ambiguous
+        + metrics.relations_unresolved
+        + metrics.relations_dynamic
+        + metrics.relations_external
+        == metrics.references_detected
+    )
+    assert second.references_detected == metrics.references_detected
+    assert second.relations_resolved == metrics.relations_resolved
+    assert second.relations_ambiguous == metrics.relations_ambiguous
+    assert second.relations_unresolved == (
+        metrics.relations_unresolved
+        + metrics.relations_dynamic
+        + metrics.relations_external
+    )
+    assert metrics.relations_external == 1
+    assert second_counts["symbol_references"] == first_counts["symbol_references"]
+    assert second_counts["relations"] == first_counts["relations"]
 
 
 def test_data_driven_analyze_reconciles_modified_and_deleted_records(
@@ -149,6 +224,7 @@ def test_data_driven_analyze_reconciles_modified_and_deleted_records(
         """,
     ) == 0
     assert _scalar(db_path, "SELECT COUNT(*) FROM relations WHERE status = 'active'") == 0
+    assert _scalar(db_path, "SELECT COUNT(*) FROM symbol_references") == 0
 
     rules.unlink()
     assert cli.main(["--config", str(config), "ingest"]) == 0
@@ -161,6 +237,7 @@ def test_data_driven_analyze_reconciles_modified_and_deleted_records(
         "SELECT COUNT(*) FROM symbols WHERE technology = 'configuration' AND status = 'active'",
     ) == 0
     assert _scalar(db_path, "SELECT COUNT(*) FROM relations WHERE status = 'active'") == 0
+    assert _scalar(db_path, "SELECT COUNT(*) FROM symbol_references") == 0
 
 
 def test_data_driven_analyze_reresolves_unresolved_to_ambiguous(
@@ -224,7 +301,7 @@ def test_data_driven_analyze_reresolves_unresolved_to_ambiguous(
     assert _reference_statuses(db_path)["function_candidate"] == ("ambiguous",)
     assert _active_relation_statuses(db_path, relation_type="precedes") == ("resolved",)
     assert _active_relation_statuses(db_path, relation_type="calls") == ("ambiguous",)
-    assert _scalar(db_path, "SELECT COUNT(*) FROM relation_candidates") == 2
+    assert _scalar(db_path, "SELECT COUNT(*) FROM relation_candidates") == 4
 
 
 def test_data_driven_analyze_path_scope_does_not_touch_other_files(

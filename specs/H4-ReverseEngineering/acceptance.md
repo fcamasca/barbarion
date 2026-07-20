@@ -172,7 +172,7 @@ Runs de analisis:
 Comando:
 
 ```bash
-rg -n "password|passwd|secret|token|api[_-]?key|jdbc:|Data Source=|User ID=|C:\\Users\\|G:\\|D:\\|Mi unidad|Produccion|Productivo|MCI|Formulador" reports\h4 tests\fixtures tests\support specs\H4-ReverseEngineering --glob "!acceptance.md"
+rg -n "password|passwd|secret|token|api[_-]?key|jdbc:|Data Source=|User ID=|C:\\Users\\|G:\\|D:\\|Mi unidad|Produccion|Productivo|<domain-marker>" reports\h4 tests\fixtures tests\support specs\H4-ReverseEngineering --glob "!acceptance.md"
 ```
 
 Resultado:

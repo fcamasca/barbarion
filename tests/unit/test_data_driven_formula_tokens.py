@@ -1,5 +1,7 @@
 """Pruebas de tokens estaticos en formulas Data-Driven."""
 
+from dataclasses import replace
+
 from barbarion.config import DataDrivenConfiguration
 from barbarion.domain.data_driven import (
     build_configuration_references,
@@ -10,6 +12,7 @@ from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
     EvidenceClassification,
     ResolutionStatus,
+    SymbolStatus,
     TechnicalSymbol,
     technical_symbol_id,
 )
@@ -20,6 +23,8 @@ TOKEN_PATTERNS = (
     r"\{([A-Z_][A-Z0-9_]*)\}",
     r":([A-Z_][A-Z0-9_]*)",
     r"@([A-Z_][A-Z0-9_]*)@",
+    r"\[@([A-Z_][A-Z0-9_]*)\]",
+    r"\[%([A-Z_][A-Z0-9_]*)\]",
 )
 
 
@@ -211,6 +216,172 @@ def test_incomplete_or_concatenated_formula_tokens_are_dynamic() -> None:
     assert candidates == ()
 
 
+def test_bracket_variable_token_resolves_by_configuration_value_alias() -> None:
+    """Resuelve `[@...]` por alias sin alterar la identidad estructural."""
+    declared = semantic_configuration()
+    parsed = parse_dml_configurations(
+        "INSERT INTO APP_CFG.CATALOG_ENTRIES "
+        "(ENTRY_KEY, REVISION, VARIABLE_KEY, EXPRESSION_TEXT) "
+        "VALUES ('INPUT_ALPHA', 1, 'INPUT_ALPHA', "
+        "'ROUND([@INPUT_ALPHA], 2)');",
+        (declared,),
+        max_statements_per_file=100,
+        max_literal_chars=1000,
+    )
+    assert parsed.diagnostics == ()
+    symbols = build_configuration_symbols(parsed.records, (declared,)).symbols
+    references = build_configuration_references(
+        parsed.records,
+        (declared,),
+        source_file_id=1,
+        token_patterns=TOKEN_PATTERNS,
+    ).references
+
+    reference = next(
+        item
+        for item in references
+        if item.reference_type == "configuration_token"
+    )
+    relation, candidates = relation_from_reference(reference, symbols) or (
+        None,
+        (),
+    )
+
+    assert reference.normalized_target == "catalog_entries.input_alpha"
+    assert reference.metadata["token_kind"] == "variable"
+    assert relation is not None
+    assert relation.resolution_status == ResolutionStatus.RESOLVED
+    target = next(
+        symbol
+        for symbol in symbols
+        if symbol.symbol_id == relation.target_symbol_id
+    )
+    assert target.normalized_name == (
+        "catalog_entries.input_alpha.1.configuration_variable.variable_key"
+    )
+    assert candidates == ()
+
+
+def test_bracket_parameter_token_does_not_resolve_to_variable_alias() -> None:
+    """Impide que `[%...]` enlace una variable con el mismo valor."""
+    declared = semantic_configuration()
+    parsed = parse_dml_configurations(
+        "INSERT INTO APP_CFG.CATALOG_ENTRIES "
+        "(ENTRY_KEY, REVISION, VARIABLE_KEY, EXPRESSION_TEXT) "
+        "VALUES ('INPUT_ALPHA', 1, 'INPUT_ALPHA', "
+        "'ROUND([%INPUT_ALPHA], 2)');",
+        (declared,),
+        max_statements_per_file=100,
+        max_literal_chars=1000,
+    )
+    symbols = build_configuration_symbols(parsed.records, (declared,)).symbols
+    reference = next(
+        item
+        for item in build_configuration_references(
+            parsed.records,
+            (declared,),
+            source_file_id=1,
+            token_patterns=TOKEN_PATTERNS,
+        ).references
+        if item.reference_type == "configuration_token"
+    )
+
+    assert reference.metadata["token_kind"] == "parameter"
+    assert relation_from_reference(reference, symbols) is None
+
+
+def test_bracket_parameter_token_resolves_only_declared_parameter() -> None:
+    """Resuelve `[%...]` cuando existe un parametro compatible declarado."""
+    declared = semantic_configuration(parameter_columns=("PARAMETER_KEY",))
+    parsed = parse_dml_configurations(
+        "INSERT INTO APP_CFG.CATALOG_ENTRIES "
+        "(ENTRY_KEY, REVISION, VARIABLE_KEY, PARAMETER_KEY, EXPRESSION_TEXT) "
+        "VALUES ('INPUT_BETA', 1, 'INPUT_BETA', 'INPUT_ALPHA', "
+        "'[%INPUT_ALPHA]');",
+        (declared,),
+        max_statements_per_file=100,
+        max_literal_chars=1000,
+    )
+    symbols = build_configuration_symbols(parsed.records, (declared,)).symbols
+    reference = next(
+        item
+        for item in build_configuration_references(
+            parsed.records,
+            (declared,),
+            source_file_id=1,
+            token_patterns=TOKEN_PATTERNS,
+        ).references
+        if item.reference_type == "configuration_token"
+    )
+
+    relation, _candidates = relation_from_reference(reference, symbols) or (
+        None,
+        (),
+    )
+    assert relation is not None
+    target = next(
+        symbol
+        for symbol in symbols
+        if symbol.symbol_id == relation.target_symbol_id
+    )
+    assert target.symbol_type == "configuration_parameter"
+
+
+def test_configuration_alias_is_ambiguous_only_between_active_matches() -> None:
+    """Aplica ambiguedad conservadora e ignora candidatos stale."""
+    declared = semantic_configuration()
+    parsed = parse_dml_configurations(
+        "INSERT INTO APP_CFG.CATALOG_ENTRIES "
+        "(ENTRY_KEY, REVISION, VARIABLE_KEY, EXPRESSION_TEXT) "
+        "VALUES ('INPUT_ALPHA', 1, 'INPUT_ALPHA', '[@INPUT_ALPHA]');\n"
+        "INSERT INTO APP_CFG.CATALOG_ENTRIES "
+        "(ENTRY_KEY, REVISION, VARIABLE_KEY, EXPRESSION_TEXT) "
+        "VALUES ('INPUT_ALPHA', 2, 'INPUT_ALPHA', NULL);",
+        (declared,),
+        max_statements_per_file=100,
+        max_literal_chars=1000,
+    )
+    symbols = build_configuration_symbols(parsed.records, (declared,)).symbols
+    reference = next(
+        item
+        for item in build_configuration_references(
+            parsed.records,
+            (declared,),
+            source_file_id=1,
+            token_patterns=TOKEN_PATTERNS,
+        ).references
+        if item.reference_type == "configuration_token"
+    )
+
+    ambiguous, candidates = relation_from_reference(reference, symbols) or (
+        None,
+        (),
+    )
+    assert ambiguous is not None
+    assert ambiguous.resolution_status == ResolutionStatus.AMBIGUOUS
+    assert len(candidates) == 2
+
+    variables = [
+        symbol
+        for symbol in symbols
+        if symbol.symbol_type == "configuration_variable"
+    ]
+    catalog = tuple(
+        replace(symbol, status=SymbolStatus.STALE)
+        if symbol.symbol_id == variables[1].symbol_id
+        else symbol
+        for symbol in symbols
+    )
+    resolved, candidates = relation_from_reference(reference, catalog) or (
+        None,
+        (),
+    )
+    assert resolved is not None
+    assert resolved.resolution_status == ResolutionStatus.RESOLVED
+    assert resolved.target_symbol_id == variables[0].symbol_id
+    assert candidates == ()
+
+
 def configuration() -> DataDrivenConfiguration:
     return DataDrivenConfiguration(
         name="formulas",
@@ -225,6 +396,42 @@ def configuration() -> DataDrivenConfiguration:
         formula_columns=("FORMULA",),
         variable_columns=("VARIABLE_NAME",),
         parameter_columns=("PARAMETER_NAME",),
+        mapping_columns=(),
+        reference_columns=(),
+        parent_columns=(),
+        sequence_columns=(),
+        status_columns=(),
+        effective_from_columns=(),
+        effective_to_columns=(),
+        metadata_columns=(),
+    )
+
+
+def semantic_configuration(
+    *,
+    parameter_columns: tuple[str, ...] = (),
+) -> DataDrivenConfiguration:
+    """Declara un catalogo sintetico de variables y expresiones.
+
+    Args:
+        parameter_columns: Columnas que declaran parametros compatibles.
+
+    Returns:
+        Configuracion Data-Driven usada por los casos de aliases.
+    """
+    return DataDrivenConfiguration(
+        name="catalog_entries",
+        symbol_type="configuration_record",
+        tables=("APP_CFG.CATALOG_ENTRIES",),
+        identity_columns=("ENTRY_KEY", "REVISION"),
+        file_patterns=(),
+        default_column_order=(),
+        name_columns=(),
+        description_columns=(),
+        rule_columns=(),
+        formula_columns=("EXPRESSION_TEXT",),
+        variable_columns=("VARIABLE_KEY",),
+        parameter_columns=parameter_columns,
         mapping_columns=(),
         reference_columns=(),
         parent_columns=(),

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from barbarion import __version__
+
 
 def test_readme_documents_portfolio_overview_and_mvp_status() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -9,8 +11,9 @@ def test_readme_documents_portfolio_overview_and_mvp_status() -> None:
     assert "## Cómo funciona" in readme
     assert "## Ejemplo end-to-end" in readme
     assert "## Estado del MVP" in readme
-    assert "Versión: `0.5.0`" in readme
+    assert f"Versión actual: `{__version__}`" in readme
     assert "Hitos completados: `5/5`" in readme
+    assert "Suite de aceptación del MVP: `502 passed, 2 skipped`" in readme
     assert "Suite de aceptación del MVP: `502 passed, 2 skipped`" in readme
     assert "Smoke tests instalados: `10 passed`" in readme
     assert "Integración continua: GitHub Actions" in readme

@@ -18,8 +18,7 @@
 
 Estados iniciales: `pendiente`.
 
-Estado actual del hito: H4.1-T10 reabierta; H4.1-T12 pendiente. Las demas
-tareas permanecen completadas.
+Estado actual del hito: completado. H4.1-T01 a H4.1-T12 cerradas.
 
 ## 2. Tareas
 
@@ -157,7 +156,7 @@ configuraciones.
 
 ### H4.1-T10 - Integrar conocimiento Data-Driven estructurado con RAG y H5
 
-**Estado:** reabierta; pendiente de revalidacion manual.
+**Estado:** completada.
 
 **Objetivo:** lograr que preguntas naturales consuman simbolos, metadata y
 relaciones Data-Driven junto con codigo relacionado.
@@ -175,6 +174,10 @@ CLI devolvio cinco fuentes formadas solo por rutas, sin simbolos, metadata,
 relaciones, lineas ni codigo. Las pruebas sinteticas anteriores no recorrian el
 composition root real y no acreditan T10. La correccion requiere una regresion
 CLI integral y repetir exactamente la pregunta manual antes de cerrar la tarea.
+El defecto se corrigio en el composition root, el contrato de fuentes, la
+normalizacion conceptual y el ranking estructurado. La repeticion manual
+priorizo el concepto dominante con metadata, relaciones y lineas, y la
+confirmacion del usuario cerro T10.
 **Requisitos:** H4.1-REQ-014.  
 **Checkpoint:** `python -m pytest tests/integration/test_data_driven_structured_rag.py tests/integration/test_data_driven_h3_h5_integration.py`.
 
@@ -195,7 +198,7 @@ que, sin tracebacks en errores esperados.
 
 ### H4.1-T12 - Validacion y aceptacion tecnica H4.1
 
-**Estado:** pendiente.
+**Estado:** completada.
 **Objetivo:** ejecutar aceptacion tecnica integral solo despues de concluir la
 implementacion.  
 **Descripcion:** Ejecutar pruebas, validar criterios de aceptacion, correr

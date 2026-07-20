@@ -113,9 +113,8 @@ y de sus artefactos estructurales (packages, procedures, funciones,
 tablas, vistas, secuencias, etc.).
 
 La reconstrucción de aplicaciones data-driven, donde parte importante de
-la lógica reside en configuraciones persistidas en base de datos
-(plantillas, reglas, parámetros, workflows, mappings u otros metadatos),
-forma parte de la evolución futura de la ingeniería inversa.
+la lógica reside en configuraciones persistidas, fue incorporada por H4.1
+como una evolución compatible de la ingeniería inversa.
 
 Resultado:
 
@@ -124,11 +123,13 @@ utiliza para análisis técnico e impacto.
 
 ------------------------------------------------------------------------
 
-# Evolución futura
+# Evoluciones implementadas
 
 ------------------------------------------------------------------------
 
 ## H4.1 -- Configuraciones Data-Driven
+
+Estado: completada y aceptada técnicamente.
 
 Pregunta que responde:
 
@@ -166,6 +167,10 @@ Relaciona dichas configuraciones con:
 Resultado:
 
 Barbarion incorpora al grafo de conocimiento la lógica definida en configuraciones, permitiendo comprender arquitecturas data-driven sin depender de implementaciones específicas del dominio.
+
+------------------------------------------------------------------------
+
+# Evolución futura
 
 ------------------------------------------------------------------------
 

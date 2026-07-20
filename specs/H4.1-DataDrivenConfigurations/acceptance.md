@@ -2,12 +2,11 @@
 
 ## Estado
 
-**Estado tecnico y funcional:** pendiente; T10 formalmente reabierta por fallo
-del flujo CLI real.
+**Estado tecnico y funcional:** aprobado; H4.1 completada.
 
-**Estado de T12:** pendiente. La aceptacion anterior no cubrio uso semantico del
-conocimiento Data-Driven por `ask`; T10 debe cerrarse antes de repetir la
-aceptacion final.
+**Estado de T12:** completada. La aceptacion final incluye el uso semantico del
+conocimiento Data-Driven por el flujo real de `ask` y la confirmacion manual del
+usuario.
 
 La validacion cubre instalacion editable real, suite completa, smoke CLI,
 regresion H1-H5, flujo Data-Driven integral, incrementalidad, reconciliacion,
@@ -334,11 +333,10 @@ La nueva validacion automatizada sintetica demuestra:
 - exclusion de `stale`, fuentes fuera de alcance y columnas no declaradas;
 - ausencia de ejecucion de SQL o formulas.
 
-La siguiente aprobacion de T10 exige repetir exactamente la misma pregunta
-natural sobre los datos locales y observar evidencia estructurada legible y
-codigo relacionado, con archivo, lineas y chunk. Hasta entonces T10 sigue
-reabierta y T12 permanece pendiente, aunque las regresiones automatizadas sean
-verdes. Ningun nombre ni valor del corpus local se incorpora al repositorio.
+La aprobacion de T10 exigio repetir exactamente la misma pregunta natural sobre
+los datos locales y observar evidencia estructurada legible con archivo,
+lineas, chunk, metadata y relaciones. Ningun nombre ni valor del corpus local
+se incorporo al repositorio.
 
 Tras corregir el ranking por cobertura, frecuencia y precision de campo, se
 repitio localmente la misma pregunta natural de forma anonimizada. `ask
@@ -346,8 +344,8 @@ repitio localmente la misma pregunta natural de forma anonimizada. `ask
 primer bloque correspondio al concepto dominante y conservo metadata,
 relaciones y lineas. No hubo un chunk de codigo relacionado entre esas cinco
 fuentes. Las regresiones sinteticas verifican que los chunks relacionados se
-conservan cuando existen y no son redundantes. T10 permanece reabierta hasta
-que el usuario confirme visualmente el resultado manual; T12 sigue pendiente.
+conservan cuando existen y no son redundantes. El usuario confirmo visualmente
+el resultado manual; T10 y T12 quedaron completadas.
 
 `spec create --no-llm` genero una spec piloto para modificar
 `pricing_rules.r1`. El diseno identifico como afectados:
@@ -431,13 +429,18 @@ ignorados por Git y no fueron modificados durante esta auditoria.
 
 ## Decision tecnica y funcional
 
-La aprobacion anterior queda parcialmente supersedida por la reapertura de T10:
-demostro inventario, descripcion, impacto y recuperacion textual del DML, pero
-no el uso semantico de simbolos, metadata y relaciones Data-Driven por `ask`.
+H4.1 queda aprobada tecnica y funcionalmente. La aceptacion cubre inventario,
+descripcion, impacto, recuperacion y uso semantico de simbolos, metadata y
+relaciones Data-Driven por el flujo real de `ask`.
 
-Las pruebas sinteticas de la integracion estructurada, la suite completa y las
-verificaciones estaticas deben quedar verdes. Ademas, una validacion manual con
-datos reales locales debe demostrar que una pregunta natural obtiene una
-respuesta sustentada por configuraciones Data-Driven y codigo legado, sin
-incorporar esos datos al repositorio. Hasta completar y aprobar esa evidencia,
-T10 y T12 permanecen pendientes.
+Las regresiones sinteticas, la suite completa, las verificaciones estaticas y
+la validacion manual anonimizada quedaron aprobadas. La pregunta natural de
+aceptacion priorizo el concepto estructurado dominante y conservo trazabilidad
+sin incorporar datos reales al repositorio. T10 y T12 quedan completadas.
+
+## Addendum de version 0.6.0
+
+El cierre aprobado de H4.1 incrementa la version de Barbarion de `0.5.0` a
+`0.6.0`. `barbarion.__version__` permanece como fuente unica para el paquete y
+el contrato `barbarion --version`. Las referencias al MVP `0.5.0` y al entorno
+usado durante validaciones anteriores se conservan como evidencia historica.

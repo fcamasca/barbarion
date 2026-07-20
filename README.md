@@ -66,13 +66,19 @@ El ejemplo usa nombres sanitizados. En un corpus real, las respuestas incluyen r
 
 ## Estado del MVP
 
-- Versión: `0.5.0`
+- Versión actual: `0.6.0`
 - Hitos completados: `5/5`
 - Suite de aceptación del MVP: `502 passed, 2 skipped`
 - Smoke tests instalados: `10 passed`
 - Runtime validado: Python `3.12`
 - Integración continua: GitHub Actions
 - Operación: local y on-premise
+
+### Evolución posterior al MVP
+
+- H4.1 Configuraciones Data-Driven: completada y aceptada técnicamente.
+- Suite oficial H4.1: `581 passed, 2 skipped`.
+- Evidencia: [`specs/H4.1-DataDrivenConfigurations/acceptance.md`](specs/H4.1-DataDrivenConfigurations/acceptance.md).
 
 La evidencia técnica está documentada en [`specs/H5-SpecMode/acceptance.md`](specs/H5-SpecMode/acceptance.md). Ese registro conserva además la nota de revisión humana pendiente para la spec piloto H5.
 
@@ -165,6 +171,10 @@ barbarion --config ruta/al/archivo.toml config show
 ```
 
 ## Configuraciones Data-Driven
+
+H4.1 está completada. La capacidad integra configuraciones declaradas con el
+catálogo técnico, inventario, impacto, RAG y Spec Mode, incluyendo recuperación
+estructurada por conceptos naturales y relaciones hacia código asociado.
 
 Barbarion puede tratar archivos `.sql` declarados como configuracion sin
 ejecutar el DML. Para habilitarlo, configura `data_driven.enabled = true`, los

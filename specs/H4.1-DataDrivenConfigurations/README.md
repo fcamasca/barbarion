@@ -1,6 +1,6 @@
 # H4.1 - Configuraciones Data-Driven
 
-**Estado:** T10 reabierta por integracion RAG estructurada; T12 pendiente.
+**Estado:** completada y aceptada tecnicamente.
 
 H4.1 extiende la ingenieria inversa H4 para incorporar conocimiento tecnico
 definido como datos de configuracion exportados en archivos `.sql`. El hito
@@ -30,12 +30,12 @@ no esta expresada directamente en codigo Oracle/PLSQL o PowerBuilder.
 
 La evidencia integral de la implementacion, regresion, smoke instalado, corpus
 piloto y limitaciones conocidas se consolida en [acceptance.md](acceptance.md).
-La aceptacion anterior no demostro que `ask` consumiera simbolos y relaciones
-Data-Driven. La validacion manual del 2026-07-19 confirmo el defecto: aun tras
-`analyze`, `ask --no-llm` devolvio cinco fuentes cuyo contenido visible era
-solo la ruta, sin simbolos, metadata, relaciones, lineas ni codigo relacionado.
-T10 queda formalmente reabierta y T12 permanece pendiente hasta completar la
-regresion del CLI real, la suite y una nueva validacion manual anonimizada.
+La aceptacion inicial no demostro que `ask` consumiera simbolos y relaciones
+Data-Driven. El defecto se reprodujo en el CLI real y se corrigio en el
+ensamblaje, el contrato de fuentes, la normalizacion conceptual y el ranking.
+La suite oficial y la repeticion manual anonimizada confirmaron evidencia
+estructurada legible, metadata, relaciones, lineas y priorizacion del concepto
+dominante. T10 y T12 quedaron cerradas con confirmacion del usuario.
 
 ## Alcance resumido
 

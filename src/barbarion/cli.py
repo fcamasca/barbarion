@@ -307,6 +307,7 @@ def _run_models_validate(args: argparse.Namespace) -> int:
     service = ValidateModelService(
         OllamaModelClient(settings.ollama_url),
         settings.llm.model,
+        think=settings.llm.think,
     )
     try:
         result = service.run(args.model, timeout_seconds=timeout)
@@ -323,6 +324,7 @@ def _run_models_select(args: argparse.Namespace) -> int:
     validator = ValidateModelService(
         OllamaModelClient(settings.ollama_url),
         settings.llm.model,
+        think=settings.llm.think,
     )
     service = SelectModelService(validator, TomlLlmModelEditor())
     try:

@@ -220,6 +220,7 @@ VALIDATION_PROMPT = (
     "Devuelve exactamente este texto y nada mas: "
     "BARBARION_MODEL_READY"
 )
+_VALIDATION_MAX_OUTPUT_TOKENS = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +229,7 @@ class ValidateModelService:
 
     provider: LocalModelProvider
     active_model: str
+    think: bool | None = None
     clock: Callable[[], float] = time.monotonic
 
     def run(
@@ -269,6 +271,8 @@ class ValidateModelService:
                     prompt=VALIDATION_PROMPT,
                     timeout_seconds=timeout_seconds,
                     temperature=0.0,
+                    max_output_tokens=_VALIDATION_MAX_OUTPUT_TOKENS,
+                    think=self.think,
                 )
             )
         except LocalModelProviderError as error:

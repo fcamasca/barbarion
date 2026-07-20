@@ -229,6 +229,7 @@ def test_generate_detailed_preserves_optional_telemetry() -> None:
             prompt="Devuelve BARBARION_OK",
             timeout_seconds=4,
             max_output_tokens=8,
+            think=False,
         )
     )
 
@@ -239,6 +240,7 @@ def test_generate_detailed_preserves_optional_telemetry() -> None:
     request, timeout = opener.requests[0]
     assert timeout == 4
     assert _payload(request)["options"] == {"temperature": 0.0, "num_predict": 8}
+    assert _payload(request)["think"] is False
 
 
 @pytest.mark.parametrize(

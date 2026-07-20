@@ -108,6 +108,7 @@ class ModelGenerationRequest:
     timeout_seconds: float
     temperature: float = 0.0
     max_output_tokens: int | None = None
+    think: bool | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model", _required_text(self.model, "model"))
@@ -118,6 +119,8 @@ class ModelGenerationRequest:
             raise ValueError("temperature no puede ser negativa.")
         if self.max_output_tokens is not None and self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens debe ser mayor que cero.")
+        if self.think is not None and not isinstance(self.think, bool):
+            raise ValueError("think debe ser booleano cuando se configura.")
 
 
 @dataclass(frozen=True, slots=True)

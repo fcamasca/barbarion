@@ -77,7 +77,7 @@ def test_validation_ready_keeps_four_states_explicit() -> None:
     )
     assert request.temperature == 0.0
     assert request.timeout_seconds == 12
-    assert request.max_output_tokens is None
+    assert request.max_output_tokens == 16
 
 
 def test_validation_prompt_contains_only_instruction_and_marker() -> None:

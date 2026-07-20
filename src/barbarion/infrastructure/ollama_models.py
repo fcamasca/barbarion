@@ -171,15 +171,18 @@ class OllamaModelClient:
         options: dict[str, object] = {"temperature": request.temperature}
         if request.max_output_tokens is not None:
             options["num_predict"] = request.max_output_tokens
+        body: dict[str, object] = {
+            "model": request.model,
+            "prompt": request.prompt,
+            "stream": False,
+            "options": options,
+        }
+        if request.think is not None:
+            body["think"] = request.think
         payload = self._request_json(
             "/api/generate",
             timeout_seconds=request.timeout_seconds,
-            body={
-                "model": request.model,
-                "prompt": request.prompt,
-                "stream": False,
-                "options": options,
-            },
+            body=body,
         )
         response = _optional_str(payload.get("response"))
         if response is None:

@@ -11,11 +11,19 @@ import sys
 import time
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from barbarion import __version__
 from barbarion.application.ingest import IngestionService
+from barbarion.application.local_models import (
+    InstallModelResult,
+    InstallModelService,
+    ListModelsService,
+    ModelDetailsView,
+    ModelListResult,
+    ShowModelService,
+)
 from barbarion.application.rag import (
     AskService,
     CitationValidator,
@@ -57,6 +65,8 @@ from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
 from barbarion.domain.models import IngestionRunStatus
 from barbarion.domain.models import Confidence
+from barbarion.domain.local_models import LocalModelProviderError
+from barbarion.domain.local_models import LocalModelErrorCode, PullProgress
 from barbarion.domain.progress import ProgressSnapshot, ProgressStage
 from barbarion.domain.rag import (
     AnswerResult,
@@ -103,6 +113,7 @@ from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
+from barbarion.infrastructure.ollama_models import OllamaModelClient
 from barbarion.infrastructure.markdown import (
     SafeSpecWriter,
     SpecDocumentReader,
@@ -173,12 +184,227 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _positive_float(value: str) -> float:
+    """Valida un numero positivo para timeouts CLI."""
+    try:
+        parsed = float(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("debe ser un numero positivo") from error
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("debe ser un numero positivo")
+    return parsed
+
+
 def _show_config(args: argparse.Namespace) -> int:
     """Muestra la configuración efectiva sin modificar el entorno."""
     settings = load_settings(args.config)
     for key, value in settings_display_items(settings):
         print(f"{key} = {value}")
     return 0
+
+
+def _run_models_list(args: argparse.Namespace) -> int:
+    """Lista modelos Ollama mediante una vista estrictamente acotada."""
+    settings = load_settings(args.config)
+    service = ListModelsService(
+        OllamaModelClient(settings.ollama_url),
+        settings.llm.model,
+    )
+    try:
+        result = service.run(timeout_seconds=settings.ollama_timeout_seconds)
+    except LocalModelProviderError as error:
+        _print_local_model_error(error)
+        return 1
+    _render_models_list(result, args.format)
+    return 0
+
+
+def _run_models_show(args: argparse.Namespace) -> int:
+    """Muestra metadata allowlist de un modelo Ollama."""
+    settings = load_settings(args.config)
+    service = ShowModelService(
+        OllamaModelClient(settings.ollama_url),
+        settings.llm.model,
+    )
+    try:
+        result = service.run(
+            args.model,
+            timeout_seconds=settings.ollama_timeout_seconds,
+        )
+    except LocalModelProviderError as error:
+        _print_local_model_error(error)
+        return 1
+    _render_model_details(result, args.format)
+    return 0
+
+
+def _run_models_install(args: argparse.Namespace) -> int:
+    """Instala un modelo sin ejecutar shell ni modificar configuracion."""
+    settings = load_settings(args.config)
+    timeout = args.timeout or settings.llm.timeout_seconds
+    service = InstallModelService(OllamaModelClient(settings.ollama_url))
+    progress = _CliPullProgress()
+    try:
+        result = service.run(
+            args.model,
+            timeout_seconds=timeout,
+            dry_run=args.dry_run,
+            on_progress=progress.update,
+        )
+    except ValueError as error:
+        print(f"Error de argumentos: {error}", file=sys.stderr)
+        return 2
+    except LocalModelProviderError as error:
+        if error.code is LocalModelErrorCode.INTERRUPTED:
+            print("Solicitud interrumpida.", file=sys.stderr)
+            print(
+                "Barbarion dejo de esperar la descarga. "
+                "Ollama podria continuarla localmente.",
+                file=sys.stderr,
+            )
+            return 130
+        _print_local_model_error(error)
+        return 1
+    _render_model_install(result)
+    return 0
+
+
+@dataclass(slots=True)
+class _CliPullProgress:
+    """Reduce eventos de pull a cambios de estado o tramos de diez por ciento."""
+
+    last_status: str | None = None
+    last_bucket: int | None = None
+
+    def update(self, progress: PullProgress) -> None:
+        percent = progress.percent
+        bucket = int(percent // 10) if percent is not None else None
+        if progress.status == self.last_status and bucket == self.last_bucket:
+            return
+        self.last_status = progress.status
+        self.last_bucket = bucket
+        suffix = f" {percent:.0f}%" if percent is not None else ""
+        print(f"Ollama: {_safe_progress_status(progress.status)}{suffix}", file=sys.stderr)
+
+
+def _safe_progress_status(value: str) -> str:
+    normalized = " ".join(value.split())
+    return normalized if len(normalized) <= 120 else normalized[:117] + "..."
+
+
+def _render_model_install(result: InstallModelResult) -> None:
+    print("Instalacion de modelo local")
+    print(f"modelo = {result.model}")
+    if result.already_installed:
+        state = "ya instalado"
+    elif result.dry_run:
+        state = "se solicitaría la descarga"
+    else:
+        state = "instalado y confirmado"
+    print(f"estado = {state}")
+    print(f"pull_solicitado = {'si' if result.pull_requested else 'no'}")
+    print(f"presencia_final = {'confirmada' if result.final_present else 'pendiente'}")
+    if result.final_status is not None:
+        print(f"estado_ollama = {_safe_progress_status(result.final_status)}")
+
+
+def _render_models_list(result: ModelListResult, output_format: str) -> None:
+    if output_format == "json":
+        print(
+            json.dumps(
+                {
+                    "active_model": result.active_model,
+                    "active_model_installed": result.active_model_installed,
+                    "models": [
+                        {
+                            "name": item.name,
+                            "size_bytes": item.size_bytes,
+                            "modified_at": item.modified_at,
+                            "digest": item.digest,
+                            "active": item.active,
+                            "metadata_truncated": item.metadata_truncated,
+                        }
+                        for item in result.models
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    print("Modelos locales Ollama")
+    print(f"modelo_activo = {result.active_model}")
+    print(
+        "modelo_activo_instalado = "
+        f"{'si' if result.active_model_installed else 'no'}"
+    )
+    print(f"modelos_instalados = {len(result.models)}")
+    if not result.models:
+        print("- ninguno")
+        return
+    for item in result.models:
+        active = " [activo]" if item.active else ""
+        print(f"- {item.name}{active}")
+        print(
+            f"  tamano_bytes={_optional_cli(item.size_bytes)} "
+            f"modificado={_optional_cli(item.modified_at)} "
+            f"digest={_short_digest(item.digest)}"
+        )
+        if item.metadata_truncated:
+            print("  metadata=truncada")
+
+
+def _render_model_details(result: ModelDetailsView, output_format: str) -> None:
+    payload = {
+        "name": result.name,
+        "active": result.active,
+        "format": result.format,
+        "family": result.family,
+        "parameter_size": result.parameter_size,
+        "quantization_level": result.quantization_level,
+        "capabilities": list(result.capabilities),
+        "metadata_truncated": result.metadata_truncated,
+    }
+    if output_format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    print("Detalle de modelo local")
+    for key in (
+        "name",
+        "active",
+        "format",
+        "family",
+        "parameter_size",
+        "quantization_level",
+    ):
+        value = payload[key]
+        if key == "active":
+            value = "si" if value else "no"
+        print(f"{key} = {_optional_cli(value)}")
+    capabilities = result.capabilities
+    print(
+        "capabilities = "
+        + (", ".join(capabilities) if capabilities else "no disponible")
+    )
+    if result.metadata_truncated:
+        print("metadata = truncada")
+
+
+def _print_local_model_error(error: LocalModelProviderError) -> None:
+    detail = " ".join(error.detail.split())
+    if len(detail) > 300:
+        detail = detail[:297] + "..."
+    print(f"Error de modelos locales [{error.code.value}]: {detail}", file=sys.stderr)
+
+
+def _optional_cli(value: object | None) -> str:
+    return "no disponible" if value is None else str(value)
+
+
+def _short_digest(value: str | None) -> str:
+    if value is None:
+        return "no disponible"
+    return value if len(value) <= 16 else value[:16] + "..."
 
 
 def _run_doctor(args: argparse.Namespace) -> int:
@@ -2943,6 +3169,79 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_help_option(show_parser)
     show_parser.set_defaults(handler=_show_config)
+
+    models_parser = commands.add_parser(
+        "models",
+        help="administra modelos locales Ollama",
+        description="Consulta y administra modelos locales de Ollama.",
+        add_help=False,
+    )
+    _add_help_option(models_parser)
+    models_commands = models_parser.add_subparsers(
+        dest="models_command",
+        title="subcomandos",
+        metavar="SUBCOMANDO",
+        required=True,
+    )
+    models_list_parser = models_commands.add_parser(
+        "list",
+        help="lista modelos instalados",
+        description="Lista modelos instalados en la instancia Ollama local.",
+        add_help=False,
+    )
+    _add_help_option(models_list_parser)
+    models_list_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida",
+    )
+    models_list_parser.set_defaults(handler=_run_models_list)
+
+    models_show_parser = models_commands.add_parser(
+        "show",
+        help="muestra metadata acotada de un modelo",
+        description="Muestra metadata segura de un modelo Ollama local.",
+        add_help=False,
+    )
+    _add_help_option(models_show_parser)
+    models_show_parser.add_argument(
+        "model",
+        metavar="MODELO",
+        help="nombre exacto del modelo instalado",
+    )
+    models_show_parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="formato de salida",
+    )
+    models_show_parser.set_defaults(handler=_run_models_show)
+
+    models_install_parser = models_commands.add_parser(
+        "install",
+        help="instala explicitamente un modelo",
+        description="Solicita a Ollama la instalacion de un modelo local.",
+        add_help=False,
+    )
+    _add_help_option(models_install_parser)
+    models_install_parser.add_argument(
+        "model",
+        metavar="MODELO",
+        help="identificador de modelo aceptado por Ollama",
+    )
+    models_install_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="informa si el pull seria necesario sin descargar",
+    )
+    models_install_parser.add_argument(
+        "--timeout",
+        type=_positive_float,
+        metavar="SEGUNDOS",
+        help="timeout de inactividad; por defecto usa llm.timeout_seconds",
+    )
+    models_install_parser.set_defaults(handler=_run_models_install)
 
     ingest_parser = commands.add_parser(
         "ingest",

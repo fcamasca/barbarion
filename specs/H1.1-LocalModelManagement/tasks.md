@@ -19,7 +19,8 @@
 - Identificadores de codigo en ingles; comentarios y docstrings en espanol.
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al final.
 
-Estado actual del hito: especificado; implementacion pendiente.
+Estado actual del hito: en implementacion. H1.1-T01 a H1.1-T04 completadas;
+H1.1-T05 a H1.1-T12 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
@@ -27,7 +28,8 @@ Precondicion general: Barbarion `0.6.0`, H1-H5 y H4.1 completados.
 
 ### H1.1-T01 - Definir dominio, puerto y cliente Ollama de modelos
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** soportar catalogo, detalle, pull y generacion detallada con un
 contrato local pequeno.  
 **Descripcion:** Crear modelos puros, errores tipados y puerto
@@ -42,7 +44,8 @@ necesarias, sin SDK ni shell.
 
 ### H1.1-T02 - Implementar editor atomico de `[llm].model`
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** cambiar el modelo activo sin introducir otra fuente de verdad.  
 **Descripcion:** Implementar editor TOML acotado, deteccion de seccion/asignacion
 unica, escape seguro, temporal en mismo directorio, recarga completa de settings,
@@ -56,7 +59,8 @@ configuraciones existentes siguen validas.
 
 ### H1.1-T03 - Agregar `models list` y `models show`
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** descubrir e inspeccionar modelos instalados desde CLI.  
 **Descripcion:** Incorporar grupo `models`, servicios application, formatos
 text/json, marca de activo, orden estable y manejo accionable de Ollama ausente,
@@ -69,7 +73,8 @@ defecto.
 
 ### H1.1-T04 - Agregar `models install`
 
-**Estado:** pendiente.  
+**Estado:** completada.
+
 **Objetivo:** instalar explicitamente un modelo mediante Ollama local.  
 **Descripcion:** Validar identificador como dato, comprobar estado previo,
 ejecutar pull con progreso, verificar presencia final, soportar reintento y

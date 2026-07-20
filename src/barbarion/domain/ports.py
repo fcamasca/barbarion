@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Protocol
 
@@ -38,6 +38,14 @@ from barbarion.domain.reverse_engineering import (
     TechnicalSymbol,
 )
 from barbarion.domain.ingestion import PersistedFileState
+from barbarion.domain.local_models import (
+    LocalModel,
+    LocalModelDetails,
+    ModelGenerationRequest,
+    ModelGenerationResult,
+    PullProgress,
+    PullResult,
+)
 
 
 class ParserPort(Protocol):
@@ -218,6 +226,36 @@ class LlmProviderPort(Protocol):
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
         """Genera una respuesta desde un prompt controlado."""
+
+
+class LocalModelProvider(Protocol):
+    """Contrato local para catalogo, instalacion y generacion detallada."""
+
+    def list_models(self, *, timeout_seconds: float) -> tuple[LocalModel, ...]:
+        """Lista modelos instalados reportados por la instancia local."""
+
+    def show_model(
+        self,
+        name: str,
+        *,
+        timeout_seconds: float,
+    ) -> LocalModelDetails:
+        """Obtiene metadata acotada de un modelo instalado."""
+
+    def pull_model(
+        self,
+        name: str,
+        *,
+        timeout_seconds: float,
+        on_progress: Callable[[PullProgress], None] | None = None,
+    ) -> PullResult:
+        """Solicita la instalacion y emite progreso normalizado."""
+
+    def generate_detailed(
+        self,
+        request: ModelGenerationRequest,
+    ) -> ModelGenerationResult:
+        """Genera texto conservando telemetria opcional del servidor."""
 
 
 class ReverseEngineeringRepositoryPort(Protocol):

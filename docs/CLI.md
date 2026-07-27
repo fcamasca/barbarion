@@ -98,6 +98,7 @@ implementan razonamiento interno:
 ```toml
 [llm]
 think = false
+num_ctx = 16384
 ```
 
 `think = false` desactiva el razonamiento interno en los modelos compatibles y
@@ -106,6 +107,12 @@ generación inicial como al único intento de reparación de citas. Si `think` n
 se declara, Barbarion omite el campo del payload y conserva el comportamiento
 predeterminado de Ollama. Los modelos que no utilizan esta capacidad pueden
 ignorar el campo sin cambiar el contrato de respuesta.
+
+`num_ctx` configura la ventana de contexto que Ollama asigna al modelo durante
+la generacion y se envia como `options.num_ctx` a `/api/generate`. La opcion se
+aplica tanto a la generacion inicial como al intento de reparacion de citas. Si
+no se declara, Barbarion omite `num_ctx` y conserva el valor predeterminado de
+Ollama.
 
 ## Operacion con y sin Ollama
 

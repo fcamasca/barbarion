@@ -61,6 +61,7 @@ def test_ollama_llm_provider_sends_disabled_thinking_on_every_generation() -> No
         model="modelo-local",
         temperature=0.2,
         think=False,
+        num_ctx=16384,
         _opener=opener,
     )
 
@@ -72,7 +73,8 @@ def test_ollama_llm_provider_sends_disabled_thinking_on_every_generation() -> No
     payloads = [json.loads(request.data) for request, _timeout in opener.requests]
     assert [payload["think"] for payload in payloads] == [False, False]
     assert all(
-        payload["options"] == {"temperature": 0.2} for payload in payloads
+        payload["options"] == {"temperature": 0.2, "num_ctx": 16384}
+        for payload in payloads
     )
 
 

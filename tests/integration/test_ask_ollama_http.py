@@ -73,6 +73,7 @@ def test_ask_provider_sends_effective_llm_settings_over_http(
                 'timeout_seconds = 3.5',
                 'temperature = 0.1',
                 'think = false',
+                'num_ctx = 16384',
             )
         ),
         encoding="utf-8",
@@ -101,7 +102,7 @@ def test_ask_provider_sends_effective_llm_settings_over_http(
             "model": "qwen3:8b",
             "prompt": "Pregunta minima con acento: generacion.",
             "stream": False,
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_ctx": 16384},
             "think": False,
         }
     ]

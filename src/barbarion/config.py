@@ -100,6 +100,7 @@ _DEFAULT_LLM: dict[str, object] = {
     "timeout_seconds": 120.0,
     "temperature": 0.1,
     "think": None,
+    "num_ctx": None,
 }
 _DEFAULT_DATA_DRIVEN: dict[str, object] = {
     "enabled": False,
@@ -246,6 +247,7 @@ class LlmSettings:
     timeout_seconds: float
     temperature: float
     think: bool | None = None
+    num_ctx: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -482,6 +484,12 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
             "no configurado"
             if settings.llm.think is None
             else str(settings.llm.think).lower(),
+        ),
+        (
+            "llm.num_ctx",
+            "no configurado"
+            if settings.llm.num_ctx is None
+            else str(settings.llm.num_ctx),
         ),
         ("data_driven.enabled", str(settings.data_driven.enabled).lower()),
         (
@@ -878,6 +886,7 @@ def _build_llm_settings(value: object) -> LlmSettings:
         ),
         temperature=_validate_unit_float(values["temperature"], "llm.temperature"),
         think=_validate_optional_bool(values["think"], "llm.think"),
+        num_ctx=_validate_optional_positive_int(values["num_ctx"], "llm.num_ctx"),
     )
 
 
@@ -1093,6 +1102,13 @@ def _validate_optional_bool(value: object, key: str) -> bool | None:
     if value is None:
         return None
     return _validate_bool(value, key)
+
+
+def _validate_optional_positive_int(value: object, key: str) -> int | None:
+    """Valida un entero positivo TOML opcional."""
+    if value is None:
+        return None
+    return _validate_int_range(value, key, minimum=1)
 
 
 def _validate_float(value: object, key: str) -> float:

@@ -19,16 +19,20 @@ class OllamaLlmProvider:
     model: str
     temperature: float
     think: bool | None = None
+    num_ctx: int | None = None
     provider: str = "ollama"
     _opener: object | None = field(default=None, repr=False, compare=False)
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
         """Genera texto llamando al endpoint local de Ollama."""
+        options: dict[str, object] = {"temperature": self.temperature}
+        if self.num_ctx is not None:
+            options["num_ctx"] = self.num_ctx
         payload_data: dict[str, object] = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": self.temperature},
+            "options": options,
         }
         if self.think is not None:
             payload_data["think"] = self.think

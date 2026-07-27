@@ -61,6 +61,8 @@ timeout_seconds = 600.0
 temperature = 0.1
 # Desactiva el razonamiento interno en modelos compatibles para reducir latencia.
 think = false
+# Ventana de contexto que Ollama asigna al modelo durante la generacion.
+num_ctx = 16384
 
 [data_driven]
 enabled = false

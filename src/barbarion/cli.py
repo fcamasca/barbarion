@@ -1893,6 +1893,7 @@ def _build_llm_provider(settings: Settings) -> OllamaLlmProvider:
         model=settings.llm.model,
         temperature=settings.llm.temperature,
         think=settings.llm.think,
+        num_ctx=settings.llm.num_ctx,
     )
 
 

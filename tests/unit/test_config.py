@@ -410,6 +410,7 @@ def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
                 "timeout_seconds = 90",
                 "temperature = 0.0",
                 "think = false",
+                "num_ctx = 16384",
             ]
         ),
     )
@@ -448,6 +449,7 @@ def test_h3_values_are_loaded_and_normalized(tmp_path: Path) -> None:
         timeout_seconds=90.0,
         temperature=0.0,
         think=False,
+        num_ctx=16384,
     )
 
 
@@ -460,6 +462,7 @@ def test_llm_think_is_absent_by_default(tmp_path: Path) -> None:
     settings = load_settings(source, environ={}, cwd=tmp_path)
 
     assert settings.llm.think is None
+    assert settings.llm.num_ctx is None
 
 
 @pytest.mark.parametrize(
@@ -484,6 +487,8 @@ def test_llm_think_is_absent_by_default(tmp_path: Path) -> None:
         ("[llm]\ntimeout_seconds = 0\n", "llm.timeout_seconds"),
         ("[llm]\ntemperature = 2\n", "llm.temperature"),
         ("[llm]\nthink = \"false\"\n", "llm.think"),
+        ("[llm]\nnum_ctx = 0\n", "llm.num_ctx"),
+        ("[llm]\nnum_ctx = true\n", "llm.num_ctx"),
         ("embeddings = 1\n", "embeddings"),
     ],
 )

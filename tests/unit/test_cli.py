@@ -241,6 +241,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "llm.timeout_seconds",
         "llm.temperature",
         "llm.think",
+        "llm.num_ctx",
         "data_driven.enabled",
         "data_driven.file_patterns",
         "data_driven.max_statements_per_file",

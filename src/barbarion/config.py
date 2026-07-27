@@ -641,7 +641,7 @@ def _validate_timeout(value: object) -> float:
 def _validate_positive_timeout(value: object, key: str) -> float:
     """Valida timeouts operativos de RAG."""
     timeout = _validate_float(value, key)
-    if timeout <= 0 or timeout > 600:
+    if timeout <= 0 or timeout > 1800:
         raise ConfigError(
             f"La clave '{key}' debe ser mayor que 0 y menor o igual que 600."
         )

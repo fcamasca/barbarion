@@ -1,5 +1,7 @@
 # Barbarion — Roadmap del MVP
 
+> **Estado del documento:** registro histórico del plan original de 12 semanas para H1-H5. Los hitos fueron ejecutados y las decisiones posteriores pueden sustituir componentes previstos aquí. La arquitectura vigente se documenta en [`ARCHITECTURE.md`](ARCHITECTURE.md), las sustituciones en [`DECISIONS.md`](DECISIONS.md) y las evoluciones posteriores en [`EVOLUTION.md`](EVOLUTION.md).
+
 ## 1. Horizonte y capacidad
 
 El plan asume **12 semanas**, con una dedicación aproximada de **2 horas por día, de lunes a viernes**: unas **120 horas** en total.
@@ -124,7 +126,7 @@ El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no 
 ### Entregables
 
 - generación local de embeddings mediante Ollama;
-- colección vectorial local en Qdrant, sincronizada con la metadata SQLite;
+- colección vectorial local en Qdrant, sincronizada con la metadata SQLite (previsión original reemplazada por SQLite + sqlite-vec mediante D-014);
 - búsqueda semántica con filtros básicos por dominio, tipo y ruta;
 - comando de búsqueda que muestre resultados antes de involucrar al LLM;
 - comando de pregunta con prompt controlado, contexto acotado y citas;
@@ -152,7 +154,7 @@ El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no 
 
 - H2 aceptado y corpus estable;
 - Ollama y modelos seleccionados disponibles localmente;
-- Qdrant en modo local y espacio de disco suficiente;
+- Qdrant en modo local y espacio de disco suficiente (dependencia original reemplazada por SQLite + sqlite-vec mediante D-014);
 - preguntas de evaluación revisadas por alguien que conozca el sistema analizado.
 
 ### No hacer todavía
@@ -262,6 +264,13 @@ Al final de cada semana se recomienda reservar los últimos 20–30 minutos para
 - qué trabajo se descarta o mueve al backlog.
 
 Cada hito produce una etiqueta o commit identificable. La demostración final ejecuta el recorrido completo: diagnóstico → ingesta → búsqueda → pregunta → análisis de impacto → generación de spec.
+
+### Evoluciones implementadas después del plan original
+
+- **H1.1 — Gestión y Evaluación de Modelos Locales:** completada y aceptada técnicamente. Incorpora administración explícita de modelos Ollama, validación de generación y benchmark sintético reproducible. La comparación real entre al menos dos modelos aptos quedó pendiente por condiciones del entorno de aceptación y no bloquea el cierre técnico.
+- **H4.1 — Configuraciones Data-Driven:** completada y aceptada técnicamente.
+
+El detalle y la evidencia de estas evoluciones se conservan en [`EVOLUTION.md`](EVOLUTION.md) y sus specs de aceptación.
 
 ## 9. Decisión posterior al MVP
 

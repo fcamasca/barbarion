@@ -92,6 +92,12 @@ Comandos previstos, incorporados por hito:
 
 ```text
 barbarion doctor
+barbarion models list
+barbarion models show <modelo>
+barbarion models install <modelo>
+barbarion models validate <modelo>
+barbarion models select <modelo>
+barbarion models benchmark --models <modelo-1> <modelo-2>
 barbarion ingest <ruta>
 barbarion status
 barbarion search "consulta"
@@ -272,7 +278,18 @@ Antes de escribir se valida la ruta de salida. Un archivo existente no se reempl
 
 Spec Mode coordina evidencia documental H3, impacto técnico H4, síntesis conservadora, Review de `SpecDraft`, render Markdown, `SpecValidator` y escritura segura. La CLI solo orquesta argumentos y presentación; no recalcula RAG/H4 ni reemplaza revisión humana.
 
-## 6. Estructura inicial propuesta
+### 5.9 Gestión y evaluación de modelos locales
+
+H1.1 agrega una capacidad lateral al monolito y no modifica ingesta, retrieval, embeddings, conocimiento persistido, reverse engineering ni Spec Mode.
+
+- Ollama es la fuente de verdad del catálogo de modelos instalados.
+- `[llm].model` en la configuración efectiva es la única fuente de verdad del modelo generativo activo; `[embeddings].model` permanece independiente.
+- Los servicios de aplicación listan, inspeccionan, instalan, validan y seleccionan modelos mediante un cliente pequeño de la API local de Ollama.
+- La selección valida previamente el modelo y edita de forma atómica solo `[llm].model`; instalar, validar o ejecutar un benchmark no cambia la selección.
+- El benchmark reutiliza el constructor de contexto, el prompt y el validador RAG existentes sobre un dataset sintético congelado. Ejecuta los modelos secuencialmente, aplica scoring determinista y produce JSON y Markdown locales.
+- Los reportes del benchmark no se guardan en SQLite y una recomendación nunca selecciona automáticamente un modelo; la adopción requiere `models select` explícito y revisión humana.
+
+## 6. Estructura de referencia
 
 La siguiente estructura es un objetivo incremental. **No es necesario crear todas las carpetas hasta que el hito correspondiente las use.**
 
@@ -298,6 +315,8 @@ Barbarion/
 │       ├── config.py             # Configuración validada
 │       ├── application/          # Casos de uso, sin detalles de CLI
 │       │   ├── ingest.py
+│       │   ├── local_models.py
+│       │   ├── model_benchmark.py
 │       │   ├── query.py
 │       │   ├── analyze.py
 │       │   └── specs.py
@@ -310,8 +329,9 @@ Barbarion/
 │           │   ├── powerbuilder.py
 │           │   └── text.py
 │           ├── sqlite.py
-│           ├── qdrant.py
 │           ├── ollama.py
+│           ├── ollama_models.py
+│           ├── model_config.py
 │           └── markdown.py
 ├── templates/                    # Plantillas Markdown versionadas
 ├── tests/
@@ -320,13 +340,13 @@ Barbarion/
 │   └── integration/
 ├── specs/
 │   ├── H1-Foundation/
+│   ├── H1.1-LocalModelManagement/
 │   ├── H2-Ingestion/
 │   ├── H3-RAG/
 │   ├── H4-ReverseEngineering/
 │   └── H5-SpecMode/
 ├── data/                         # Local, ignorado por Git
 │   ├── sqlite/
-│   ├── qdrant/
 │   └── cache/
 └── output/                       # Documentos generados; política por definir
 ```

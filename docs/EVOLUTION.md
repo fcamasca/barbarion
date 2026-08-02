@@ -20,8 +20,9 @@ El objetivo no es depender de un LLM cada vez más grande.
 El objetivo es entregar al LLM un contexto cada vez más inteligente.
 
 Mientras mejor sea el conocimiento estructurado que Barbarion construye,
-menos dependerá la calidad de la respuesta del modelo utilizado (Llama,
-Claude, GPT, Bedrock, etc.).
+menos dependerá la calidad de la respuesta del modelo utilizado. El MVP usa
+modelos locales mediante Ollama; cualquier soporte futuro para otros proveedores
+o entornos requerirá una decisión de alcance y una spec propia.
 
 ------------------------------------------------------------------------
 
@@ -178,7 +179,7 @@ Construye:
 - expresiones y fórmulas
 - relaciones entre configuraciones
 - dependencias hacia componentes de ejecución
-- grafo de configuraciones
+- grafo conceptual de relaciones de configuración persistido en SQLite
 
 Detecta de forma genérica aplicaciones cuyo comportamiento está definido por configuración persistida, por ejemplo:
 
@@ -202,7 +203,10 @@ Relaciona dichas configuraciones con:
 
 Resultado:
 
-Barbarion incorpora al grafo de conocimiento la lógica definida en configuraciones, permitiendo comprender arquitecturas data-driven sin depender de implementaciones específicas del dominio.
+Barbarion incorpora al modelo relacional de conocimiento en SQLite la lógica
+definida en configuraciones, permitiendo comprender arquitecturas data-driven
+sin introducir una base de grafos ni depender de implementaciones específicas
+del dominio.
 
 ------------------------------------------------------------------------
 
@@ -289,6 +293,10 @@ Debe incluir:
 ------------------------------------------------------------------------
 
 ## H4.6 -- Multi LLM
+
+Esta evolución no forma parte de la implementación actual. Requiere una decisión
+de alcance y una spec propia que definan despliegue, privacidad y compatibilidad
+con el principio on-premise antes de incorporar proveedores distintos de Ollama.
 
 El mismo Reasoning Package puede enviarse a:
 

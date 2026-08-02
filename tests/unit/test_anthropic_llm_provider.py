@@ -492,6 +492,39 @@ def test_key_is_not_represented_and_header_injection_is_rejected() -> None:
     assert CANARY_KEY not in str(caught.value)
 
 
+def test_key_in_prompt_is_blocked_before_http_and_never_represented() -> None:
+    provider, opener = _provider(
+        FakeResponse(_body([{"type": "text", "text": "unexpected"}]))
+    )
+
+    with pytest.raises(LlmProviderError, match="ANTHROPIC_REQUEST_INVALID") as caught:
+        provider.generate(
+            prompt=f"contenido sintetico {CANARY_KEY}",
+            timeout_seconds=2.0,
+        )
+
+    assert opener.requests == []
+    assert CANARY_KEY not in str(caught.value)
+    assert CANARY_KEY not in repr(provider)
+
+
+def test_key_echoed_by_success_response_is_discarded_without_leak() -> None:
+    response = FakeResponse(
+        _body([{"type": "text", "text": f"eco remoto {CANARY_KEY}"}]),
+        headers={"request-id": "req_echo_safe"},
+    )
+    provider, opener = _provider(response)
+
+    with pytest.raises(LlmProviderError, match="ANTHROPIC_RESPONSE_INVALID") as caught:
+        provider.generate(prompt="prompt sintetico", timeout_seconds=2.0)
+
+    assert len(opener.requests) == 1
+    assert response.closed is True
+    assert CANARY_KEY not in str(caught.value)
+    assert "request-id=req_echo_safe" in str(caught.value)
+    assert provider.usage_snapshot() is None
+
+
 @pytest.mark.parametrize(
     "result",
     [

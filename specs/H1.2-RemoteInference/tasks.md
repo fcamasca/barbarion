@@ -20,8 +20,8 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T05
-completadas; H1.2-T06 a H1.2-T08 pendientes.
+Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T06
+completadas; H1.2-T07 a H1.2-T08 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -112,7 +112,7 @@ Ollama-only y una config Anthropic no puede ser corrompida por `models select`.
 
 ### H1.2-T06 - Cerrar seguridad, privacidad y regresion offline
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** demostrar que secreto, red y conocimiento respetan la frontera.  
 **Descripcion:** Incorporar key canario, bloqueo de red, redirects, payload

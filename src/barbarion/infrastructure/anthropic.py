@@ -152,6 +152,11 @@ class AnthropicLlmProvider:
     ) -> _ParsedMessage:
         """Realiza exactamente una solicitud Messages API."""
         api_key = self._resolve_api_key()
+        if api_key in prompt:
+            raise _provider_error(
+                "ANTHROPIC_REQUEST_INVALID",
+                "La solicitud contiene la credencial Anthropic y fue bloqueada.",
+            )
         payload = json.dumps(
             {
                 "model": self.model,
@@ -200,7 +205,15 @@ class AnthropicLlmProvider:
                 "No se pudo contactar el servicio Anthropic.",
             ) from None
 
-        return _parse_response(raw_body, request_id)
+        parsed = _parse_response(raw_body, request_id)
+        if api_key in parsed.text:
+            raise _provider_error(
+                "ANTHROPIC_RESPONSE_INVALID",
+                "Anthropic devolvio contenido que coincide con la credencial; "
+                "la respuesta fue descartada.",
+                request_id,
+            )
+        return parsed
 
     def _resolve_api_key(self) -> str:
         """Obtiene y valida defensivamente la credencial al generar."""

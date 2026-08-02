@@ -1,5 +1,6 @@
 """Pruebas de contexto, prompts, citas y ask RAG."""
 
+import hashlib
 import logging
 import sqlite3
 from collections.abc import Iterator
@@ -296,6 +297,39 @@ def test_prompt_builder_lists_allowed_sources_and_inline_citation_rule() -> None
     assert "Evidencia insuficiente" in prompt
     assert "No infieras" in prompt
     assert "## Conclusion\n... [F1]" in prompt
+
+
+def test_prompt_builder_generation_and_repair_text_are_characterized_before_adapter() -> None:
+    """Congela el texto previo a cualquier serializacion del proveedor."""
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build(
+        (
+            candidate(
+                "one",
+                SHA_A,
+                0.9,
+                content="contenido recuperado",
+            ),
+        )
+    )
+    builder = PromptBuilder()
+
+    generation = builder.build(question="Como se calcula?", context=context)
+    repair = builder.repair(
+        question="Como se calcula?",
+        context=context,
+        answer="Respuesta sin cita.",
+    )
+
+    assert hashlib.sha256(generation.encode("utf-8")).hexdigest() == (
+        "62c2f942c9c14acf1ce6f0b2c30fcd8c73fbc9c5debf78142eb41853e72d573a"
+    )
+    assert hashlib.sha256(repair.encode("utf-8")).hexdigest() == (
+        "91b4a24790cafa2c6fc90433862d9a5f97626702aaffb535d24cf10262d3f5ff"
+    )
 
 
 def ask_service(

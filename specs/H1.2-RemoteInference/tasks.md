@@ -20,8 +20,8 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: especificacion en elaboracion. H1.2-T01 a H1.2-T08
-pendientes.
+Estado actual del hito: implementacion iniciada. H1.2-T01 completada;
+H1.2-T02 a H1.2-T08 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -30,7 +30,7 @@ H1.2 aprobada antes de comenzar codigo.
 
 ### H1.2-T01 - Caracterizar contratos y aislar composicion LLM
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** proteger el comportamiento vigente antes de agregar Anthropic.  
 **Descripcion:** Agregar pruebas de caracterizacion para `LlmProviderPort`,

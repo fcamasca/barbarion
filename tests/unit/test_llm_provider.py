@@ -1,11 +1,16 @@
 """Pruebas del adaptador LLM local."""
 
 import io
+import inspect
 import json
 import urllib.error
+from pathlib import Path
 
 import pytest
 
+from barbarion import cli
+from barbarion.config import load_settings
+from barbarion.domain.ports import LlmProviderPort
 from barbarion.domain.rag import LlmProviderError
 from barbarion.infrastructure.llm import OllamaLlmProvider
 
@@ -34,6 +39,55 @@ class FakeOpener:
         if isinstance(self.response, BaseException):
             raise self.response
         return self.response
+
+
+def test_llm_provider_port_preserves_minimal_generation_contract() -> None:
+    """Congela el seam que H1.2 debe reutilizar sin ampliarlo."""
+    contract = inspect.signature(LlmProviderPort.generate)
+
+    assert tuple(contract.parameters) == ("self", "prompt", "timeout_seconds")
+    assert contract.parameters["prompt"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert (
+        contract.parameters["timeout_seconds"].kind
+        is inspect.Parameter.KEYWORD_ONLY
+    )
+    assert LlmProviderPort.__annotations__ == {
+        "provider": "str",
+        "model": "str",
+    }
+
+
+def test_llm_provider_factory_preserves_effective_ollama_settings(
+    tmp_path: Path,
+) -> None:
+    """Caracteriza la composicion concreta previa al adaptador Anthropic."""
+    config = tmp_path / "barbarion.toml"
+    config.write_text(
+        "\n".join(
+            (
+                'ollama_url = "http://127.0.0.1:22000"',
+                "[llm]",
+                'provider = "ollama"',
+                'model = "modelo-caracterizado:tag"',
+                "timeout_seconds = 321.0",
+                "temperature = 0.25",
+                "think = false",
+                "num_ctx = 24576",
+            )
+        ),
+        encoding="utf-8",
+    )
+    settings = load_settings(config, environ={}, cwd=tmp_path)
+
+    provider = cli._build_llm_provider(settings)
+
+    assert isinstance(provider, OllamaLlmProvider)
+    assert provider.provider == "ollama"
+    assert provider.base_url == "http://127.0.0.1:22000"
+    assert provider.model == "modelo-caracterizado:tag"
+    assert provider.temperature == 0.25
+    assert provider.think is False
+    assert provider.num_ctx == 24576
 
 
 def test_ollama_llm_provider_generates_text() -> None:

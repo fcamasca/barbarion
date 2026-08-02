@@ -72,6 +72,22 @@ temperature = 0.1
     return source
 
 
+def _anthropic_config(tmp_path: Path) -> Path:
+    source = tmp_path / "barbarion-anthropic.toml"
+    source.write_text(
+        """ollama_timeout_seconds = 2.0
+[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 90.0
+temperature = 0.1
+max_output_tokens = 1024
+""",
+        encoding="utf-8",
+    )
+    return source
+
+
 def _use_fake(
     monkeypatch: pytest.MonkeyPatch,
     fake: FakeInstallClient,
@@ -222,3 +238,27 @@ def test_install_rejects_url_without_contacting_ollama(
 
     assert "Error de argumentos" in capsys.readouterr().err
     assert fake.calls == []
+
+
+def test_install_remains_ollama_only_and_preserves_anthropic_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _anthropic_config(tmp_path)
+    before = source.read_bytes()
+    fake = FakeInstallClient([(), (LocalModel("modelo-local:tag"),)])
+    _use_fake(monkeypatch, fake)
+
+    assert cli.main(
+        ["--config", str(source), "models", "install", "modelo-local:tag"]
+    ) == 0
+    captured = capsys.readouterr()
+
+    assert "estado = instalado y confirmado" in captured.out
+    assert fake.calls == [
+        ("list", 90.0),
+        ("pull", "modelo-local:tag", 90.0),
+        ("list", 90.0),
+    ]
+    assert source.read_bytes() == before

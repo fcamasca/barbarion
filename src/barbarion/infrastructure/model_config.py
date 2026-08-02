@@ -65,6 +65,13 @@ class TomlLlmModelEditor:
         `_before_replace` es un seam de prueba para simular cambios concurrentes
         o fallas justo antes de publicar el temporal.
         """
+        if settings.llm.provider != "ollama":
+            raise ModelConfigEditError(
+                "models select pertenece a H1.1 local y solo puede cambiar "
+                "[llm].model cuando provider = \"ollama\". Mientras ese campo "
+                "represente el modelo del proveedor activo, esta limitacion "
+                "temporal evita reemplazar accidentalmente el modelo Anthropic."
+            )
         normalized_model = _validate_model_name(new_model)
         source = _editable_source(settings)
         original = _read_bytes(source)

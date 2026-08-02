@@ -310,6 +310,14 @@ def _run_models_install(args: argparse.Namespace) -> int:
 def _run_models_validate(args: argparse.Namespace) -> int:
     """Valida readiness de generacion sin atribuir calidad funcional."""
     settings = load_settings(args.config)
+    if settings.llm.provider != "ollama" and args.model is None:
+        print(
+            "OLLAMA_MODEL_REQUIRED: models validate pertenece a H1.1 local; "
+            "indica explicitamente un modelo Ollama cuando el proveedor activo "
+            "es Anthropic.",
+            file=sys.stderr,
+        )
+        return 1
     timeout = args.timeout or settings.llm.timeout_seconds
     service = ValidateModelService(
         OllamaModelClient(settings.ollama_url),
@@ -1143,7 +1151,10 @@ def _run_describe(args: argparse.Namespace) -> int:
         )
         return 1
     initialize_database(settings.database_path)
-    service = _build_describe_service(settings, with_llm=args.with_llm)
+    service = _build_describe_service(
+        settings,
+        with_llm=args.with_llm and not args.no_llm,
+    )
     request = DescribeRequest(
         target=_object_request(args),
         depth=args.depth,
@@ -1213,7 +1224,10 @@ def _run_impact(args: argparse.Namespace) -> int:
         )
         return 1
     initialize_database(settings.database_path)
-    service = _build_impact_service(settings, with_llm=args.with_llm)
+    service = _build_impact_service(
+        settings,
+        with_llm=args.with_llm and not args.no_llm,
+    )
     request = ImpactRequest(
         target=_object_request(args),
         direction=DependencyDirection(args.direction),

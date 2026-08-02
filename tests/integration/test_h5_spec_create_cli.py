@@ -109,6 +109,56 @@ def test_spec_create_cli_stops_when_review_fails(
     assert not (tmp_path / "output" / "specs").exists()
 
 
+def test_spec_create_no_llm_with_anthropic_builds_no_provider_or_network(
+    tmp_path: Path,
+    capsys: object,
+    monkeypatch: object,
+) -> None:
+    config = _prepare_workspace(tmp_path)
+    with config.open("a", encoding="utf-8") as stream:
+        stream.write(
+            """
+
+[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 12.0
+temperature = 0.1
+max_output_tokens = 1024
+"""
+        )
+    fake_service = _FakeSpecCreateService()
+    original_builder = cli._build_spec_create_service
+
+    def unexpected_provider(_settings):  # noqa: ANN001, ANN202
+        raise AssertionError("spec --no-llm no debe componer un proveedor")
+
+    def build_without_llm(settings):  # noqa: ANN001, ANN202
+        original_builder(settings)
+        return fake_service
+
+    monkeypatch.setattr(cli, "_build_llm_provider", unexpected_provider)
+    monkeypatch.setattr(cli, "_build_spec_create_service", build_without_llm)
+    output_dir = tmp_path / "output" / "specs" / "anthropic-no-llm"
+
+    assert cli.main(
+        [
+            "--config",
+            str(config),
+            "spec",
+            "create",
+            "Requisito sintetico",
+            "--output",
+            str(output_dir),
+            "--no-llm",
+        ]
+    ) == 0
+    captured = capsys.readouterr()
+
+    assert "Spec escrita:" in captured.out
+    assert fake_service.requests[0].spec_request.no_llm is True
+
+
 class _FakeSpecCreateService:
     def __init__(self) -> None:
         self.requests = []

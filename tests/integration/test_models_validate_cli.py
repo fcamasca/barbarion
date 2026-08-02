@@ -55,6 +55,21 @@ temperature = 0.1
     return source
 
 
+def _anthropic_config(tmp_path: Path) -> Path:
+    source = tmp_path / "barbarion-anthropic.toml"
+    source.write_text(
+        """[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 80.0
+temperature = 0.1
+max_output_tokens = 1024
+""",
+        encoding="utf-8",
+    )
+    return source
+
+
 def _use_fake(
     monkeypatch: pytest.MonkeyPatch,
     fake: FakeValidationClient,
@@ -187,3 +202,54 @@ def test_validate_wrong_marker_does_not_expose_model_response(
 
     assert "MODEL_NOT_GENERATION_READY" in captured.out
     assert secret_response not in captured.out + captured.err
+
+
+def test_validate_rejects_implicit_anthropic_model_without_calling_ollama(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _anthropic_config(tmp_path)
+    fake = FakeValidationClient((LocalModel("modelo-local:tag"),))
+    _use_fake(monkeypatch, fake)
+
+    assert cli.main(["--config", str(source), "models", "validate"]) == 1
+    captured = capsys.readouterr()
+
+    assert "OLLAMA_MODEL_REQUIRED" in captured.err
+    assert "H1.1 local" in captured.err
+    assert "claude-synthetic" not in captured.out + captured.err
+    assert fake.calls == []
+
+
+def test_validate_explicit_ollama_model_remains_available_with_anthropic_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _anthropic_config(tmp_path)
+    fake = FakeValidationClient((LocalModel("modelo-local:tag"),))
+    _use_fake(monkeypatch, fake)
+
+    assert cli.main(
+        [
+            "--config",
+            str(source),
+            "models",
+            "validate",
+            "modelo-local:tag",
+            "--format",
+            "json",
+            "--timeout",
+            "9",
+        ]
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["model"] == "modelo-local:tag"
+    assert payload["active"] is False
+    assert payload["generation_ready"] is True
+    assert fake.calls == [
+        ("list", 9.0),
+        ("generate", "modelo-local:tag", 9.0),
+    ]

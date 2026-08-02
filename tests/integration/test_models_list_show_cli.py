@@ -58,6 +58,22 @@ temperature = 0.1
     return source
 
 
+def _anthropic_config(tmp_path: Path) -> Path:
+    source = tmp_path / "barbarion-anthropic.toml"
+    source.write_text(
+        """ollama_timeout_seconds = 3.0
+[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 120.0
+temperature = 0.1
+max_output_tokens = 1024
+""",
+        encoding="utf-8",
+    )
+    return source
+
+
 def _use_fake(
     monkeypatch: pytest.MonkeyPatch,
     fake: FakeOllamaClient,
@@ -173,3 +189,39 @@ def test_models_error_is_actionable_bounded_and_has_no_traceback(
     assert "Traceback" not in captured.err
     assert "\n" not in captured.err.rstrip("\n")
     assert len(captured.err) < 380
+
+
+def test_models_list_and_show_remain_ollama_only_with_anthropic_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _anthropic_config(tmp_path)
+    fake = FakeOllamaClient()
+    _use_fake(monkeypatch, fake)
+
+    assert cli.main(
+        ["--config", str(source), "models", "list", "--format", "json"]
+    ) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert cli.main(
+        [
+            "--config",
+            str(source),
+            "models",
+            "show",
+            "modelo-a:tag",
+            "--format",
+            "json",
+        ]
+    ) == 0
+    shown = json.loads(capsys.readouterr().out)
+
+    assert listed["active_model"] == "claude-synthetic"
+    assert listed["active_model_installed"] is False
+    assert shown["name"] == "modelo-a:tag"
+    assert shown["active"] is False
+    assert fake.calls == [
+        ("list", 3.0),
+        ("show", "modelo-a:tag", 3.0),
+    ]

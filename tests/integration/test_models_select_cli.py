@@ -47,6 +47,21 @@ model = "embed-estable:tag"
     return source
 
 
+def _anthropic_config(tmp_path: Path) -> Path:
+    source = tmp_path / "barbarion-anthropic.toml"
+    source.write_text(
+        """[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 20.0
+temperature = 0.1
+max_output_tokens = 1024
+""",
+        encoding="utf-8",
+    )
+    return source
+
+
 def test_models_select_validates_and_applies_atomic_change(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -132,3 +147,34 @@ def test_models_select_defaults_config_is_actionable(
     assert cli.main(["models", "select", "modelo-nuevo:tag", "--dry-run"]) == 1
 
     assert "MODEL_CONFIG_NOT_EDITABLE" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_models_select_rejects_anthropic_without_calling_ollama_or_editing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    dry_run: bool,
+) -> None:
+    source = _anthropic_config(tmp_path)
+    before = source.read_bytes()
+    fake = FakeSelectClient()
+    monkeypatch.setattr(cli, "OllamaModelClient", lambda _url: fake)
+    arguments = [
+        "--config",
+        str(source),
+        "models",
+        "select",
+        "modelo-local:tag",
+    ]
+    if dry_run:
+        arguments.append("--dry-run")
+
+    assert cli.main(arguments) == 1
+    captured = capsys.readouterr()
+
+    assert "MODEL_CONFIG_NOT_EDITABLE" in captured.err
+    assert "limitacion temporal" in captured.err
+    assert "provider = \"ollama\"" in captured.err
+    assert fake.calls == []
+    assert source.read_bytes() == before

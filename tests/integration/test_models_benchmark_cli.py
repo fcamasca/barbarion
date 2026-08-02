@@ -64,6 +64,23 @@ temperature = 0.1
     return source
 
 
+def _anthropic_config(tmp_path: Path) -> Path:
+    source = tmp_path / "barbarion-anthropic.toml"
+    source.write_text(
+        f"""output_dir = "{(tmp_path / 'configured-output').as_posix()}"
+
+[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 30.0
+temperature = 0.1
+max_output_tokens = 1024
+""",
+        encoding="utf-8",
+    )
+    return source
+
+
 def test_models_benchmark_writes_safe_json_and_stdout_summary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -183,3 +200,49 @@ def test_models_benchmark_rejects_less_than_two_distinct_models(
 
     assert "al menos dos modelos distintos" in capsys.readouterr().err
     assert fake.benchmark_calls == 0
+
+
+def test_models_benchmark_remains_ollama_only_with_anthropic_active(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _anthropic_config(tmp_path)
+    before = source.read_bytes()
+    fake = FakeBenchmarkClient()
+    monkeypatch.setattr(cli, "OllamaModelClient", lambda _url: fake)
+    monkeypatch.setattr(cli, "_benchmark_run_id", lambda: "anthropic-active")
+
+    def unexpected_provider(_settings):  # noqa: ANN001, ANN202
+        raise AssertionError("models benchmark no debe usar la factoria LLM")
+
+    monkeypatch.setattr(cli, "_build_llm_provider", unexpected_provider)
+    output = tmp_path / "ollama-only-output"
+
+    assert cli.main(
+        [
+            "--config",
+            str(source),
+            "models",
+            "benchmark",
+            "--models",
+            "m1",
+            "m2",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    captured = capsys.readouterr()
+    artifact = (
+        output
+        / "model-benchmarks"
+        / "anthropic-active"
+        / "model-benchmark.json"
+    )
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+
+    assert "estado = completed" in captured.out
+    assert payload["environment"]["ollama_version"] == "test-version"
+    assert {unit["model"] for unit in payload["units"]} == {"m1", "m2"}
+    assert fake.benchmark_calls == 16
+    assert source.read_bytes() == before

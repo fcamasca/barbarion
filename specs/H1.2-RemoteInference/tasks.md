@@ -20,8 +20,8 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T04
-completadas; H1.2-T05 a H1.2-T08 pendientes.
+Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T05
+completadas; H1.2-T06 a H1.2-T08 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -95,7 +95,7 @@ de salida con fake Ollama o Anthropic y ningun cambio en retrieval/citas.
 
 ### H1.2-T05 - Proteger H4 opcional, `--no-llm` y H1.1
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** demostrar que solo cambia el adaptador generativo.  
 **Descripcion:** Verificar `describe/impact --with-llm` con el mismo puerto y

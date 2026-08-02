@@ -111,6 +111,56 @@ def test_describe_cli_markdown_output_is_safe(
     assert "El archivo ya existe" in second_capture.err
 
 
+def test_describe_with_llm_uses_provider_selected_by_shared_factory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _prepare_workspace(tmp_path)
+    _enable_anthropic(config)
+    _seed_graph(tmp_path / "data" / "barbarion.db")
+    provider = _RecordingLlmProvider("Sintesis Anthropic controlada.")
+    configured_providers: list[str] = []
+
+    def build_provider(settings):  # noqa: ANN001, ANN202
+        configured_providers.append(settings.llm.provider)
+        return provider
+
+    monkeypatch.setattr(cli, "_build_llm_provider", build_provider)
+
+    assert cli.main(
+        [
+            "--config",
+            str(config),
+            "describe",
+            "pkg.root",
+            "--with-llm",
+            "--format",
+            "json",
+        ]
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["summary"] == "Sintesis Anthropic controlada."
+    assert payload["no_llm"] is False
+    assert configured_providers == ["anthropic"]
+    assert len(provider.calls) == 1
+    assert "Datos deterministas:" in provider.calls[0][0]
+
+
+class _RecordingLlmProvider:
+    def __init__(self, response: str, *, fail: bool = False) -> None:
+        self.response = response
+        self.fail = fail
+        self.calls: list[tuple[str, float]] = []
+
+    def generate(self, *, prompt: str, timeout_seconds: float) -> str:
+        self.calls.append((prompt, timeout_seconds))
+        if self.fail:
+            raise RuntimeError("fallo remoto sintetico")
+        return self.response
+
+
 def _prepare_workspace(tmp_path: Path) -> Path:
     for name in ("data", "output", "logs"):
         (tmp_path / name).mkdir()
@@ -155,6 +205,21 @@ def _prepare_workspace(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return config
+
+
+def _enable_anthropic(config: Path) -> None:
+    with config.open("a", encoding="utf-8") as stream:
+        stream.write(
+            """
+
+[llm]
+provider = "anthropic"
+model = "claude-synthetic"
+timeout_seconds = 12.0
+temperature = 0.1
+max_output_tokens = 1024
+"""
+        )
 
 
 def _seed_graph(db_path: Path) -> dict[str, TechnicalSymbol]:

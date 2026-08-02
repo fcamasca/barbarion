@@ -2040,6 +2040,7 @@ class SQLiteRagRepository:
         context_ms: int | None,
         llm_ms: int | None,
         metrics: ContextQualityMetrics,
+        status: RagQueryStatus | None = None,
     ) -> None:
         """Completa metricas posteriores a search para ask/context."""
         if query_id is None:
@@ -2054,7 +2055,8 @@ class SQLiteRagRepository:
                     context_precision = ?,
                     context_recall = ?,
                     duplicate_ratio = ?,
-                    token_waste = ?
+                    token_waste = ?,
+                    status = COALESCE(?, status)
                 WHERE id = ?
                 """,
                 (
@@ -2065,6 +2067,7 @@ class SQLiteRagRepository:
                     metrics.context_recall,
                     metrics.duplicate_ratio,
                     metrics.token_waste,
+                    None if status is None else status.value,
                     query_id,
                 ),
             )

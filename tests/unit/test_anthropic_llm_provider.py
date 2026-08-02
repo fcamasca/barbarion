@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import socket
 import urllib.error
 from email.message import Message
@@ -53,6 +54,19 @@ class FakeOpener:
         if isinstance(self.result, BaseException):
             raise self.result
         return self.result
+
+
+class SequenceOpener:
+    def __init__(self, results: list[object]) -> None:
+        self.results = results
+        self.requests: list[tuple[object, float]] = []
+
+    def open(self, request: object, *, timeout: float):
+        self.requests.append((request, timeout))
+        result = self.results.pop(0)
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 def _body(
@@ -141,6 +155,145 @@ def test_messages_request_is_fixed_minimal_and_non_streaming() -> None:
         "metadata",
     }.intersection(payload)
     assert response.closed is True
+
+
+def test_usage_and_elapsed_time_are_captured_without_changing_generate_result() -> None:
+    clock_values = iter((10.0, 14.18))
+    response = FakeResponse(
+        _body(
+            [{"type": "text", "text": "Respuesta [F1]"}],
+            usage={"input_tokens": 7842, "output_tokens": 612},
+        )
+    )
+    provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.2,
+        max_output_tokens=4096,
+        _api_key_resolver=lambda: CANARY_KEY,
+        _opener=FakeOpener(response),
+        _clock=lambda: next(clock_values),
+    )
+
+    answer = provider.generate(prompt="prompt sintetico", timeout_seconds=30.0)
+    usage = provider.usage_snapshot()
+
+    assert answer == "Respuesta [F1]"
+    assert usage is not None
+    assert usage.input_tokens == 7842
+    assert usage.output_tokens == 612
+    assert usage.total_tokens == 8454
+    assert usage.elapsed_seconds == pytest.approx(4.18)
+    assert usage.request_count == 1
+
+
+def test_usage_is_aggregated_across_generation_and_repair() -> None:
+    opener = SequenceOpener(
+        [
+            FakeResponse(
+                _body(
+                    [{"type": "text", "text": "Sin cita"}],
+                    usage={
+                        "input_tokens": 100,
+                        "output_tokens": 10,
+                        "total_tokens": 111,
+                    },
+                )
+            ),
+            FakeResponse(
+                _body(
+                    [{"type": "text", "text": "Reparada [F1]"}],
+                    usage={"input_tokens": 120, "output_tokens": 12},
+                )
+            ),
+        ]
+    )
+    clock_values = iter((1.0, 2.5, 3.0, 5.0))
+    provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.2,
+        max_output_tokens=4096,
+        _api_key_resolver=lambda: CANARY_KEY,
+        _opener=opener,
+        _clock=lambda: next(clock_values),
+    )
+
+    assert provider.generate(prompt="generation", timeout_seconds=30.0) == "Sin cita"
+    assert provider.generate(prompt="repair", timeout_seconds=30.0) == "Reparada [F1]"
+    usage = provider.usage_snapshot()
+
+    assert usage is not None
+    assert usage.input_tokens == 220
+    assert usage.output_tokens == 22
+    assert usage.total_tokens == 243
+    assert usage.elapsed_seconds == 3.5
+    assert usage.request_count == 2
+    assert len(opener.requests) == 2
+
+
+def test_invalid_usage_is_ignored_without_rejecting_valid_text() -> None:
+    provider, _opener = _provider(
+        FakeResponse(
+            _body(
+                [{"type": "text", "text": "Respuesta [F1]"}],
+                usage={
+                    "input_tokens": True,
+                    "output_tokens": -1,
+                    "total_tokens": "unknown",
+                },
+            )
+        )
+    )
+
+    assert provider.generate(prompt="x", timeout_seconds=2.0) == "Respuesta [F1]"
+    usage = provider.usage_snapshot()
+    assert usage is not None
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert usage.total_tokens is None
+
+
+def test_usage_observability_never_logs_content_headers_or_key() -> None:
+    logger = logging.getLogger("barbarion")
+    original_handlers = list(logger.handlers)
+    original_level = logger.level
+    original_propagate = logger.propagate
+    records: list[logging.LogRecord] = []
+
+    class Handler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    logger.handlers[:] = [Handler()]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    prompt_secret = "prompt-secret-never-log"
+    response_secret = "response-secret-never-log [F1]"
+    try:
+        provider, _opener = _provider(
+            FakeResponse(
+                _body(
+                    [{"type": "text", "text": response_secret}],
+                    usage={"input_tokens": 20, "output_tokens": 5},
+                ),
+                headers={"request-id": "req_safe", "x-secret": CANARY_KEY},
+            )
+        )
+        provider.generate(prompt=prompt_secret, timeout_seconds=2.0)
+    finally:
+        logger.handlers[:] = original_handlers
+        logger.setLevel(original_level)
+        logger.propagate = original_propagate
+
+    log_text = "\n".join(record.getMessage() for record in records)
+    assert "anthropic_llm_finished" in log_text
+    assert "input_tokens=20" in log_text
+    assert "output_tokens=5" in log_text
+    assert "total_tokens=25" in log_text
+    assert "duration_ms=" in log_text
+    assert prompt_secret not in log_text
+    assert response_secret not in log_text
+    assert CANARY_KEY not in log_text
+    assert "x-secret" not in log_text
 
 
 def test_default_transport_installs_redirect_rejection(

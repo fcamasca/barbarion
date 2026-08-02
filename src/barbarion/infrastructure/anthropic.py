@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import socket
+import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from barbarion.domain.rag import LlmProviderError
@@ -18,6 +20,29 @@ ANTHROPIC_API_VERSION = "2023-06-01"
 
 _REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _SAFE_HEADER_VALUE_PATTERN = re.compile(r"[\x21-\x7e]+\Z")
+_ERROR_CODE_PATTERN = re.compile(r"ANTHROPIC_[A-Z_]+\Z")
+_LOGGER = logging.getLogger("barbarion")
+
+
+@dataclass(frozen=True, slots=True)
+class AnthropicUsage:
+    """Uso agregado de una o mas solicitudes Anthropic de la misma consulta."""
+
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    elapsed_seconds: float
+    request_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class _ParsedMessage:
+    """Texto y uso opcional extraidos de una respuesta remota."""
+
+    text: str
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
 
 
 class _RejectRedirectHandler(urllib.request.HTTPRedirectHandler):
@@ -41,9 +66,91 @@ class AnthropicLlmProvider:
     )
     provider: str = "anthropic"
     _opener: object | None = field(default=None, repr=False, compare=False)
+    _clock: Callable[[], float] = field(
+        default=time.monotonic,
+        repr=False,
+        compare=False,
+    )
+    _usage_records: list[AnthropicUsage] = field(
+        default_factory=list,
+        repr=False,
+        compare=False,
+    )
 
     def generate(self, *, prompt: str, timeout_seconds: float) -> str:
-        """Realiza exactamente una solicitud y devuelve su contenido textual."""
+        """Genera texto y conserva telemetria segura fuera del puerto publico."""
+        started = self._clock()
+        try:
+            parsed = self._generate_once(
+                prompt=prompt,
+                timeout_seconds=timeout_seconds,
+            )
+        except KeyboardInterrupt:
+            _LOGGER.warning(
+                "anthropic_llm_finished provider=anthropic model=%s "
+                "duration_ms=%d result=interrupted",
+                self.model,
+                _elapsed_ms(started, self._clock),
+            )
+            raise
+        except LlmProviderError as error:
+            _LOGGER.error(
+                "anthropic_llm_finished provider=anthropic model=%s "
+                "duration_ms=%d result=error error_code=%s",
+                self.model,
+                _elapsed_ms(started, self._clock),
+                _safe_error_code(error),
+            )
+            raise
+
+        elapsed_seconds = max(0.0, self._clock() - started)
+        usage = AnthropicUsage(
+            input_tokens=parsed.input_tokens,
+            output_tokens=parsed.output_tokens,
+            total_tokens=parsed.total_tokens,
+            elapsed_seconds=elapsed_seconds,
+            request_count=1,
+        )
+        self._usage_records.append(usage)
+        _LOGGER.info(
+            "anthropic_llm_finished provider=anthropic model=%s "
+            "duration_ms=%d result=completed input_tokens=%s "
+            "output_tokens=%s total_tokens=%s",
+            self.model,
+            round(elapsed_seconds * 1000),
+            _metric_value(usage.input_tokens),
+            _metric_value(usage.output_tokens),
+            _metric_value(usage.total_tokens),
+        )
+        return parsed.text
+
+    def usage_snapshot(self) -> AnthropicUsage | None:
+        """Devuelve uso agregado sin exponer prompts, respuestas ni headers."""
+        if not self._usage_records:
+            return None
+        return AnthropicUsage(
+            input_tokens=_sum_known(
+                record.input_tokens for record in self._usage_records
+            ),
+            output_tokens=_sum_known(
+                record.output_tokens for record in self._usage_records
+            ),
+            total_tokens=_sum_known(
+                record.total_tokens for record in self._usage_records
+            ),
+            elapsed_seconds=sum(
+                record.elapsed_seconds for record in self._usage_records
+            ),
+            request_count=len(self._usage_records),
+        )
+
+    def _generate_once(
+        self,
+        *,
+        prompt: str,
+        timeout_seconds: float,
+    ) -> _ParsedMessage:
+        """Realiza exactamente una solicitud Messages API."""
         api_key = self._resolve_api_key()
         payload = json.dumps(
             {
@@ -127,7 +234,7 @@ class AnthropicLlmProvider:
         return opener.open(request, timeout=timeout_seconds)
 
 
-def _parse_response(raw_body: bytes, request_id: str | None) -> str:
+def _parse_response(raw_body: bytes, request_id: str | None) -> _ParsedMessage:
     """Extrae en orden los bloques text de una respuesta Messages API."""
     try:
         body = json.loads(raw_body.decode("utf-8"))
@@ -185,7 +292,56 @@ def _parse_response(raw_body: bytes, request_id: str | None) -> str:
             "Anthropic devolvio una respuesta textual vacia.",
             request_id,
         )
-    return answer
+    input_tokens, output_tokens, total_tokens = _parse_usage(body.get("usage"))
+    return _ParsedMessage(
+        text=answer,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total_tokens,
+    )
+
+
+def _parse_usage(value: object) -> tuple[int | None, int | None, int | None]:
+    """Lee contadores opcionales sin invalidar una respuesta textual util."""
+    if not isinstance(value, dict):
+        return None, None, None
+    input_tokens = _optional_token_count(value.get("input_tokens"))
+    output_tokens = _optional_token_count(value.get("output_tokens"))
+    total_tokens = _optional_token_count(value.get("total_tokens"))
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    return input_tokens, output_tokens, total_tokens
+
+
+def _optional_token_count(value: object) -> int | None:
+    """Acepta solo enteros no negativos como telemetria de uso."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _sum_known(values: Iterable[int | None]) -> int | None:
+    """Suma contadores presentes y conserva ausencia total como `None`."""
+    known = [value for value in values if value is not None]
+    return sum(known) if known else None
+
+
+def _elapsed_ms(started: float, clock: Callable[[], float]) -> int:
+    """Calcula duracion monotona no negativa para observabilidad."""
+    return round(max(0.0, clock() - started) * 1000)
+
+
+def _metric_value(value: int | None) -> str:
+    """Formatea ausencia de telemetria sin inventar ceros."""
+    return "unavailable" if value is None else str(value)
+
+
+def _safe_error_code(error: LlmProviderError) -> str:
+    """Extrae solo el prefijo tecnico estable del error normalizado."""
+    candidate = str(error).partition(":")[0]
+    if _ERROR_CODE_PATTERN.fullmatch(candidate) is None:
+        return "ANTHROPIC_UNKNOWN_ERROR"
+    return candidate
 
 
 def _http_error(status: int, request_id: str | None) -> LlmProviderError:
@@ -267,5 +423,5 @@ def _provider_error(
     request_id: str | None = None,
 ) -> LlmProviderError:
     """Crea un error estable que nunca incorpora material remoto libre."""
-    suffix = f" request-id={request_id}." if request_id is not None else ""
+    suffix = f" [request-id={request_id}]" if request_id is not None else ""
     return LlmProviderError(f"{code}: {detail}{suffix}")

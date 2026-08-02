@@ -21,6 +21,7 @@ from barbarion.domain.rag import (
     RetrievalCandidate,
     RetrievalMode,
 )
+from barbarion.infrastructure.anthropic import AnthropicLlmProvider
 from tests.unit.test_rag_search_service import service_for
 
 
@@ -68,7 +69,7 @@ class FakeLlm:
 
     def __init__(
         self,
-        answer: str | Exception | tuple[str | Exception, ...],
+        answer: str | BaseException | tuple[str | BaseException, ...],
     ) -> None:
         self.answers = list(answer) if isinstance(answer, tuple) else [answer]
         self.prompts: list[str] = []
@@ -78,7 +79,7 @@ class FakeLlm:
         self.prompts.append(prompt)
         index = min(len(self.prompts) - 1, len(self.answers) - 1)
         answer = self.answers[index]
-        if isinstance(answer, Exception):
+        if isinstance(answer, BaseException):
             raise answer
         return answer
 
@@ -334,7 +335,7 @@ def test_prompt_builder_generation_and_repair_text_are_characterized_before_adap
 
 def ask_service(
     tmp_path,
-    answer: str | Exception | tuple[str | Exception, ...],
+    answer: str | BaseException | tuple[str | BaseException, ...],
 ) -> tuple[AskService, FakeLlm]:
     search_service = service_for(tmp_path)
     fake_llm = FakeLlm(answer)
@@ -416,6 +417,11 @@ def test_ask_logs_timeout_during_initial_generation(
     assert "prompt_tokens_est=" in log_text
     assert "stage=repair" not in log_text
     assert "timeout inicial" not in log_text
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        status = connection.execute(
+            "SELECT status FROM rag_queries ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+    assert status == "error"
 
 
 def test_ask_logs_timeout_during_repair(tmp_path, ask_log_records) -> None:
@@ -449,6 +455,96 @@ def test_ask_logs_timeout_during_repair(tmp_path, ask_log_records) -> None:
         for item in messages
     )
     assert "timeout reparacion" not in "\n".join(messages)
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        status = connection.execute(
+            "SELECT status FROM rag_queries ORDER BY id DESC LIMIT 1"
+        ).fetchone()[0]
+    assert status == "error"
+
+
+def test_ask_marks_query_error_and_propagates_keyboard_interrupt(
+    tmp_path,
+    ask_log_records,
+) -> None:
+    service, _fake_llm = ask_service(tmp_path, KeyboardInterrupt())
+
+    with pytest.raises(KeyboardInterrupt):
+        service.ask(
+            "order_total",
+            mode=RetrievalMode.KEYWORD,
+            top_k=3,
+            candidate_k=3,
+            threshold=0,
+        )
+
+    messages = [record.getMessage() for record in ask_log_records]
+    assert any("result=interrupted" in message for message in messages)
+    assert not any("result=completed" in message for message in messages)
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        row = connection.execute(
+            "SELECT status, llm_ms FROM rag_queries ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert row[0] == "error"
+    assert row[1] is not None
+
+
+@pytest.mark.parametrize(
+    ("question", "no_llm", "expected_status"),
+    [
+        ("order_total", True, RagQueryStatus.COMPLETED),
+        (
+            "identificador_sintetico_totalmente_ausente",
+            False,
+            RagQueryStatus.INSUFFICIENT_EVIDENCE,
+        ),
+    ],
+)
+def test_ask_does_not_read_anthropic_key_before_generation(
+    tmp_path,
+    question: str,
+    no_llm: bool,
+    expected_status: RagQueryStatus,
+) -> None:
+    reads = 0
+
+    def resolve_key() -> str | None:
+        nonlocal reads
+        reads += 1
+        return None
+
+    search_service = service_for(tmp_path)
+    provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.1,
+        max_output_tokens=4096,
+        _api_key_resolver=resolve_key,
+    )
+    service = AskService(
+        search_service=search_service,
+        context_builder=ContextBuilder(
+            token_budget=200,
+            max_chunk_tokens=100,
+            dedupe_min_hash_prefix=8,
+            threshold=0,
+        ),
+        prompt_builder=PromptBuilder(),
+        citation_validator=CitationValidator(),
+        llm_provider=provider,
+        settings=search_service.settings,
+    )
+
+    result = service.ask(
+        question,
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        no_llm=no_llm,
+    )
+
+    assert result.status is expected_status
+    assert reads == 0
+    assert provider.usage_snapshot() is None
 
 
 def test_ask_logs_citation_validation_reasons_without_response(

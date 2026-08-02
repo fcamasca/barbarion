@@ -20,8 +20,8 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T03
-completadas; H1.2-T04 a H1.2-T08 pendientes.
+Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T04
+completadas; H1.2-T05 a H1.2-T08 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -77,13 +77,15 @@ sin secretos en errores ni dependencia nueva.
 
 ### H1.2-T04 - Integrar `ask`, reparacion y errores CLI
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** usar el proveedor seleccionado sin cambiar el contrato RAG.  
 **Descripcion:** Cablear la factoria desde la composicion que construye
 `AskService`; agregar observabilidad Anthropic en infraestructura y mensajes en
-CLI; conservar sin editar el caso de uso, prompts, validacion, un intento de
-reparacion, formatos, metricas y codigos. Verificar que key ausente no afecta
+CLI; conservar sin alterar los contratos del caso de uso, prompts, validacion,
+un intento de reparacion, formatos, metricas y codigos. Mantener el uso remoto
+en el adaptador y mostrar tokens de entrada/salida/total y tiempo transcurrido
+sin costos ni cambios en `LlmProviderPort`. Verificar que key ausente no afecta
 evidencia insuficiente o `--no-llm`, y que timeout/Ctrl+C no persisten un exito.  
 **Dependencias:** H1.2-T03.  
 **Resultado esperado:** la misma consulta controlada produce el mismo contrato

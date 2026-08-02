@@ -1702,9 +1702,10 @@ class AskService:
         prompt_chars = len(prompt)
         prompt_tokens_est = _estimate_tokens(prompt)
         _LOGGER.info(
-            "ask_llm_started stage=%s model=%s timeout_seconds=%g "
+            "ask_llm_started stage=%s provider=%s model=%s timeout_seconds=%g "
             "prompt_chars=%d prompt_tokens_est=%d",
             stage,
+            self.llm_provider.provider,
             self.settings.llm.model,
             timeout_seconds,
             prompt_chars,
@@ -1716,19 +1717,34 @@ class AskService:
                 prompt=prompt,
                 timeout_seconds=timeout_seconds,
             )
+        except KeyboardInterrupt:
+            _LOGGER.warning(
+                "ask_llm_finished stage=%s provider=%s model=%s "
+                "timeout_seconds=%g prompt_chars=%d prompt_tokens_est=%d "
+                "duration_ms=%d result=interrupted",
+                stage,
+                self.llm_provider.provider,
+                self.settings.llm.model,
+                timeout_seconds,
+                prompt_chars,
+                prompt_tokens_est,
+                _duration_ms(started),
+            )
+            raise
         except Exception as error:
             duration_ms = _duration_ms(started)
             result = (
                 "timeout"
                 if isinstance(error, LlmProviderError)
-                and "OLLAMA_LLM_TIMEOUT" in str(error)
+                and "TIMEOUT" in str(error)
                 else "error"
             )
             log = _LOGGER.warning if result == "timeout" else _LOGGER.error
             log(
-                "ask_llm_finished stage=%s model=%s timeout_seconds=%g "
+                "ask_llm_finished stage=%s provider=%s model=%s timeout_seconds=%g "
                 "prompt_chars=%d prompt_tokens_est=%d duration_ms=%d result=%s",
                 stage,
+                self.llm_provider.provider,
                 self.settings.llm.model,
                 timeout_seconds,
                 prompt_chars,
@@ -1738,10 +1754,11 @@ class AskService:
             )
             raise
         _LOGGER.info(
-            "ask_llm_finished stage=%s model=%s timeout_seconds=%g "
+            "ask_llm_finished stage=%s provider=%s model=%s timeout_seconds=%g "
             "prompt_chars=%d prompt_tokens_est=%d duration_ms=%d "
             "result=completed response_chars=%d",
             stage,
+            self.llm_provider.provider,
             self.settings.llm.model,
             timeout_seconds,
             prompt_chars,
@@ -1909,7 +1926,19 @@ class AskService:
             debug_payload["prompt_chars"] = len(prompt)
             debug_payload["prompt_tokens_est"] = _estimate_tokens(prompt)
         llm_started = time.monotonic()
-        answer = self._generate_with_observability(prompt, stage="generation")
+        try:
+            answer = self._generate_with_observability(
+                prompt,
+                stage="generation",
+            )
+        except (Exception, KeyboardInterrupt):
+            self._record_failed_llm_query(
+                query_id=search.query_id,
+                context=context,
+                context_ms=context_ms,
+                llm_started=llm_started,
+            )
+            raise
         validation = self.citation_validator.validate(
             answer,
             context,
@@ -1932,10 +1961,19 @@ class AskService:
                 context=context,
                 answer=answer,
             )
-            repaired_answer = self._generate_with_observability(
-                repair_prompt,
-                stage="repair",
-            )
+            try:
+                repaired_answer = self._generate_with_observability(
+                    repair_prompt,
+                    stage="repair",
+                )
+            except (Exception, KeyboardInterrupt):
+                self._record_failed_llm_query(
+                    query_id=search.query_id,
+                    context=context,
+                    context_ms=context_ms,
+                    llm_started=llm_started,
+                )
+                raise
             validation = self.citation_validator.validate(
                 repaired_answer,
                 context,
@@ -1984,6 +2022,24 @@ class AskService:
             citations_valid=validation.valid,
             missing_citations=validation.missing_source_ids,
             debug=debug_payload if debug else {},
+        )
+
+    def _record_failed_llm_query(
+        self,
+        *,
+        query_id: int | None,
+        context: ContextBuildResult,
+        context_ms: int,
+        llm_started: float,
+    ) -> None:
+        """Evita conservar como exitosa una consulta cuya generacion fallo."""
+        self.search_service.repository.update_rag_query_metrics(
+            query_id=query_id,
+            context_sources=len(context.sources),
+            context_ms=context_ms,
+            llm_ms=_duration_ms(llm_started),
+            metrics=context.metrics,
+            status=RagQueryStatus.ERROR,
         )
 
 

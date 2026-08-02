@@ -37,6 +37,10 @@ from barbarion.domain.rag import (
     SearchResponse,
     SearchTimings,
 )
+from barbarion.infrastructure.anthropic import (
+    AnthropicLlmProvider,
+    AnthropicUsage,
+)
 from barbarion.logging_config import LOGGER_NAME, LOG_FILENAME
 
 
@@ -1219,6 +1223,48 @@ def test_ask_without_debug_keeps_normal_stdout(
     assert "## Conclusion" in captured.out
 
 
+def test_ask_anthropic_usage_is_rendered_on_stderr_without_breaking_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(citations_valid=True)
+    service.llm_provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.1,
+        max_output_tokens=4096,
+        _api_key_resolver=lambda: None,
+        _usage_records=[
+            AnthropicUsage(
+                input_tokens=7842,
+                output_tokens=612,
+                total_tokens=8454,
+                elapsed_seconds=4.18,
+                request_count=1,
+            )
+        ],
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--format", "json"]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["status"] == "completed"
+    assert "Input tokens : 7,842" in captured.err
+    assert "Output tokens: 612" in captured.err
+    assert "Total tokens : 8,454" in captured.err
+    assert "Elapsed time : 4.18s" in captured.err
+    assert "credito" not in captured.err.lower()
+    assert "$" not in captured.err
+
+
 def test_ask_debug_truncates_and_masks_sensitive_values(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1272,6 +1318,75 @@ def test_ask_llm_timeout_does_not_print_traceback(
     assert "Ollama no respondio dentro del timeout configurado" in captured.err
     assert "Sugerencias:" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_ask_anthropic_error_is_actionable_and_preserves_request_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    source.write_text(
+        source.read_text(encoding="utf-8")
+        + "\n[llm]\nprovider = \"anthropic\"\nmodel = \"claude-test\"\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    monkeypatch.setattr(
+        cli,
+        "_build_ask_service",
+        lambda settings: RaisingAskService(
+            LlmProviderError(
+                "ANTHROPIC_RATE_LIMITED: limite remoto "
+                "[request-id=req_safe-123]"
+            )
+        ),
+    )
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Anthropic aplico un limite" in captured.err
+    assert "Request ID: req_safe-123" in captured.err
+    assert "reintenta manualmente" in captured.err
+    assert "ANTHROPIC_API_KEY" in captured.err
+    assert "ollama run" not in captured.err
+    assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("ANTHROPIC_API_KEY_MISSING", "ANTHROPIC_API_KEY"),
+        ("ANTHROPIC_AUTHENTICATION_ERROR", "autenticacion"),
+        ("ANTHROPIC_BILLING_ERROR", "cuenta Anthropic"),
+        ("ANTHROPIC_PERMISSION_ERROR", "permiso"),
+        ("ANTHROPIC_MODEL_NOT_FOUND", "modelo Anthropic"),
+        ("ANTHROPIC_REQUEST_INVALID", "solicitud generativa"),
+        ("ANTHROPIC_REQUEST_TOO_LARGE", "tamano"),
+        ("ANTHROPIC_RATE_LIMITED", "limite de solicitudes"),
+        ("ANTHROPIC_TIMEOUT", "timeout configurado"),
+        ("ANTHROPIC_OVERLOADED", "sobrecargado"),
+        ("ANTHROPIC_UNAVAILABLE", "contactar el servicio"),
+        ("ANTHROPIC_LLM_TRUNCATED", "max_output_tokens"),
+        ("ANTHROPIC_RESPONSE_INVALID", "respuesta invalida"),
+        ("ANTHROPIC_HTTP_ERROR", "error HTTP"),
+    ],
+)
+def test_anthropic_error_codes_have_provider_specific_messages(
+    code: str,
+    expected: str,
+) -> None:
+    message = cli._llm_error_message(
+        LlmProviderError(f"{code}: detalle remoto no confiable"),
+        provider="anthropic",
+    )
+
+    assert expected in message
+    assert "detalle remoto no confiable" not in message
+    assert "Ollama" not in message
 
 
 def test_ask_keyboard_interrupt_returns_130(

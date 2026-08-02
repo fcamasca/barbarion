@@ -128,6 +128,7 @@ from barbarion.domain.spec_mode import SpecRequest
 from barbarion.infrastructure.anthropic import (
     ANTHROPIC_API_KEY_ENV_VAR,
     AnthropicLlmProvider,
+    AnthropicUsage,
 )
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
@@ -1385,13 +1386,28 @@ def _run_ask(args: argparse.Namespace) -> int:
             debug=args.debug,
         )
     except KeyboardInterrupt:
+        _render_anthropic_usage(service)
         print("Operacion interrumpida por el usuario.", file=sys.stderr)
+        if settings.llm.provider == "anthropic":
+            print(
+                "Barbarion dejo de esperar; Anthropic podria continuar "
+                "procesando la solicitud remota.",
+                file=sys.stderr,
+            )
         return 130
     except TimeoutError:
-        _print_llm_error("Ollama no respondio dentro del timeout configurado.")
+        _render_anthropic_usage(service)
+        _print_llm_error(
+            "El proveedor LLM no respondio dentro del timeout configurado.",
+            provider=settings.llm.provider,
+        )
         return 1
     except LlmProviderError as error:
-        _print_llm_error(_llm_error_message(error))
+        _render_anthropic_usage(service)
+        _print_llm_error(
+            _llm_error_message(error, provider=settings.llm.provider),
+            provider=settings.llm.provider,
+        )
         return 1
     output_result = result
     if args.debug:
@@ -1402,6 +1418,7 @@ def _run_ask(args: argparse.Namespace) -> int:
         )
         output_result = replace(result, debug={})
     _render_answer_result(output_result, args.format)
+    _render_anthropic_usage(service)
     return 0 if result.citations_valid else 1
 
 
@@ -2388,7 +2405,7 @@ def _location_text(source) -> str:
     return ""
 
 
-def _print_llm_error(message: str) -> None:
+def _print_llm_error(message: str, *, provider: str = "ollama") -> None:
     print(f"Error: {message}", file=sys.stderr)
     print("", file=sys.stderr)
     print("Sugerencias:", file=sys.stderr)
@@ -2396,11 +2413,91 @@ def _print_llm_error(message: str) -> None:
     print("- usa --no-llm para inspeccionar el contexto;", file=sys.stderr)
     print("- aumenta [llm].timeout_seconds en barbarion.toml;", file=sys.stderr)
     print("- verifica el modelo configurado en [llm].model;", file=sys.stderr)
-    print("- prueba: ollama run llama3.1:8b", file=sys.stderr)
+    if provider == "anthropic":
+        print(
+            "- verifica ANTHROPIC_API_KEY, permisos y estado de la cuenta.",
+            file=sys.stderr,
+        )
+    else:
+        print("- prueba: ollama run llama3.1:8b", file=sys.stderr)
 
 
-def _llm_error_message(error: LlmProviderError) -> str:
+def _llm_error_message(
+    error: LlmProviderError,
+    *,
+    provider: str = "ollama",
+) -> str:
     message = str(error)
+    if provider == "anthropic":
+        mappings = (
+            (
+                "ANTHROPIC_API_KEY_MISSING",
+                "No se encontro ANTHROPIC_API_KEY en el entorno.",
+            ),
+            (
+                "ANTHROPIC_AUTHENTICATION_ERROR",
+                "Anthropic rechazo la autenticacion. Revisa ANTHROPIC_API_KEY.",
+            ),
+            (
+                "ANTHROPIC_BILLING_ERROR",
+                "La cuenta Anthropic no permite procesar la solicitud.",
+            ),
+            (
+                "ANTHROPIC_PERMISSION_ERROR",
+                "La credencial no tiene permiso para el modelo Anthropic.",
+            ),
+            (
+                "ANTHROPIC_MODEL_NOT_FOUND",
+                "El modelo Anthropic configurado no esta disponible.",
+            ),
+            (
+                "ANTHROPIC_REQUEST_TOO_LARGE",
+                "El prompt excede el tamano admitido por Anthropic.",
+            ),
+            (
+                "ANTHROPIC_REQUEST_INVALID",
+                "Anthropic rechazo la solicitud generativa.",
+            ),
+            (
+                "ANTHROPIC_RATE_LIMITED",
+                "Anthropic aplico un limite de solicitudes; reintenta manualmente.",
+            ),
+            (
+                "ANTHROPIC_TIMEOUT",
+                "Anthropic no respondio dentro del timeout configurado.",
+            ),
+            (
+                "ANTHROPIC_OVERLOADED",
+                "Anthropic esta temporalmente sobrecargado.",
+            ),
+            (
+                "ANTHROPIC_UNAVAILABLE",
+                "No se pudo contactar el servicio Anthropic.",
+            ),
+            (
+                "ANTHROPIC_LLM_TRUNCATED",
+                "Anthropic alcanzo max_output_tokens; aumenta el limite.",
+            ),
+            (
+                "ANTHROPIC_RESPONSE_INVALID",
+                "Anthropic devolvio una respuesta invalida.",
+            ),
+            (
+                "ANTHROPIC_HTTP_ERROR",
+                "Anthropic devolvio un error HTTP.",
+            ),
+        )
+        rendered = next(
+            (detail for code, detail in mappings if code in message),
+            "No se pudo generar la respuesta con Anthropic.",
+        )
+        request_id = re.search(
+            r"\[request-id=([A-Za-z0-9._:-]{1,128})\]",
+            message,
+        )
+        if request_id is not None:
+            rendered += f" Request ID: {request_id.group(1)}."
+        return rendered
     if "TIMEOUT" in message:
         return "Ollama no respondio dentro del timeout configurado."
     if "MODEL_NOT_FOUND" in message:
@@ -2412,6 +2509,35 @@ def _llm_error_message(error: LlmProviderError) -> str:
     if "HTTP_ERROR" in message:
         return "Ollama devolvio un error HTTP."
     return "No se pudo generar la respuesta con el LLM local."
+
+
+def _render_anthropic_usage(service: object) -> None:
+    """Muestra uso remoto en stderr sin alterar formatos de respuesta."""
+    provider = getattr(service, "llm_provider", None)
+    if not isinstance(provider, AnthropicLlmProvider):
+        return
+    usage = provider.usage_snapshot()
+    if usage is None or not _has_token_usage(usage):
+        return
+    if usage.input_tokens is not None:
+        print(f"Input tokens : {usage.input_tokens:,}", file=sys.stderr)
+    if usage.output_tokens is not None:
+        print(f"Output tokens: {usage.output_tokens:,}", file=sys.stderr)
+    if usage.total_tokens is not None:
+        print(f"Total tokens : {usage.total_tokens:,}", file=sys.stderr)
+    print(f"Elapsed time : {usage.elapsed_seconds:.2f}s", file=sys.stderr)
+
+
+def _has_token_usage(usage: AnthropicUsage) -> bool:
+    """Indica si Anthropic entrego al menos un contador presentable."""
+    return any(
+        value is not None
+        for value in (
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.total_tokens,
+        )
+    )
 
 
 def _render_index_summary(summary: IndexRunSummary) -> None:

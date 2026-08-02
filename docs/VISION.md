@@ -1,12 +1,12 @@
 # Barbarion — Visión del producto
 
-> Agente AI on-premise para analizar, documentar y asistir la ingeniería inversa de sistemas legacy Oracle/PLSQL + PowerBuilder.
+> Agente AI con conocimiento on-premise para analizar, documentar y asistir la ingeniería inversa de sistemas legacy Oracle/PLSQL + PowerBuilder.
 
 ## 1. Propósito
 
 Barbarion busca convertir el conocimiento técnico disperso de un sistema legacy objetivo —código, documentación, convenciones y experiencia del equipo— en una base consultable y trazable que ayude a entender el sistema antes de modificarlo.
 
-El producto operará on-premise y entregará resultados útiles para el desarrollo: explicaciones con fuentes, inventarios técnicos, análisis de dependencias e impacto, y documentos Markdown orientados por especificaciones.
+El producto construye y conserva on-premise el conocimiento técnico, y entrega resultados útiles para el desarrollo: explicaciones con fuentes, inventarios técnicos, análisis de dependencias e impacto, y documentos Markdown orientados por especificaciones. La generación usa Ollama por defecto y puede delegarse explícitamente a Anthropic sin trasladar ingesta, embeddings, retrieval, relaciones, validación ni persistencia.
 
 Barbarion no pretende sustituir el criterio del desarrollador ni ejecutar cambios de forma autónoma. Su función es reducir el trabajo de exploración, hacer explícitos los supuestos y preservar conocimiento que hoy depende de búsquedas manuales o de pocas personas.
 
@@ -58,7 +58,8 @@ El MVP se optimizará para uno o pocos usuarios técnicos trabajando localmente,
 
 ### Dentro del alcance
 
-- ejecución local y sin envío de información a servicios externos;
+- construcción local del conocimiento y ejecución sin servicios externos por defecto;
+- inferencia remota opcional mediante Anthropic, limitada al prompt final construido desde el contexto seleccionado;
 - un único dominio legacy configurado para la validación inicial;
 - interfaz CLI;
 - configuración simple por archivo y variables de entorno;
@@ -67,7 +68,7 @@ El MVP se optimizará para uno o pocos usuarios técnicos trabajando localmente,
 - extracción heurística de objetos y referencias comunes;
 - metadata e inventario local en SQLite;
 - embeddings y búsqueda vectorial local;
-- inferencia mediante Ollama;
+- inferencia mediante Ollama o Anthropic, seleccionada explícitamente por configuración;
 - RAG con citas a archivo, objeto y líneas cuando estén disponibles;
 - generación de Markdown para inventarios, explicaciones, impacto y specs;
 - logs locales y comandos básicos de diagnóstico;
@@ -86,11 +87,12 @@ El MVP se optimizará para uno o pocos usuarios técnicos trabajando localmente,
 - cobertura total de formatos documentales en la primera versión;
 - entrenamiento o fine-tuning de modelos;
 - workflows automáticos complejos;
+- múltiples proveedores cloud, routing dinámico o fallback entre proveedores;
 - garantía de exactitud sin revisión humana.
 
 ## 6. Principios de diseño
 
-1. **Local primero.** Código, índices, prompts y respuestas permanecen dentro del entorno controlado.
+1. **Conocimiento local primero.** Código, índices, embeddings, metadata y relaciones permanecen dentro del entorno controlado. Con Anthropic activo, solo el prompt final y su respuesta cruzan la frontera declarada; Ollama y `--no-llm` conservan el flujo completamente local.
 2. **Evidencia antes que elocuencia.** Una respuesta sin fuentes o con evidencia insuficiente debe declararlo.
 3. **Profundidad antes que amplitud.** Un dominio legacy real se valida antes de incorporar otro dominio.
 4. **CLI primero.** La capacidad central debe funcionar sin depender de una interfaz gráfica o servidor web.
@@ -129,8 +131,8 @@ El MVP se considera exitoso cuando, en una demostración reproducible sobre un c
 - todas las respuestas factuales de la demostración incluyen referencias verificables o declaran que no existe evidencia suficiente;
 - Barbarion genera un inventario, un análisis de componente, un análisis de impacto y una spec en Markdown;
 - al menos 3 análisis representativos son revisados por una persona conocedora del sistema analizado y 2 resultan útiles sin rehacer la investigación desde cero;
-- el flujo completo se ejecuta localmente desde instrucciones versionadas y puede repetirse en una instalación limpia;
-- no se requiere una extensión de editor, servicio cloud, microservicio ni infraestructura empresarial.
+- el flujo completo puede ejecutarse localmente con Ollama o `--no-llm` desde instrucciones versionadas y repetirse en una instalación limpia;
+- no se requiere una extensión de editor, microservicio ni infraestructura empresarial; Anthropic es una opción explícita para desacoplar la generación del hardware local, no una dependencia del conocimiento.
 
 Estas métricas son una puerta de decisión, no una promesa de precisión universal. Si no se cumplen, se mejora el corpus, la ingesta o la recuperación antes de ampliar el producto.
 

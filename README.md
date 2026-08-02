@@ -4,11 +4,11 @@
 [![License](https://img.shields.io/github/license/fcamasca/barbarion)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](pyproject.toml)
 
-Barbarion es un agente de IA on-premise para análisis, documentación e ingeniería inversa asistida de sistemas legacy **Oracle/PL/SQL + PowerBuilder**.
+Barbarion es un agente de IA con conocimiento on-premise para análisis, documentación e ingeniería inversa asistida de sistemas legacy **Oracle/PL/SQL + PowerBuilder**.
 
-Está pensado para equipos que necesitan comprender sistemas existentes sin enviar código, documentación ni contexto técnico a servicios cloud. Trabaja sobre un corpus local autorizado, lo transforma en evidencia consultable y genera salidas Markdown trazables.
+Está pensado para equipos que necesitan comprender sistemas existentes manteniendo local el corpus, los índices y la evidencia técnica. La generación puede ejecutarse con Ollama o, de forma explícita, enviar únicamente el prompt final a Anthropic; las rutas `--no-llm` no requieren key ni red.
 
-El MVP mantiene una arquitectura deliberadamente simple: aplicación Python modular de un solo proceso, CLI-first, SQLite + sqlite-vec, parsers heurísticos y Ollama opcional según el comando.
+El MVP mantiene una arquitectura deliberadamente simple: aplicación Python modular de un solo proceso, CLI-first, SQLite + sqlite-vec, parsers heurísticos, Ollama para embeddings y una factoría generativa cerrada Ollama/Anthropic.
 
 ## Problema que resuelve
 
@@ -49,7 +49,7 @@ barbarion ask / describe / impact
 barbarion spec create   H5: produce specs Markdown trazables
 ```
 
-Los comandos operan sobre archivos locales y SQLite. Ollama se usa solo cuando el comando necesita embeddings o LLM local; varias rutas de diagnóstico, ingesta, análisis, búsqueda keyword y salidas `--no-llm` no requieren un modelo real.
+Los comandos operan sobre archivos locales y SQLite. Ollama se usa para embeddings y como backend generativo predeterminado. Si `[llm].provider = "anthropic"`, solo la generación final usa Anthropic; ingesta, inventario, embeddings, SQLite, búsqueda híbrida, ingeniería inversa, Reasoning Package y validación de citas continúan localmente. Varias rutas de diagnóstico, ingesta, análisis, búsqueda keyword y salidas `--no-llm` no requieren un modelo generativo ni acceso remoto.
 
 ## Ejemplo end-to-end
 
@@ -72,7 +72,7 @@ El ejemplo usa nombres sanitizados. En un corpus real, las respuestas incluyen r
 - Smoke tests instalados: `10 passed`
 - Runtime validado: Python `3.12`
 - Integración continua: GitHub Actions
-- Operación: local y on-premise
+- Operación: conocimiento on-premise; inferencia remota opcional
 
 ### Evolución posterior al MVP
 
@@ -88,6 +88,12 @@ El ejemplo usa nombres sanitizados. En un corpus real, las respuestas incluyen r
 H1.1 no selecciona automáticamente un modelo ni declara un candidato sin una
 corrida real elegible. La aceptación confirma la capacidad; la elección operativa
 continúa siendo explícita y requiere revisión humana.
+
+- H1.2 Inferencia Remota con Anthropic: implementación técnica y documentación
+  completadas; aceptación pendiente.
+- Alcance: Anthropic es el único proveedor remoto implementado. Ollama sigue
+  siendo el default y el único proveedor de embeddings.
+- Spec: [`specs/H1.2-RemoteInference/`](specs/H1.2-RemoteInference/).
 
 La evidencia técnica está documentada en [`specs/H5-SpecMode/acceptance.md`](specs/H5-SpecMode/acceptance.md). Ese registro conserva además la nota de revisión humana pendiente para la spec piloto H5.
 
@@ -132,9 +138,10 @@ No enlazar imágenes hasta que los archivos estén versionados.
 
 - CPython `3.12` (`>=3.12,<3.13`);
 - `pip`;
-- Ollama local solo para comandos que usan embeddings o LLM.
+- Ollama local para embeddings, administración H1.1 y generación predeterminada;
+- `ANTHROPIC_API_KEY` en el entorno únicamente si se configura generación Anthropic.
 
-Las pruebas automatizadas no requieren un Ollama real ni acceso a servicios externos: usan directorios temporales y un endpoint falso en loopback.
+Las pruebas automatizadas no requieren un Ollama real, una key válida ni acceso a servicios externos: bloquean conexiones no-loopback y usan adaptadores o endpoints falsos controlados.
 
 ## Comandos disponibles
 
@@ -146,16 +153,16 @@ Las pruebas automatizadas no requieren un Ollama real ni acceso a servicios exte
 | `barbarion doctor` | Inicializa recursos y diagnostica el entorno | Crea directorios, SQLite y log si faltan |
 | `barbarion models list/show/validate` | Consulta modelos Ollama locales y readiness de generacion | Ninguno |
 | `barbarion models install MODELO` | Solicita explicitamente un pull a Ollama | Descarga local; no cambia el modelo activo |
-| `barbarion models select MODELO` | Valida y cambia solamente `[llm].model` | Edita atomicamente el TOML efectivo |
+| `barbarion models select MODELO` | Valida y cambia solamente `[llm].model` con Ollama activo | Edita atomicamente el TOML efectivo; se bloquea con Anthropic |
 | `barbarion models benchmark --models M1 M2` | Compara modelos con un dataset sintetico | Escribe JSON y Markdown locales; no selecciona candidato |
 | `barbarion ingest` | Ejecuta ingesta incremental del corpus configurado | Lee corpus y escribe metadata/chunks en SQLite |
 | `barbarion index` | Indexa chunks vigentes para RAG | Escribe manifests, estados y vectores locales |
 | `barbarion search "consulta"` | Recupera evidencia RAG | Registra métricas de consulta |
-| `barbarion ask "pregunta"` | Responde con evidencia y citas | Registra métricas de consulta/contexto |
+| `barbarion ask "pregunta"` | Responde con evidencia y citas usando el proveedor configurado | Registra métricas de consulta/contexto; con Anthropic envía el prompt final |
 | `barbarion analyze` | Actualiza símbolos y relaciones de reverse engineering | Escribe catálogo técnico y runs en SQLite |
 | `barbarion inventory` | Consulta inventario técnico persistido | Ninguno |
-| `barbarion describe OBJETO` | Genera ficha técnica de un componente | Ninguno |
-| `barbarion impact OBJETO` | Analiza impacto técnico desde relaciones persistidas | Ninguno |
+| `barbarion describe OBJETO` | Genera ficha técnica de un componente | Con `--with-llm`, usa el proveedor configurado y conserva fallback determinista |
+| `barbarion impact OBJETO` | Analiza impacto técnico desde relaciones persistidas | Con `--with-llm`, usa el proveedor configurado y conserva fallback determinista |
 | `barbarion spec create "REQUERIMIENTO"` | Genera una spec Markdown H5 desde evidencia H3/H4 | Escribe cuatro archivos Markdown si Review y validación pasan |
 | `barbarion spec validate RUTA` | Valida una spec Markdown existente | Ninguno |
 | `barbarion stats` | Muestra estadísticas de ingesta, RAG y reverse engineering | Ninguno |
@@ -165,7 +172,7 @@ La referencia completa de la CLI está en [`docs/CLI.md`](docs/CLI.md).
 
 ## Configuración
 
-El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta las claves disponibles para rutas locales, ingesta, RAG, Ollama, SQLite y salida.
+El archivo versionado [`barbarion.example.toml`](barbarion.example.toml) documenta las claves disponibles para rutas locales, ingesta, RAG, Ollama, Anthropic, SQLite y salida.
 
 `barbarion.toml` está excluido de Git. No deben versionarse rutas personales, credenciales ni endpoints privados.
 
@@ -182,6 +189,48 @@ Para inspeccionar los valores efectivos:
 barbarion config show
 barbarion --config ruta/al/archivo.toml config show
 ```
+
+### Inferencia remota con Anthropic
+
+H1.2 permite seleccionar Anthropic sin cambiar retrieval, prompts, citas,
+formatos ni persistencia. Sustituye el bloque `[llm]` por una configuración como:
+
+```toml
+[llm]
+provider = "anthropic"
+model = "modelo-claude-autorizado"
+timeout_seconds = 120.0
+temperature = 0.1
+max_output_tokens = 4096
+```
+
+`max_output_tokens` pertenece únicamente a Anthropic. `think` y `num_ctx`
+pertenecen únicamente a Ollama; combinar campos incompatibles produce un error
+de configuración antes de cualquier red.
+
+La credencial nunca se admite en TOML ni por argumento CLI. Debe existir solo en
+el entorno del proceso que solicita generación:
+
+```powershell
+$secret = Read-Host "ANTHROPIC_API_KEY" -AsSecureString
+$env:ANTHROPIC_API_KEY = [System.Net.NetworkCredential]::new("", $secret).Password
+Remove-Variable secret
+barbarion ask "¿Dónde se calcula order_total?" --mode hybrid
+```
+
+En CI o shells distintos, usa el mecanismo seguro de secretos del entorno y
+evita guardar el valor en historial, scripts o archivos versionados.
+
+H1.2 usa `POST` no streaming a Messages API con endpoint y versión fijos. No
+realiza retries, fallback a Ollama ni cálculo de costos. Cuando Anthropic informa
+uso, la CLI muestra `Input tokens`, `Output tokens`, `Total tokens` y tiempo
+transcurrido; no los denomina créditos ni aplica tablas de precios.
+
+El egress remoto contiene el modelo, límites de generación y el mismo texto
+producido por `PromptBuilder`. No se envían la base SQLite, vectores, manifests,
+configuración, variables de entorno ni archivos completos fuera del contexto
+RAG seleccionado. Prompts, respuestas, key, request-id y métricas de uso no se
+persisten en SQLite ni en artefactos nuevos.
 
 ## Modelos locales y benchmark
 
@@ -216,6 +265,12 @@ corrida esta completa, todos sus casos terminaron y la aceptacion es al menos
 activo desde el benchmark: el benchmark nunca cambia el modelo activo. Para
 adoptarlo, ejecuta despues `models select` de
 forma explicita.
+
+Con Anthropic activo, los comandos de catálogo, instalación y benchmark siguen
+apuntando exclusivamente a Ollama. `models validate` requiere entonces un nombre
+Ollama explícito. `models select` se bloquea para no reemplazar accidentalmente
+el modelo Claude mientras `[llm].model` represente el modelo del proveedor
+activo; esta es una limitación temporal del modelo de configuración actual.
 
 ## Configuraciones Data-Driven
 
@@ -281,7 +336,8 @@ python -m pytest tests/smoke
 
 ## Alcance y principios
 
-- local y on-premise por diseño;
+- conocimiento, embeddings, retrieval y persistencia locales por diseño;
+- generación local por defecto y Anthropic remoto solo por configuración explícita;
 - CLI-first;
 - monolito Python modular de un solo proceso;
 - SQLite + sqlite-vec;
@@ -304,6 +360,10 @@ El MVP se ejecutó en cinco hitos incrementales, desde Foundation hasta Spec Mod
 
 La estimación histórica de 12 semanas y 120 horas se conserva en [`docs/ROADMAP.md`](docs/ROADMAP.md) como registro del plan original.
 
+Las evoluciones posteriores H4.1, H1.1 y H1.2 se registran en
+[`docs/EVOLUTION.md`](docs/EVOLUTION.md). H1.2 está implementada y su aceptación
+formal permanece pendiente.
+
 ## Documentación
 
 - [Guía de documentación](docs/README.md)
@@ -317,6 +377,7 @@ La estimación histórica de 12 semanas y 120 horas se conserva en [`docs/ROADMA
 - [Aceptación H4](specs/H4-ReverseEngineering/acceptance.md)
 - [Validación H5](specs/H5-SpecMode/acceptance.md)
 - [Configuracion del analisis Data-Driven](docs/data-driven-configuration.md)
+- [Spec H1.2 de inferencia remota](specs/H1.2-RemoteInference/)
 - [Specs por hito](specs/)
 - [Spec aprobada de H1](specs/H1-Foundation/)
 

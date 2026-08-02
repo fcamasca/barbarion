@@ -20,9 +20,10 @@ El objetivo no es depender de un LLM cada vez más grande.
 El objetivo es entregar al LLM un contexto cada vez más inteligente.
 
 Mientras mejor sea el conocimiento estructurado que Barbarion construye,
-menos dependerá la calidad de la respuesta del modelo utilizado. El MVP usa
-modelos locales mediante Ollama; cualquier soporte futuro para otros proveedores
-o entornos requerirá una decisión de alcance y una spec propia.
+menos dependerá la calidad de la respuesta del modelo utilizado. Ollama sigue
+siendo el backend predeterminado y el proveedor de embeddings. H1.2 permite usar
+Anthropic para la generación final sin trasladar la construcción local de
+conocimiento ni establecer que sea el único proveedor remoto futuro.
 
 ------------------------------------------------------------------------
 
@@ -164,6 +165,43 @@ Evidencia:
 
 ------------------------------------------------------------------------
 
+## H1.2 -- Inferencia Remota con Anthropic
+
+Estado: implementación técnica y documentación completadas; aceptación pendiente.
+
+Pregunta que responde:
+
+**¿Cómo desacoplar la generación final del hardware local sin alterar RAG?**
+
+Construye:
+
+- selección explícita de `ollama` o `anthropic` en `[llm].provider`;
+- adaptador Anthropic para Messages API con endpoint y versión fijos;
+- credencial tardía y exclusiva desde `ANTHROPIC_API_KEY`;
+- payload no streaming, parseo textual, timeout, cancelación y errores seguros;
+- observabilidad de tokens y tiempo sin costos ni persistencia nueva;
+- guardas para que H1.1 permanezca Ollama-only;
+- suite offline con bloqueo de egress externo, redirects y canarios.
+
+H1.2 conserva sin cambios ingesta, inventario, embeddings Ollama, SQLite,
+búsqueda híbrida, reverse engineering, Reasoning Package, construcción de
+prompts, reparación y validación de citas. Generación y reparación usan el mismo
+proveedor seleccionado. `--no-llm` y evidencia insuficiente no leen la key ni
+abren red.
+
+Resultado:
+
+Barbarion puede generar localmente con Ollama o enviar únicamente el prompt
+final a Anthropic. No incorpora streaming, retries, fallback entre proveedores,
+routing dinámico ni soporte cloud adicional.
+
+Evidencia de implementación:
+
+[`../specs/H1.2-RemoteInference/`](../specs/H1.2-RemoteInference/). El documento
+`acceptance.md` se creará únicamente durante H1.2-T08.
+
+------------------------------------------------------------------------
+
 ## H4.1 -- Configuraciones Data-Driven
 
 Estado: completada y aceptada técnicamente.
@@ -294,19 +332,14 @@ Debe incluir:
 
 ## H4.6 -- Multi LLM
 
-Esta evolución no forma parte de la implementación actual. Requiere una decisión
-de alcance y una spec propia que definan despliegue, privacidad y compatibilidad
-con el principio on-premise antes de incorporar proveedores distintos de Ollama.
+H1.2 no implementa una plataforma multi-LLM: la factoría actual está cerrada a
+Ollama y Anthropic, sin registry, routing ni comparación automática. Una futura
+capacidad multi-LLM requerirá evidencia de necesidad, una decisión de alcance y
+una spec propia para normalizar contratos, privacidad, evaluación y operación.
 
-El mismo Reasoning Package puede enviarse a:
-
--   Llama
--   Claude
--   GPT
--   Bedrock
-
-La diferencia entre respuestas dependerá principalmente del modelo, no
-del conocimiento disponible.
+El Reasoning Package deberá seguir siendo independiente del backend. La
+diferencia entre respuestas dependerá del modelo, no de una copia distinta del
+conocimiento disponible.
 
 ------------------------------------------------------------------------
 

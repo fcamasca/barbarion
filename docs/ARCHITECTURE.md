@@ -1,8 +1,8 @@
-# Barbarion — Arquitectura del MVP
+# Barbarion — Arquitectura vigente
 
 ## 1. Objetivo arquitectónico
 
-La arquitectura debe soportar un flujo local completo —ingestar, buscar, analizar y documentar— con la menor cantidad razonable de componentes. El MVP se valida inicialmente sobre un dominio legacy real, pero ese dominio no forma parte del diseño público ni limita la arquitectura de Barbarion. El MVP será una **aplicación Python modular de un solo proceso**, invocada desde CLI y respaldada por almacenamiento local.
+La arquitectura soporta un flujo local completo de construcción de conocimiento —ingestar, buscar, analizar y documentar— con la menor cantidad razonable de componentes. La generación final puede ejecutarse localmente o mediante Anthropic sin mover embeddings, retrieval, SQLite, ingeniería inversa ni validación. Barbarion es una **aplicación Python modular de un solo proceso**, invocada desde CLI y respaldada por almacenamiento local.
 
 La separación entre módulos existe para mantener el código comprensible y comprobable, no para desplegar servicios independientes.
 
@@ -11,16 +11,17 @@ La separación entre módulos existe para mantener el código comprensible y com
 | Área | Decisión del MVP | Motivo |
 |---|---|---|
 | Interfaz | CLI | Menor costo, fácil de automatizar y suficiente para validar valor |
-| Backend | Python 3.12, una aplicación | Ecosistema sólido para parsing, RAG y modelos locales |
+| Backend | Python 3.12, una aplicación | Ecosistema sólido para parsing, RAG y adaptadores generativos pequeños |
 | API HTTP | No usar inicialmente | FastAPI no aporta al flujo CLI de un solo usuario; puede añadirse como adaptador futuro |
 | Metadata | SQLite | Local, transaccional, inspeccionable y sin servidor |
 | Vectores | SQLite + sqlite-vec | Mantiene metadata y vectores en el mismo archivo local y conserva el índice reconstruible |
-| LLM y embeddings | Ollama | Inferencia local con una interfaz estable y modelos sustituibles por configuración |
+| Embeddings | Ollama | La construcción semántica del conocimiento permanece local |
+| LLM | Ollama por defecto o Anthropic | El puerto estable desacopla la generación del hardware sin crear una plataforma multiproveedor |
 | Entregables | Markdown | Legible, editable, versionable y adecuado para specs |
 | Parsing | Heurísticas por tipo + fallback de texto | Valor temprano sin intentar compiladores completos |
 | Arquitectura | Monolito modular con puertos pequeños | Evoluciona sin introducir distribución prematura |
 
-Los nombres concretos de modelos se definirán en configuración y se validarán en el hardware objetivo. No forman parte del dominio ni deben quedar codificados en la lógica.
+Los nombres concretos de modelos se definen en configuración. Los modelos Ollama se validan en el hardware objetivo y el modelo Anthropic debe estar autorizado para la cuenta. Ningún nombre forma parte del dominio ni queda codificado en la lógica.
 
 ## 3. Contexto del sistema
 
@@ -30,11 +31,14 @@ flowchart LR
     SRC["Código y documentación autorizados"] --> CLI
     CLI --> APP["Aplicación Python local"]
     APP --> SQL[("SQLite\nmetadata, relaciones y sqlite-vec")]
-    APP --> OL["Ollama\nembeddings y LLM"]
+    APP --> EMB["Ollama\nembeddings"]
+    APP --> PORT["LlmProviderPort"]
+    PORT --> OL["Ollama LLM\ndefault local"]
+    PORT -.->|opt-in: prompt final| AN["Anthropic\nMessages API"]
     APP --> MD["Documentos Markdown"]
 ```
 
-Todos los componentes se ejecutan dentro del entorno controlado. Barbarion no necesita conectarse a una base Oracle productiva: analiza artefactos exportados y documentación autorizada.
+El corpus, SQLite, vectores y análisis se ejecutan dentro del entorno controlado. Barbarion no necesita conectarse a una base Oracle productiva: analiza artefactos exportados y documentación autorizada. La única frontera cloud implementada es la solicitud generativa a Anthropic cuando se selecciona explícitamente.
 
 ## 4. Flujo principal
 
@@ -51,8 +55,11 @@ flowchart TD
     Q["Pregunta o comando"] --> R["Recuperación semántica + filtros"]
     F --> R
     R --> P["Construcción de contexto"]
-    P --> L["Ollama LLM"]
-    L --> V["Validación y formato"]
+    P --> LP["LlmProviderPort"]
+    LP --> LO["Ollama LLM"]
+    LP -.-> AR["Anthropic Messages API"]
+    LO --> V["Validación y formato"]
+    AR --> V
     V --> O["CLI o Markdown con fuentes"]
 ```
 
@@ -72,8 +79,9 @@ flowchart TD
 2. sqlite-vec recupera candidatos, opcionalmente filtrados por metadata.
 3. SQLite aporta datos de archivo, objeto y relaciones simples.
 4. Un ensamblador limita y ordena el contexto según presupuesto configurable.
-5. El LLM responde bajo una plantilla que exige evidencia, supuestos y límites.
-6. La salida valida que las referencias apunten a fragmentos recuperados.
+5. La factoría cerrada selecciona Ollama o Anthropic sin modificar el texto construido por `PromptBuilder`.
+6. El proveedor responde bajo la misma plantilla que exige evidencia, supuestos y límites.
+7. La salida valida que las referencias apunten a fragmentos recuperados.
 
 La validación de referencias reduce afirmaciones no sustentadas, pero no convierte la salida del modelo en una verdad automática. La revisión humana sigue siendo obligatoria.
 
@@ -116,13 +124,14 @@ Un archivo local, por ejemplo `barbarion.toml`, define:
 - identificador del único dominio configurado para la validación;
 - rutas de entrada, salida y datos;
 - inclusiones y exclusiones;
-- URL local de Ollama y modelos seleccionados;
+- URL local de Ollama, proveedor generativo y modelos seleccionados;
+- timeout, temperatura y opciones exclusivas de Ollama o Anthropic;
 - tamaños y solapamiento de chunks;
 - top-k y límites de contexto;
 - ubicación de SQLite y configuración de sqlite-vec;
 - nivel de logging.
 
-Se versiona un archivo de ejemplo, no la configuración con rutas, secretos o datos reales. Los valores efectivos deben poder mostrarse con datos sensibles ocultos.
+Se versiona un archivo de ejemplo, no la configuración con rutas, secretos o datos reales. `ANTHROPIC_API_KEY` se obtiene únicamente del entorno y se valida tarde, al generar; TOML y CLI no admiten credenciales. Los valores efectivos pueden mostrarse sin acceder ni revelar la key.
 
 ### 5.3 Ingesta y parsers
 
@@ -283,11 +292,30 @@ Spec Mode coordina evidencia documental H3, impacto técnico H4, síntesis conse
 H1.1 agrega una capacidad lateral al monolito y no modifica ingesta, retrieval, embeddings, conocimiento persistido, reverse engineering ni Spec Mode.
 
 - Ollama es la fuente de verdad del catálogo de modelos instalados.
-- `[llm].model` en la configuración efectiva es la única fuente de verdad del modelo generativo activo; `[embeddings].model` permanece independiente.
+- `[llm].model` en la configuración efectiva es la única fuente de verdad del modelo del proveedor generativo activo; `[embeddings].model` permanece independiente y Ollama-only.
 - Los servicios de aplicación listan, inspeccionan, instalan, validan y seleccionan modelos mediante un cliente pequeño de la API local de Ollama.
-- La selección valida previamente el modelo y edita de forma atómica solo `[llm].model`; instalar, validar o ejecutar un benchmark no cambia la selección.
+- La selección valida previamente el modelo y edita de forma atómica solo `[llm].model` cuando `[llm].provider = "ollama"`; con Anthropic se bloquea para no reemplazar el modelo Claude.
+- `models validate` exige un modelo Ollama explícito cuando Anthropic está activo. Listar, mostrar, instalar y ejecutar el benchmark continúan disponibles y nunca usan la factoría generativa.
 - El benchmark reutiliza el constructor de contexto, el prompt y el validador RAG existentes sobre un dataset sintético congelado. Ejecuta los modelos secuencialmente, aplica scoring determinista y produce JSON y Markdown locales.
 - Los reportes del benchmark no se guardan en SQLite y una recomendación nunca selecciona automáticamente un modelo; la adopción requiere `models select` explícito y revisión humana.
+
+### 5.10 Inferencia remota con Anthropic
+
+H1.2 cambia únicamente el adaptador que genera la respuesta final:
+
+- `LlmProviderPort.generate()` conserva su firma y `AskService`, `PromptBuilder`, reparación y validación de citas mantienen sus contratos.
+- `_build_llm_provider` es una factoría cerrada de dos ramas: Ollama o Anthropic. No existe registry dinámico ni abstracción para otros proveedores cloud.
+- `AnthropicLlmProvider` usa `urllib` y realiza un único `POST` no streaming a Messages API, con endpoint y `anthropic-version` fijos.
+- La key se resuelve desde `ANTHROPIC_API_KEY` al iniciar `generate`; cargar configuración, evidencia insuficiente y `--no-llm` no requieren secreto ni red.
+- `max_output_tokens` solo es válido para Anthropic; `think` y `num_ctx` solo son válidos para Ollama.
+- Generación y reparación usan el mismo proveedor. No existen retries, fallback entre proveedores ni respuesta parcial cuando `stop_reason = max_tokens`.
+- `describe` e `impact --with-llm` usan la misma factoría y conservan su fallback determinista ante un error del proveedor.
+- El adaptador agrega uso de tokens y tiempo transcurrido sin cambiar el puerto. No calcula costos ni denomina créditos a los tokens.
+
+La frontera remota contiene únicamente el payload de Messages API y el prompt ya
+construido. Ninguna tabla, vector, manifest, variable de entorno o archivo
+completo adicional se serializa. Prompts, respuestas, key, request-id y uso no
+se persisten en SQLite ni generan cachés o artefactos H1.2.
 
 ## 6. Estructura de referencia
 
@@ -323,13 +351,14 @@ Barbarion/
 │       ├── domain/               # Modelos y reglas pequeñas
 │       │   ├── models.py
 │       │   └── ports.py
-│       └── infrastructure/       # Adaptadores locales
+│       └── infrastructure/       # Adaptadores de persistencia y proveedores
 │           ├── parsers/
 │           │   ├── plsql.py
 │           │   ├── powerbuilder.py
 │           │   └── text.py
 │           ├── sqlite.py
 │           ├── ollama.py
+│           ├── anthropic.py
 │           ├── ollama_models.py
 │           ├── model_config.py
 │           └── markdown.py
@@ -341,6 +370,7 @@ Barbarion/
 ├── specs/
 │   ├── H1-Foundation/
 │   ├── H1.1-LocalModelManagement/
+│   ├── H1.2-RemoteInference/
 │   ├── H2-Ingestion/
 │   ├── H3-RAG/
 │   ├── H4-ReverseEngineering/
@@ -360,6 +390,7 @@ La división `application/domain/infrastructure` debe mantenerse ligera. Si un a
 - una biblioteca CLI madura;
 - validación de configuración;
 - cliente de Ollama;
+- cliente HTTP Anthropic directo sobre biblioteca estándar;
 - acceso estándar o liviano a SQLite;
 - sqlite-vec para búsqueda vectorial local;
 - motor de plantillas Markdown;
@@ -371,10 +402,12 @@ Se evitará adoptar un framework RAG grande al inicio. Las cuatro operaciones de
 
 - solo se procesan rutas configuradas y autorizadas;
 - se excluyen por defecto secretos, binarios, carpetas de build y control de versiones;
-- logs y documentos no deben volcar prompts completos si contienen información sensible, salvo modo de diagnóstico explícito;
+- los logs no vuelcan prompts, respuestas, headers ni secretos; el modo `--debug` es explícito y efímero, trunca contenido y enmascara patrones sensibles reconocidos;
 - no se ejecuta código fuente ingerido;
 - no se conecta a Oracle productivo;
-- las llamadas de modelo apuntan a endpoints locales permitidos.
+- Ollama apunta al endpoint local configurado;
+- Anthropic apunta a un endpoint HTTPS fijo, rechaza redirects y nunca reenvía key o contexto a otro destino;
+- la key no se representa, registra ni persiste, y una coincidencia exacta dentro del prompt o la respuesta se bloquea.
 
 ## 8. Observabilidad y manejo de errores
 
@@ -384,6 +417,7 @@ Para un MVP local basta con:
 - ID de corrida de ingesta;
 - conteos de procesados, omitidos, actualizados y fallidos;
 - tiempos por etapa y latencia de consulta;
+- proveedor, modelo, tamaños, tokens informados y tiempo de generación sin contenido sensible;
 - comando `doctor` para rutas, SQLite, sqlite-vec y Ollama;
 - mensajes de error con archivo y acción recomendada.
 
@@ -392,13 +426,13 @@ No se requiere una plataforma de métricas, trazas distribuidas ni telemetría r
 ## 9. Estrategia de pruebas
 
 - **Unitarias:** chunking, checksums, parsers, filtros, renderers y validadores de citas.
-- **Integración:** SQLite, sqlite-vec y Ollama sustituible por un fake estable.
+- **Integración:** SQLite, sqlite-vec, Ollama y Anthropic sustituibles por fakes estables.
 - **Golden files:** Markdown esperado para entradas controladas.
 - **Evaluación RAG:** conjunto versionado de preguntas, fuentes esperadas y métrica top-k.
 - **Smoke test:** recorrido CLI mínimo sobre un corpus pequeño.
 - **Validación humana:** tres casos del dominio configurado para utilidad y falsos positivos.
 
-Las pruebas no deben depender siempre de descargar o ejecutar un modelo grande. La integración real con Ollama se prueba de forma separada y explícita.
+La suite normal bloquea conexiones externas salvo loopback y no requiere modelos, API keys ni servicios reales. Las integraciones reales con Ollama o Anthropic se ejecutan de forma separada y explícita; Anthropic solo puede validarse con datos sintéticos y autorización.
 
 ## 10. Evolución futura sin implementarla ahora
 
@@ -420,7 +454,7 @@ Otras evoluciones posibles —un segundo dominio, más formatos, Qdrant como alt
 
 La arquitectura se considera adecuada para el MVP si:
 
-- el flujo completo puede ejecutarse desde CLI en una máquina local;
+- el flujo completo puede ejecutarse desde CLI en una máquina local con Ollama o `--no-llm`, y puede delegar solo la generación a Anthropic;
 - cada fragmento y relación puede rastrearse a su fuente;
 - el índice sqlite-vec puede reconstruirse desde chunks y manifiestos en SQLite;
 - un fallo de parser o archivo no invalida toda la ingesta;

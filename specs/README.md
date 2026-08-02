@@ -13,6 +13,7 @@ Las specs convierten cada hito del roadmap en trabajo pequeño, revisable y veri
 | [H4.1-DataDrivenConfigurations](H4.1-DataDrivenConfigurations/) | Configuraciones persistidas integradas al conocimiento técnico | Completado |
 | [H5-SpecMode](H5-SpecMode/) | Generación guiada de specs Markdown | Completado |
 | [H1.1-LocalModelManagement](H1.1-LocalModelManagement/) | Gestión y evaluación reproducible de modelos Ollama locales | Completado; comparación real pendiente |
+| [H1.2-RemoteInference](H1.2-RemoteInference/) | Generación remota opcional mediante Anthropic sin cambiar el conocimiento local | Implementación completada; aceptación pendiente |
 
 ## Estructura de una spec activa
 
@@ -22,6 +23,10 @@ Cada carpeta de hito incorporará estos documentos cuando comience su definició
 requirements.md   # Qué debe resolver y cómo se acepta
 design.md         # Cómo se resolverá y qué decisiones aplica
 tasks.md          # Incrementos pequeños, ordenados y verificables
+test-plan.md      # Cómo se verifican contratos, riesgos y regresión
+acceptance.md     # Evidencia final; se crea únicamente durante la aceptación
 ```
 
-No se generarán los tres archivos con contenido ficticio. Se crearán al iniciar el hito correspondiente y se aprobarán antes de implementar.
+No se generarán documentos con contenido ficticio. Requisitos, diseño, tareas y
+plan de pruebas se crean y aprueban antes de implementar; `acceptance.md` se
+elabora únicamente cuando se autoriza la aceptación del hito.

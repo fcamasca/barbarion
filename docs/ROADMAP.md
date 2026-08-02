@@ -268,9 +268,10 @@ Cada hito produce una etiqueta o commit identificable. La demostración final ej
 ### Evoluciones implementadas después del plan original
 
 - **H1.1 — Gestión y Evaluación de Modelos Locales:** completada y aceptada técnicamente. Incorpora administración explícita de modelos Ollama, validación de generación y benchmark sintético reproducible. La comparación real entre al menos dos modelos aptos quedó pendiente por condiciones del entorno de aceptación y no bloquea el cierre técnico.
+- **H1.2 — Inferencia Remota con Anthropic:** implementación técnica y documentación completadas; aceptación pendiente. Incorpora Anthropic como único backend remoto actual para la generación final, mantiene Ollama como default y conserva local ingesta, embeddings, retrieval, conocimiento y validación.
 - **H4.1 — Configuraciones Data-Driven:** completada y aceptada técnicamente.
 
-El detalle y la evidencia de estas evoluciones se conservan en [`EVOLUTION.md`](EVOLUTION.md) y sus specs de aceptación.
+El detalle y la evidencia de estas evoluciones se conservan en [`EVOLUTION.md`](EVOLUTION.md) y sus specs. H1.2 no tendrá `acceptance.md` hasta ejecutar su tarea de aceptación.
 
 ## 9. Decisión posterior al MVP
 

@@ -55,6 +55,7 @@ dedupe_min_hash_prefix = 16
 include_snippets = true
 
 [llm]
+# Backend generativo predeterminado y local. Valores admitidos: ollama, anthropic.
 provider = "ollama"
 model = "llama3.1:8b"
 timeout_seconds = 600.0
@@ -63,6 +64,19 @@ temperature = 0.1
 think = false
 # Ventana de contexto que Ollama asigna al modelo durante la generacion.
 num_ctx = 16384
+
+# Para usar Anthropic, sustituye el bloque [llm] anterior por este contenido;
+# no combines max_output_tokens con Ollama ni think/num_ctx con Anthropic:
+#
+# [llm]
+# provider = "anthropic"
+# model = "modelo-claude-autorizado"
+# timeout_seconds = 120.0
+# temperature = 0.1
+# max_output_tokens = 4096
+#
+# ANTHROPIC_API_KEY se lee exclusivamente desde el entorno al generar. Nunca la
+# escribas en este archivo. El endpoint y anthropic-version son fijos en H1.2.
 
 [data_driven]
 enabled = false

@@ -5,6 +5,7 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 ## Estados
 
 - **Aceptada:** guía la implementación actual.
+- **Acotada:** continúa vigente con una excepción definida por una decisión posterior.
 - **Propuesta:** requiere validación antes de implementarse.
 - **Reemplazada:** se conserva como contexto histórico e indica su sucesora.
 
@@ -12,13 +13,13 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 
 | ID | Fecha | Estado | Decisión | Motivo | Consecuencia |
 |---|---|---|---|---|---|
-| D-001 | 2026-06-23 | Aceptada | Operación on-premise y local | El corpus puede contener código e información sensible | El uso normal no dependerá de servicios cloud |
+| D-001 | 2026-06-23 | Acotada por D-019 | Operación on-premise y local | El corpus puede contener código e información sensible | El conocimiento y el flujo predeterminado permanecen locales; H1.2 permite enviar únicamente el prompt final a Anthropic cuando el usuario lo configura |
 | D-002 | 2026-06-23 | Aceptada | El MVP usará un único dominio legacy configurado | Se prioriza profundidad y validación real | El caso de validación no forma parte del diseño público; otros dominios requieren una decisión y una spec posterior |
 | D-003 | 2026-06-23 | Aceptada | CLI como primera interfaz | Reduce costo y permite validar los casos de uso centrales | VS Code y UI web quedan fuera del MVP |
 | D-004 | 2026-06-23 | Aceptada | Aplicación Python modular de un solo proceso | Es suficiente para un usuario local y evita complejidad operativa | No se crearán microservicios ni Kubernetes |
 | D-005 | 2026-06-23 | Aceptada | SQLite como fuente de verdad de metadata | Es transaccional, local e inspeccionable | El esquema evolucionará mediante migraciones pequeñas |
 | D-006 | 2026-06-23 | Reemplazada por D-014 | Qdrant en modo local para vectores | Aporta búsqueda vectorial y filtros, pero agrega un componente operativo adicional para el MVP local | Qdrant queda como alternativa futura y no como dependencia inicial |
-| D-007 | 2026-06-23 | Aceptada | Ollama para embeddings e inferencia | Mantiene modelos y datos dentro del entorno local | Los modelos concretos se elegirán por configuración y hardware |
+| D-007 | 2026-06-23 | Acotada por D-019 | Ollama para embeddings e inferencia | Mantiene modelos y datos dentro del entorno local | Ollama sigue siendo obligatorio para embeddings y el backend generativo predeterminado; H1.2 añade Anthropic solo para generación |
 | D-008 | 2026-06-23 | Aceptada | Markdown como formato de entregables y specs | Es legible, editable y versionable | La generación debe usar plantillas y no sobrescribir trabajo humano por defecto |
 | D-009 | 2026-06-23 | Aceptada | FastAPI se difiere | La CLI no necesita una API HTTP para validar el MVP | Solo se reconsiderará ante un cliente real que la necesite |
 | D-010 | 2026-06-23 | Aceptada | Parsers heurísticos con fallback de texto | Permiten entregar valor antes de construir analizadores formales | Toda extracción debe conservar evidencia y declarar limitaciones |
@@ -27,9 +28,10 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 | D-013 | 2026-06-23 | Aceptada | La comunicación de Barbarion con el usuario será en español | Favorece claridad y consistencia para sus usuarios iniciales | Ayuda, mensajes CLI, errores, diagnósticos, logs, comentarios y docstrings se escriben en español; identificadores, claves de configuración, APIs y códigos técnicos estables pueden permanecer en inglés |
 | D-014 | 2026-06-29 | Aceptada | SQLite + sqlite-vec como vector store inicial del MVP | Mantiene metadata y vectores en un único archivo local, reduce operación y conserva el índice reconstruible desde chunks H2 | H3 usa SQLite + sqlite-vec; Qdrant se reevalúa en H4 o posterior si volumen, filtros o latencia lo requieren |
 | D-015 | 2026-06-30 | Aceptada | Las tablas permanentes de reverse engineering no usan prefijo de hito | El catálogo técnico ya forma parte del modelo de datos permanente de Barbarion, igual que `files`, `documents` y `chunks` | El esquema usa `analysis_runs`, `symbols`, `symbol_references`, `relations`, `relation_candidates` y `generated_artifacts`; se evita `references` por ser problemático en SQLite |
-| D-016 | 2026-07-20 | Aceptada | Ollama es la fuente del catálogo de modelos y `[llm].model` es la única fuente de verdad del LLM generativo activo | Evita un registro paralelo y nuevas precedencias de configuración | Los modelos no se catalogan en SQLite; seleccionar edita atómicamente solo `[llm].model` y no cambia `[embeddings].model` |
+| D-016 | 2026-07-20 | Acotada por D-019 | Ollama es la fuente del catálogo de modelos y `[llm].model` es la única fuente de verdad del LLM generativo activo | Evita un registro paralelo y nuevas precedencias de configuración | Los modelos no se catalogan en SQLite; `models select` solo edita `[llm].model` cuando el proveedor activo es Ollama y no cambia `[embeddings].model` |
 | D-017 | 2026-07-20 | Aceptada | La instalación y selección de modelos son acciones explícitas y separadas | Descargar, validar o evaluar un modelo no autoriza cambiar la configuración activa | `models install`, `models validate` y `models benchmark` nunca seleccionan un modelo; `models select` exige validación previa |
 | D-018 | 2026-07-20 | Aceptada | La evaluación H1.1 usa un benchmark local, sintético y determinista con recomendación informativa | Permite comparar el LLM generativo sin exponer datos, alterar retrieval ni introducir un LLM juez | Los reportes son JSON y Markdown locales, no se persisten en SQLite y cualquier candidato requiere revisión humana y selección posterior explícita |
+| D-019 | 2026-08-02 | Aceptada | H1.2 desacopla la generación mediante una factoría cerrada Ollama/Anthropic y conserva local toda la construcción de conocimiento | Permite evitar la dependencia del hardware local sin rediseñar RAG ni anticipar una plataforma multiproveedor | Ollama continúa como default y proveedor de embeddings; Anthropic usa Messages API con endpoint y versión fijos, key solo desde `ANTHROPIC_API_KEY`, sin streaming, retries ni fallback; no se persisten prompts, respuestas, uso, request-id o credenciales |
 
 ## Cómo añadir una decisión
 

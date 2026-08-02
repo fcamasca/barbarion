@@ -463,6 +463,104 @@ def test_llm_think_is_absent_by_default(tmp_path: Path) -> None:
 
     assert settings.llm.think is None
     assert settings.llm.num_ctx is None
+    assert settings.llm.max_output_tokens is None
+
+
+def test_anthropic_llm_uses_provider_specific_output_default(
+    tmp_path: Path,
+) -> None:
+    source = write_config(
+        tmp_path / "anthropic.toml",
+        "\n".join(
+            (
+                "[llm]",
+                'provider = "anthropic"',
+                'model = "claude-test"',
+                "timeout_seconds = 75.0",
+                "temperature = 0.2",
+            )
+        ),
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.llm == LlmSettings(
+        provider="anthropic",
+        model="claude-test",
+        timeout_seconds=75.0,
+        temperature=0.2,
+        max_output_tokens=4096,
+    )
+
+
+def test_anthropic_llm_accepts_explicit_output_limit(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "anthropic-limit.toml",
+        "\n".join(
+            (
+                "[llm]",
+                'provider = "anthropic"',
+                'model = "claude-test"',
+                "max_output_tokens = 8192",
+            )
+        ),
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.llm.max_output_tokens == 8192
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_message"),
+    [
+        (
+            '[llm]\nprovider = "ollama"\nmax_output_tokens = 4096\n',
+            "llm.max_output_tokens.*Anthropic",
+        ),
+        (
+            '[llm]\nprovider = "anthropic"\nthink = false\n',
+            "llm.think.*Ollama",
+        ),
+        (
+            '[llm]\nprovider = "anthropic"\nnum_ctx = 8192\n',
+            "llm.num_ctx.*Ollama",
+        ),
+        (
+            '[llm]\nprovider = "anthropic"\nmax_output_tokens = 0\n',
+            "llm.max_output_tokens",
+        ),
+        (
+            '[llm]\nprovider = "anthropic"\nmax_output_tokens = 128001\n',
+            "llm.max_output_tokens",
+        ),
+        (
+            '[llm]\nprovider = "anthropic"\nmax_output_tokens = true\n',
+            "llm.max_output_tokens",
+        ),
+    ],
+)
+def test_llm_provider_specific_fields_are_rejected(
+    content: str,
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    source = write_config(tmp_path / "invalid-provider-field.toml", content)
+
+    with pytest.raises(ConfigError, match=expected_message):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
+def test_anthropic_api_key_cannot_be_stored_in_llm_config(
+    tmp_path: Path,
+) -> None:
+    source = write_config(
+        tmp_path / "secret.toml",
+        "[llm]\nprovider = \"anthropic\"\nanthropic_api_key = \"secret\"\n",
+    )
+
+    with pytest.raises(ConfigError, match="llm.anthropic_api_key"):
+        load_settings(source, environ={}, cwd=tmp_path)
 
 
 @pytest.mark.parametrize(

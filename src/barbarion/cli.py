@@ -4,6 +4,7 @@ import argparse
 import ctypes
 import json
 import logging
+import os
 import platform
 import re
 import signal
@@ -94,6 +95,7 @@ from barbarion.domain.model_benchmark import (
     BenchmarkRunStatus,
     ModelBenchmarkRunResult,
 )
+from barbarion.domain.ports import LlmProviderPort
 from barbarion.domain.progress import ProgressSnapshot, ProgressStage
 from barbarion.domain.rag import (
     AnswerResult,
@@ -123,6 +125,10 @@ from barbarion.domain.reverse_engineering import (
     TechnicalSymbol,
 )
 from barbarion.domain.spec_mode import SpecRequest
+from barbarion.infrastructure.anthropic import (
+    ANTHROPIC_API_KEY_ENV_VAR,
+    AnthropicLlmProvider,
+)
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.filesystem import LocalFilesystemDiscovery
 from barbarion.infrastructure.fingerprint import LocalFingerprintCalculator
@@ -1879,21 +1885,45 @@ def _build_search_service(settings: Settings) -> SearchService:
     )
 
 
-def _build_llm_provider(settings: Settings) -> OllamaLlmProvider:
-    """Construye el proveedor LLM local configurado.
+def _build_llm_provider(
+    settings: Settings,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> LlmProviderPort:
+    """Construye una de las dos implementaciones LLM admitidas.
 
     Args:
         settings: Configuracion efectiva de Barbarion.
 
     Returns:
-        Proveedor Ollama local.
+        Proveedor generativo seleccionado.
     """
-    return OllamaLlmProvider(
-        base_url=settings.ollama_url,
-        model=settings.llm.model,
-        temperature=settings.llm.temperature,
-        think=settings.llm.think,
-        num_ctx=settings.llm.num_ctx,
+    if settings.llm.provider == "ollama":
+        return OllamaLlmProvider(
+            base_url=settings.ollama_url,
+            model=settings.llm.model,
+            temperature=settings.llm.temperature,
+            think=settings.llm.think,
+            num_ctx=settings.llm.num_ctx,
+        )
+
+    if settings.llm.provider == "anthropic":
+        if settings.llm.max_output_tokens is None:
+            raise ConfigError(
+                "La configuracion Anthropic requiere 'llm.max_output_tokens'."
+            )
+        environment = os.environ if environ is None else environ
+        return AnthropicLlmProvider(
+            model=settings.llm.model,
+            temperature=settings.llm.temperature,
+            max_output_tokens=settings.llm.max_output_tokens,
+            _api_key_resolver=lambda: environment.get(
+                ANTHROPIC_API_KEY_ENV_VAR
+            ),
+        )
+
+    raise ConfigError(
+        f"Proveedor LLM no soportado: '{settings.llm.provider}'."
     )
 
 

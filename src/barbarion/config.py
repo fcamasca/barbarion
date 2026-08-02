@@ -102,6 +102,8 @@ _DEFAULT_LLM: dict[str, object] = {
     "think": None,
     "num_ctx": None,
 }
+_DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS = 4096
+_MAX_ANTHROPIC_OUTPUT_TOKENS = 128_000
 _DEFAULT_DATA_DRIVEN: dict[str, object] = {
     "enabled": False,
     "file_patterns": (),
@@ -128,7 +130,7 @@ _ALLOWED_EMBEDDINGS_KEYS = frozenset(_DEFAULT_EMBEDDINGS)
 _ALLOWED_VECTOR_STORE_KEYS = frozenset(_DEFAULT_VECTOR_STORE)
 _ALLOWED_RETRIEVAL_KEYS = frozenset(_DEFAULT_RETRIEVAL)
 _ALLOWED_RAG_KEYS = frozenset(_DEFAULT_RAG)
-_ALLOWED_LLM_KEYS = frozenset(_DEFAULT_LLM)
+_ALLOWED_LLM_KEYS = frozenset(_DEFAULT_LLM) | {"max_output_tokens"}
 _ALLOWED_DATA_DRIVEN_KEYS = frozenset(_DEFAULT_DATA_DRIVEN)
 _ALLOWED_DATA_DRIVEN_CONFIGURATION_KEYS = frozenset(
     {
@@ -240,7 +242,7 @@ class RagSettings:
 
 @dataclass(frozen=True, slots=True)
 class LlmSettings:
-    """Configuracion efectiva del proveedor LLM local."""
+    """Configuracion efectiva del proveedor LLM generativo."""
 
     provider: str
     model: str
@@ -248,6 +250,7 @@ class LlmSettings:
     temperature: float
     think: bool | None = None
     num_ctx: int | None = None
+    max_output_tokens: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,6 +482,12 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("llm.model", settings.llm.model),
         ("llm.timeout_seconds", str(settings.llm.timeout_seconds)),
         ("llm.temperature", str(settings.llm.temperature)),
+        (
+            "llm.max_output_tokens",
+            "no configurado"
+            if settings.llm.max_output_tokens is None
+            else str(settings.llm.max_output_tokens),
+        ),
         (
             "llm.think",
             "no configurado"
@@ -875,18 +884,54 @@ def _build_rag_settings(value: object) -> RagSettings:
 
 
 def _build_llm_settings(value: object) -> LlmSettings:
-    """Construye la configuracion del LLM local RAG."""
+    """Construye la configuracion del proveedor generativo RAG."""
     values = _merge_section(value, "llm", _DEFAULT_LLM, _ALLOWED_LLM_KEYS)
+    raw_section = value if isinstance(value, dict) else {}
+    provider = _validate_choice(
+        values["provider"],
+        "llm.provider",
+        {"ollama", "anthropic"},
+    )
+    think = _validate_optional_bool(values["think"], "llm.think")
+    num_ctx = _validate_optional_positive_int(values["num_ctx"], "llm.num_ctx")
+
+    if provider == "anthropic":
+        if think is not None:
+            raise ConfigError(
+                "La clave 'llm.think' solo es compatible con el proveedor Ollama."
+            )
+        if num_ctx is not None:
+            raise ConfigError(
+                "La clave 'llm.num_ctx' solo es compatible con el proveedor Ollama."
+            )
+        max_output_tokens = _validate_int_range(
+            raw_section.get(
+                "max_output_tokens",
+                _DEFAULT_ANTHROPIC_MAX_OUTPUT_TOKENS,
+            ),
+            "llm.max_output_tokens",
+            minimum=1,
+            maximum=_MAX_ANTHROPIC_OUTPUT_TOKENS,
+        )
+    else:
+        if "max_output_tokens" in raw_section:
+            raise ConfigError(
+                "La clave 'llm.max_output_tokens' solo es compatible con el "
+                "proveedor Anthropic."
+            )
+        max_output_tokens = None
+
     return LlmSettings(
-        provider=_validate_choice(values["provider"], "llm.provider", {"ollama"}),
+        provider=provider,
         model=_require_non_empty_string(values["model"], "llm.model"),
         timeout_seconds=_validate_positive_timeout(
             values["timeout_seconds"],
             "llm.timeout_seconds",
         ),
         temperature=_validate_unit_float(values["temperature"], "llm.temperature"),
-        think=_validate_optional_bool(values["think"], "llm.think"),
-        num_ctx=_validate_optional_positive_int(values["num_ctx"], "llm.num_ctx"),
+        think=think,
+        num_ctx=num_ctx,
+        max_output_tokens=max_output_tokens,
     )
 
 

@@ -20,8 +20,8 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: implementacion iniciada. H1.2-T01 completada;
-H1.2-T02 a H1.2-T08 pendientes.
+Estado actual del hito: implementacion iniciada. H1.2-T01 y H1.2-T02
+completadas; H1.2-T03 a H1.2-T08 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -45,7 +45,7 @@ Ollama, H4 opcional o H1.1 antes del nuevo adaptador.
 
 ### H1.2-T02 - Ampliar configuracion y factoria cerrada
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** seleccionar Ollama o Anthropic sin cambiar CLI ni defaults.  
 **Descripcion:** Permitir `anthropic` en `[llm].provider`, incorporar

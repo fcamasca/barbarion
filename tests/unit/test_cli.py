@@ -240,6 +240,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "llm.model",
         "llm.timeout_seconds",
         "llm.temperature",
+        "llm.max_output_tokens",
         "llm.think",
         "llm.num_ctx",
         "data_driven.enabled",
@@ -258,8 +259,38 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
     assert "vector_store.provider = sqlite_vec" in lines
     assert "retrieval.mode = hybrid" in lines
     assert "rag.context_token_budget = 6000" in lines
+    assert "llm.max_output_tokens = no configurado" in lines
     assert "data_driven.enabled = false" in lines
     assert list(tmp_path.iterdir()) == [source]
+
+
+def test_config_show_reports_anthropic_limit_without_exposing_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canary = "sk-ant-test-NEVER-LOG-H12-0123456789"
+    monkeypatch.setenv("ANTHROPIC_API_KEY", canary)
+    source = tmp_path / "anthropic.toml"
+    source.write_text(
+        "\n".join(
+            (
+                "[llm]",
+                'provider = "anthropic"',
+                'model = "claude-test"',
+                "max_output_tokens = 8192",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli("--config", str(source), "config", "show", cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "llm.provider = anthropic" in result.stdout
+    assert "llm.model = claude-test" in result.stdout
+    assert "llm.max_output_tokens = 8192" in result.stdout
+    assert canary not in result.stdout
+    assert canary not in result.stderr
 
 
 def test_config_show_reports_invalid_file_without_traceback(tmp_path: Path) -> None:

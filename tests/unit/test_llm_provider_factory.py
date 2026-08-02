@@ -79,8 +79,7 @@ def test_factory_reads_anthropic_key_only_when_generation_starts(
 
     canary = "sk-ant-test-NEVER-LOG-H12-0123456789"
     environment["ANTHROPIC_API_KEY"] = canary
-    with pytest.raises(LlmProviderError, match="ANTHROPIC_LLM_NOT_IMPLEMENTED"):
-        provider.generate(prompt="prompt sintetico", timeout_seconds=1.0)
+    assert provider._resolve_api_key() == canary
 
     assert environment.read_count == 2
     assert canary not in repr(provider)

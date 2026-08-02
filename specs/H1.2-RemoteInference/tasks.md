@@ -20,8 +20,8 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: implementacion iniciada. H1.2-T01 y H1.2-T02
-completadas; H1.2-T03 a H1.2-T08 pendientes.
+Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T03
+completadas; H1.2-T04 a H1.2-T08 pendientes.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -62,7 +62,7 @@ desconocido o campos incompatibles fallan antes de red; no existe registry.
 
 ### H1.2-T03 - Implementar `AnthropicLlmProvider`
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** satisfacer el puerto existente mediante Messages API directa.  
 **Descripcion:** Crear adaptador `urllib` con endpoint/version fijos, opener

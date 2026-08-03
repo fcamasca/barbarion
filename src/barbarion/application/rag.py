@@ -1701,14 +1701,20 @@ class AskService:
         timeout_seconds = self.settings.llm.timeout_seconds
         prompt_chars = len(prompt)
         prompt_tokens_est = _estimate_tokens(prompt)
+        prompt_tokens_metric = (
+            "prompt_tokens_est_local"
+            if self.llm_provider.provider == "anthropic"
+            else "prompt_tokens_est"
+        )
         _LOGGER.info(
             "ask_llm_started stage=%s provider=%s model=%s timeout_seconds=%g "
-            "prompt_chars=%d prompt_tokens_est=%d",
+            "prompt_chars=%d %s=%d",
             stage,
             self.llm_provider.provider,
             self.settings.llm.model,
             timeout_seconds,
             prompt_chars,
+            prompt_tokens_metric,
             prompt_tokens_est,
         )
         started = time.monotonic()
@@ -1720,13 +1726,14 @@ class AskService:
         except KeyboardInterrupt:
             _LOGGER.warning(
                 "ask_llm_finished stage=%s provider=%s model=%s "
-                "timeout_seconds=%g prompt_chars=%d prompt_tokens_est=%d "
+                "timeout_seconds=%g prompt_chars=%d %s=%d "
                 "duration_ms=%d result=interrupted",
                 stage,
                 self.llm_provider.provider,
                 self.settings.llm.model,
                 timeout_seconds,
                 prompt_chars,
+                prompt_tokens_metric,
                 prompt_tokens_est,
                 _duration_ms(started),
             )
@@ -1742,12 +1749,13 @@ class AskService:
             log = _LOGGER.warning if result == "timeout" else _LOGGER.error
             log(
                 "ask_llm_finished stage=%s provider=%s model=%s timeout_seconds=%g "
-                "prompt_chars=%d prompt_tokens_est=%d duration_ms=%d result=%s",
+                "prompt_chars=%d %s=%d duration_ms=%d result=%s",
                 stage,
                 self.llm_provider.provider,
                 self.settings.llm.model,
                 timeout_seconds,
                 prompt_chars,
+                prompt_tokens_metric,
                 prompt_tokens_est,
                 duration_ms,
                 result,
@@ -1755,13 +1763,14 @@ class AskService:
             raise
         _LOGGER.info(
             "ask_llm_finished stage=%s provider=%s model=%s timeout_seconds=%g "
-            "prompt_chars=%d prompt_tokens_est=%d duration_ms=%d "
+            "prompt_chars=%d %s=%d duration_ms=%d "
             "result=completed response_chars=%d",
             stage,
             self.llm_provider.provider,
             self.settings.llm.model,
             timeout_seconds,
             prompt_chars,
+            prompt_tokens_metric,
             prompt_tokens_est,
             _duration_ms(started),
             len(response),
@@ -1878,6 +1887,10 @@ class AskService:
             if debug
             else {}
         )
+        if debug and self.llm_provider.provider == "anthropic":
+            base_debug_payload["prompt_tokens_est_local"] = (
+                base_debug_payload.pop("prompt_tokens_est")
+            )
         if debug:
             base_debug_payload["structured_candidates"] = len(
                 structured_candidates
@@ -1924,7 +1937,12 @@ class AskService:
         if debug:
             debug_payload["prompt"] = prompt
             debug_payload["prompt_chars"] = len(prompt)
-            debug_payload["prompt_tokens_est"] = _estimate_tokens(prompt)
+            prompt_tokens_key = (
+                "prompt_tokens_est_local"
+                if self.llm_provider.provider == "anthropic"
+                else "prompt_tokens_est"
+            )
+            debug_payload[prompt_tokens_key] = _estimate_tokens(prompt)
         llm_started = time.monotonic()
         try:
             answer = self._generate_with_observability(

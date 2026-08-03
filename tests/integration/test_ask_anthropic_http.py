@@ -49,7 +49,8 @@ class FakeResponse:
                     "input_tokens": self.input_tokens,
                     "output_tokens": self.output_tokens,
                 },
-            }
+            },
+            ensure_ascii=False,
         ).encode("utf-8")
 
 
@@ -212,6 +213,109 @@ def test_real_ask_composition_uses_anthropic_for_generation_and_repair(
             "SELECT status FROM rag_queries ORDER BY id DESC LIMIT 1"
         ).fetchone()[0]
     assert status == "completed"
+
+
+@pytest.mark.parametrize("output_format", ["text", "json", "markdown"])
+def test_unicode_survives_ask_end_to_end_in_all_formats_and_debug(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    question = "¿Dónde se calcula la provisión diaria?"
+    context_text = (
+        "La configuración de adquisición calcula la provisión diaria: "
+        "días, cupón, último y cálculo."
+    )
+    answer = f"{context_text} [F1]"
+    canary_key = "sk-ant-unicode-canary-never-output"
+    source = _write_ask_config(tmp_path)
+    (tmp_path / "logs").mkdir()
+    database = tmp_path / "barbarion.db"
+    initialize_database(database)
+    seed_chunks(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE chunks SET content = ? WHERE id = 'chunk-2'",
+            (context_text,),
+        )
+        connection.commit()
+
+    opener = FakeOpener(
+        [FakeResponse(answer, input_tokens=10198, output_tokens=612)]
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", canary_key)
+    monkeypatch.setattr(
+        AnthropicLlmProvider,
+        "_open",
+        lambda self, request, timeout_seconds: opener.open(
+            request,
+            timeout=timeout_seconds,
+        ),
+    )
+    prompts: list[str] = []
+    original_build = PromptBuilder.build
+
+    def observe_build(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        prompt = original_build(self, *args, **kwargs)
+        prompts.append(prompt)
+        return prompt
+
+    monkeypatch.setattr(PromptBuilder, "build", observe_build)
+
+    exit_code = cli.main(
+        [
+            "--config",
+            str(source),
+            "ask",
+            question,
+            "--mode",
+            "keyword",
+            "--format",
+            output_format,
+            "--debug",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert len(prompts) == 1
+    assert question in prompts[0]
+    assert context_text in prompts[0]
+    assert question in captured.err
+    assert context_text in captured.err
+    assert answer in captured.err
+    assert "result: PASS" in captured.err
+    assert "Input tokens : 10,198" in captured.err
+    assert "Output tokens: 612" in captured.err
+    assert "Total tokens : 10,810" in captured.err
+    if output_format == "json":
+        rendered = json.loads(captured.out)
+        assert rendered["answer"] == answer
+        assert any(
+            source_item["content"] == context_text
+            for source_item in rendered["sources"]
+        )
+    else:
+        assert answer in captured.out
+
+    request, _timeout = opener.requests[0]
+    request_text = request.data.decode("utf-8")
+    payload = json.loads(request_text)
+    assert payload["messages"][0]["content"] == prompts[0]
+    assert question in request_text
+    assert context_text in request_text
+    assert "provisión".encode("utf-8") in request.data
+    assert b"\\u00f3" not in request.data
+
+    log_text = (tmp_path / "logs" / "barbarion.log").read_text(encoding="utf-8")
+    observed = "\n".join((captured.out, captured.err, log_text, request_text))
+    assert "�" not in observed
+    assert "ï¿½" not in observed
+    assert canary_key not in captured.out
+    assert canary_key not in captured.err
+    assert canary_key not in log_text
+    assert canary_key not in request_text
 
 
 @pytest.mark.parametrize(

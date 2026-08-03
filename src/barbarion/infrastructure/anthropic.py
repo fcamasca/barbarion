@@ -320,9 +320,11 @@ def _parse_usage(value: object) -> tuple[int | None, int | None, int | None]:
         return None, None, None
     input_tokens = _optional_token_count(value.get("input_tokens"))
     output_tokens = _optional_token_count(value.get("output_tokens"))
-    total_tokens = _optional_token_count(value.get("total_tokens"))
-    if total_tokens is None and input_tokens is not None and output_tokens is not None:
-        total_tokens = input_tokens + output_tokens
+    total_tokens = (
+        input_tokens + output_tokens
+        if input_tokens is not None and output_tokens is not None
+        else None
+    )
     return input_tokens, output_tokens, total_tokens
 
 
@@ -334,9 +336,11 @@ def _optional_token_count(value: object) -> int | None:
 
 
 def _sum_known(values: Iterable[int | None]) -> int | None:
-    """Suma contadores presentes y conserva ausencia total como `None`."""
-    known = [value for value in values if value is not None]
-    return sum(known) if known else None
+    """Suma solo series completas para no presentar parciales como totales."""
+    observed = list(values)
+    if not observed or any(value is None for value in observed):
+        return None
+    return sum(value for value in observed if value is not None)
 
 
 def _elapsed_ms(started: float, clock: Callable[[], float]) -> int:

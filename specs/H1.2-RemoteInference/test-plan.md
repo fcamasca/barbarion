@@ -267,6 +267,23 @@ cambian y no admiten Anthropic como competidor.
 Tests/enlaces verifican proveedor, egress, key de entorno, embeddings locales,
 default Ollama y ausencia de otros proveedores o secretos.
 
+### H1.2-TP-035 - Unicode de extremo a extremo
+
+Una pregunta y corpus con `¿Dónde`, `configuración`, `adquisición`, `días`,
+`cupón`, `último` y `cálculo` conservan exactamente sus code points en CLI,
+SQLite, `PromptBuilder`, bytes UTF-8 del request, respuesta UTF-8, validacion de
+citas, formatos text/JSON/Markdown, debug, stdout, stderr y logs permitidos. La
+prueba de proceso Windows ejecuta el entrypoint instalado, captura bytes sin
+`StringIO`, decodifica con UTF-8 estricto y distingue streams redirigidos de la
+consola interactiva. Se prohibe `errors="replace"`.
+
+### H1.2-TP-036 - Uso Anthropic real y parcial
+
+`usage.input_tokens` y `usage.output_tokens` producen el total por suma y se
+acumulan entre generacion y reparacion. Ausencia parcial/total, timeout,
+truncamiento, error y Ctrl+C no inventan consumo. El estimador previo Anthropic
+se etiqueta `prompt_tokens_est_local`; Ollama conserva `prompt_tokens_est`.
+
 ## 7. Pruebas de integracion
 
 ### INT-H1.2-01 - Ask Anthropic completo
@@ -331,6 +348,12 @@ Suite HTTP Ollama y comportamiento existente pasan con config legacy.
 ### INT-H1.2-14 - Config show y logs
 
 Muestran provider/model/limites y metricas seguras, nunca key/header/body.
+
+### INT-H1.2-15 - Unicode y usage en CLI
+
+Ask completo con fake Anthropic comprueba pregunta, contexto, prompt, payload,
+respuesta, citas, text/JSON/Markdown, debug, logs UTF-8 y metricas reales
+`10,198 + 612 = 10,810`, sin key ni conexiones externas.
 
 ## 8. Pruebas CLI
 
@@ -434,11 +457,11 @@ opcional se registra, sin contenido:
 
 - wall-clock por generacion y reparacion;
 - timeout configurado;
-- prompt chars/tokens estimados localmente;
+- `prompt_chars` y `prompt_tokens_est_local` como aproximacion previa;
 - response chars;
 - stop reason;
-- input/output tokens solo si se decide exponerlos internamente sin ampliar el
-  contrato; no son requisito H1.2;
+- input/output tokens reales devueltos por Anthropic y total matematicamente
+  demostrable, sin llamada previa a `/v1/messages/count_tokens`;
 - numero exacto de solicitudes.
 
 No se ejecutan cargas, paralelismo o benchmarks de costo. Una solicitud real
@@ -485,8 +508,8 @@ corpus real ni se inventan resultados.
 | H1.2-RNF-007 | TP-012, TP-018..020, rendimiento |
 | H1.2-RNF-008 | TP-019, INT-05 |
 | H1.2-RNF-009 | fake suite, bloqueo de red |
-| H1.2-RNF-010 | smoke Windows |
-| H1.2-RNF-011 | TP-007, TP-024, INT-14 |
+| H1.2-RNF-010 | TP-035, INT-15, smoke Windows |
+| H1.2-RNF-011 | TP-007, TP-024, TP-036, INT-14, INT-15 |
 | H1.2-RNF-012 | TP-004, revision de alcance/dependencias |
 
 ## 16. Evidencia esperada para aceptacion
@@ -505,6 +528,8 @@ corpus real ni se inventan resultados.
 - benchmark H1.1 sin cambios;
 - bloqueo de destinos externos no autorizados;
 - documentacion principal alineada;
+- Unicode preservado de CLI a HTTP y de HTTP a todas las salidas;
+- usage real acumulado, estimacion local diferenciada y cero conteo remoto previo;
 - validacion real sintetica si fue autorizada, o pendiente explicita;
 - revision humana de privacidad y decision final.
 

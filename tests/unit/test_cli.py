@@ -74,6 +74,8 @@ def run_cli(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
     )
 
 
@@ -295,6 +297,85 @@ def test_config_show_reports_anthropic_limit_without_exposing_key(
     assert "llm.max_output_tokens = 8192" in result.stdout
     assert canary not in result.stdout
     assert canary not in result.stderr
+
+
+def test_main_configures_stdio_before_parsing_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    class Parser:
+        def parse_args(self, argv):  # noqa: ANN001, ANN201
+            del argv
+            events.append("parse")
+            return type(
+                "Args",
+                (),
+                {"handler": staticmethod(lambda args: events.append("handler") or 0)},
+            )()
+
+    monkeypatch.setattr(
+        cli,
+        "_configure_stdio_encoding",
+        lambda: events.append("stdio"),
+    )
+    monkeypatch.setattr(cli, "build_parser", Parser)
+
+    assert cli.main([]) == 0
+    assert events == ["stdio", "parse", "handler"]
+
+
+def test_windows_stdio_uses_utf8_strict_for_redirected_streams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Stream:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, str]] = []
+
+        @staticmethod
+        def isatty() -> bool:
+            return False
+
+        def reconfigure(self, **kwargs: str) -> None:
+            self.calls.append(kwargs)
+
+    stdout = Stream()
+    stderr = Stream()
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli.sys, "stdout", stdout)
+    monkeypatch.setattr(cli.sys, "stderr", stderr)
+
+    cli._configure_stdio_encoding()
+
+    expected = [{"encoding": "utf-8", "errors": "strict"}]
+    assert stdout.calls == expected
+    assert stderr.calls == expected
+
+
+def test_windows_stdio_preserves_interactive_console_streams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConsoleStream:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, str]] = []
+
+        @staticmethod
+        def isatty() -> bool:
+            return True
+
+        def reconfigure(self, **kwargs: str) -> None:
+            self.calls.append(kwargs)
+
+    stdout = ConsoleStream()
+    stderr = ConsoleStream()
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli.sys, "stdout", stdout)
+    monkeypatch.setattr(cli.sys, "stderr", stderr)
+
+    cli._configure_stdio_encoding()
+
+    assert stdout.calls == []
+    assert stderr.calls == []
 
 
 def test_config_show_reports_invalid_file_without_traceback(tmp_path: Path) -> None:
@@ -1051,6 +1132,58 @@ def _ask_debug_payload(
     return payload
 
 
+def test_anthropic_debug_distinguishes_local_estimate_from_actual_usage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    source.write_text(
+        source.read_text(encoding="utf-8")
+        + '\n[llm]\nprovider = "anthropic"\nmodel = "claude-test"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        citations_valid=True,
+        debug_payload={
+            **_ask_debug_payload(valid=True),
+            "prompt_tokens_est_local": 6190,
+        },
+    )
+    service.debug_payload.pop("prompt_tokens_est", None)
+    service.llm_provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.1,
+        max_output_tokens=4096,
+        _api_key_resolver=lambda: None,
+        _usage_records=[
+            AnthropicUsage(
+                input_tokens=10198,
+                output_tokens=612,
+                total_tokens=10810,
+                elapsed_seconds=6.17,
+                request_count=1,
+            )
+        ],
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "¿Dónde?", "--debug"]
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "prompt_tokens_est_local=6190" in captured.err
+    assert "prompt_tokens_est=" not in captured.err
+    assert "Input tokens : 10,198" in captured.err
+    assert "Output tokens: 612" in captured.err
+    assert "Total tokens : 10,810" in captured.err
+    assert "Elapsed time : 6.17s" in captured.err
+
+
 def test_ask_debug_with_invalid_citations_writes_diagnostics_to_stderr(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1263,6 +1396,47 @@ def test_ask_anthropic_usage_is_rendered_on_stderr_without_breaking_json(
     assert "Elapsed time : 4.18s" in captured.err
     assert "credito" not in captured.err.lower()
     assert "$" not in captured.err
+
+
+@pytest.mark.parametrize(
+    ("usage", "expected", "absent"),
+    [
+        (
+            AnthropicUsage(
+                input_tokens=None,
+                output_tokens=12,
+                total_tokens=None,
+                elapsed_seconds=1.25,
+                request_count=1,
+            ),
+            ("Output tokens: 12", "Elapsed time : 1.25s"),
+            ("Input tokens", "Total tokens"),
+        ),
+        (None, (), ("Input tokens", "Output tokens", "Total tokens", "Elapsed time")),
+    ],
+)
+def test_anthropic_usage_never_invents_missing_counters(
+    capsys: pytest.CaptureFixture[str],
+    usage: AnthropicUsage | None,
+    expected: tuple[str, ...],
+    absent: tuple[str, ...],
+) -> None:
+    provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.1,
+        max_output_tokens=4096,
+        _api_key_resolver=lambda: None,
+        _usage_records=[] if usage is None else [usage],
+    )
+    service = type("Service", (), {"llm_provider": provider})()
+
+    cli._render_anthropic_usage(service)
+    captured = capsys.readouterr()
+
+    for value in expected:
+        assert value in captured.err
+    for value in absent:
+        assert value not in captured.err
 
 
 def test_ask_debug_truncates_and_masks_sensitive_values(

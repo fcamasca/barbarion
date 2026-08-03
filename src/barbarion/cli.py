@@ -1,7 +1,6 @@
 """Punto de entrada de la línea de comandos de Barbarion."""
 
 import argparse
-import ctypes
 import json
 import logging
 import os
@@ -1379,8 +1378,6 @@ def _run_search(args: argparse.Namespace) -> int:
 
 def _run_ask(args: argparse.Namespace) -> int:
     """Ejecuta pregunta RAG desde CLI."""
-    if args.debug:
-        _configure_stdio_encoding()
     settings = load_settings(args.config)
     if not settings.database_path.exists():
         print("No hay base SQLite de Barbarion. Ejecuta ingesta e indexacion.", file=sys.stderr)
@@ -2109,7 +2106,16 @@ def _render_ask_diagnostics(
     print("=== CONTEXT STATS ===", file=sys.stderr)
     print(f"retrieved_chunks={len(result.context.sources)}", file=sys.stderr)
     print(f"prompt_chars={debug.get('prompt_chars', 0)}", file=sys.stderr)
-    print(f"prompt_tokens_est={debug.get('prompt_tokens_est', 0)}", file=sys.stderr)
+    if "prompt_tokens_est_local" in debug:
+        print(
+            f"prompt_tokens_est_local={debug['prompt_tokens_est_local']}",
+            file=sys.stderr,
+        )
+    elif "prompt_tokens_est" in debug:
+        print(
+            f"prompt_tokens_est={debug['prompt_tokens_est']}",
+            file=sys.stderr,
+        )
     print("", file=sys.stderr)
 
     print("=== CHUNKS ===", file=sys.stderr)
@@ -4386,6 +4392,7 @@ def _add_query_arguments(parser: argparse.ArgumentParser, *, positional_name: st
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Procesa los argumentos y devuelve el código de salida del proceso."""
+    _configure_stdio_encoding()
     try:
         parser = build_parser()
         args = parser.parse_args(argv)
@@ -4405,22 +4412,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _configure_stdio_encoding() -> None:
-    """Configura stdout/stderr con el codepage activo de la consola."""
-    encoding = _console_output_encoding()
+    """Fija UTF-8 en streams redirigidos y preserva la consola Windows real."""
+    if sys.platform != "win32":
+        return
     for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream.isatty():
+                continue
+        except (AttributeError, OSError, ValueError):
+            pass
         reconfigure = getattr(stream, "reconfigure", None)
         if reconfigure is None:
             continue
         try:
-            reconfigure(encoding=encoding, errors="replace")
+            reconfigure(encoding="utf-8", errors="strict")
         except (OSError, ValueError):
             continue
-
-
-def _console_output_encoding() -> str:
-    """Devuelve el encoding que PowerShell usa para capturar streams nativos."""
-    if sys.platform == "win32":
-        codepage = ctypes.windll.kernel32.GetConsoleOutputCP()
-        if codepage:
-            return f"cp{codepage}"
-    return sys.stderr.encoding or "utf-8"

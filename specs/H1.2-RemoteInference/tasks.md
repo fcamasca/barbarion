@@ -20,8 +20,7 @@
 - Cada tarea cierra con verificaciones ejecutables y no concentra pruebas al
   final.
 
-Estado actual del hito: implementacion iniciada. H1.2-T01 a H1.2-T07
-completadas; H1.2-T08 pendiente.
+Estado actual del hito: aceptado y cerrado. H1.2-T01 a H1.2-T08 completadas.
 
 Precondicion general: Barbarion `0.6.0`, H1-H5, H4.1 y H1.1 completados; spec
 H1.2 aprobada antes de comenzar codigo.
@@ -144,9 +143,34 @@ on-premise total cuando Anthropic esta activo.
 **Requisitos:** H1.2-RF-010; RNF-001, RNF-002, RNF-012.  
 **Checkpoint:** `python -m pytest tests/unit/test_readme.py` mas `git diff --check` y verificacion de enlaces.
 
+### H1.2-T08-PRE - Corregir Unicode y usage antes de aceptacion
+
+**Estado:** completada.
+
+**Objetivo:** resolver los hallazgos de la primera prueba real sin ejecutar ni
+cerrar la aceptacion.
+
+**Descripcion:** Caracterizar argumentos, SQLite, prompt, HTTP UTF-8,
+respuesta, citas, formatos, stdout/stderr, logs y debug; alinear los streams de
+Windows PowerShell sin reemplazo silencioso. Diferenciar
+`prompt_tokens_est_local` del uso real Anthropic, tomar
+`usage.input_tokens/output_tokens` como fuente posterior, sumar solo contadores
+completos y acumular generacion/reparacion. No llamar `count_tokens`, no cambiar
+`LlmProviderPort`, `PromptBuilder`, `CitationValidator`, H1.1 ni persistencia.
+
+**Dependencias:** H1.2-T01 a H1.2-T07.
+
+**Resultado esperado:** Unicode preservado de extremo a extremo y metricas
+reales honestas, con suite offline y sin llamada Anthropic real.
+
+**Requisitos:** H1.2-RF-003, RF-004; RNF-005, RNF-009..011.
+
+**Checkpoint:** pruebas especificas Unicode/usage, checkpoint H1.2, suite
+offline, smoke instalado y `git diff --check`.
+
 ### H1.2-T08 - Validacion manual opt-in y aceptacion
 
-**Estado:** pendiente.
+**Estado:** completada.
 
 **Objetivo:** demostrar el hito completo y registrar una decision honesta.  
 **Descripcion:** Tras aprobacion explicita, ejecutar suite, smoke instalado y
@@ -173,7 +197,8 @@ flowchart LR
     T03 --> T06["T06 Seguridad"]
     T05 --> T06
     T06 --> T07["T07 Documentacion"]
-    T07 --> T08["T08 Aceptacion"]
+    T07 --> PRE["T08-PRE Unicode y usage"]
+    PRE --> T08["T08 Aceptacion"]
 ```
 
 ## 4. Trazabilidad de tareas
@@ -187,6 +212,7 @@ flowchart LR
 | H1.2-T05 | RF-007..009; RNF-002..004, RNF-009 |
 | H1.2-T06 | RF-002, RF-008; RNF-001, RNF-004..011 |
 | H1.2-T07 | RF-010; RNF-001, RNF-002, RNF-012 |
+| H1.2-T08-PRE | RF-003, RF-004; RNF-005, RNF-009..011 |
 | H1.2-T08 | Todos los RF y RNF |
 
 ## 5. Evidencia que debe recopilar la ultima tarea
@@ -198,6 +224,8 @@ flowchart LR
 - endpoint y `anthropic-version` usados;
 - modelo, timeout, temperatura y max output tokens no sensibles;
 - payload fake inspeccionado sin persistir prompt productivo;
+- preservacion Unicode completa en request, response, formatos, debug y consola;
+- usage Anthropic real acumulado y estimacion local diferenciada;
 - generacion y reparacion con citas validas/invalidas;
 - matriz de HTTP, red, timeout, truncamiento y Ctrl+C;
 - request-id acotado cuando exista;

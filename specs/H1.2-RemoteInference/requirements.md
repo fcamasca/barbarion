@@ -236,14 +236,19 @@ LLM vigente y devuelva texto utilizable por el pipeline actual.
 - no envia herramientas, archivos, system prompt adicional, metadata de usuario
   ni campos beta;
 - concatena en orden solo bloques de contenido textual reconocidos;
+- serializa el request y decodifica la respuesta explicitamente como UTF-8,
+  preservando los code points del prompt y del texto remoto;
+- toma `usage.input_tokens` y `usage.output_tokens` como uso real posterior y
+  calcula el total solo cuando ambos contadores estan disponibles;
 - rechaza cuerpo invalido, contenido textual vacio y truncamiento por limite de
   tokens con errores tipados;
 - campos adicionales y bloques desconocidos no rompen el parser ni se imprimen;
 - retorna `str` y no modifica `LlmProviderPort` ni el resultado de los servicios.
 
 **Diseno:** H1.2-DD-001, H1.2-DD-003, H1.2-DD-006.  
-**Pruebas:** H1.2-TP-008..012.  
-**Tareas:** H1.2-T01, H1.2-T03.
+**Pruebas:** H1.2-TP-008..012, H1.2-TP-035, H1.2-TP-036.
+
+**Tareas:** H1.2-T01, H1.2-T03, H1.2-T08-PRE.
 
 ### H1.2-RF-004 - Conservar el pipeline RAG y la validacion
 
@@ -472,12 +477,22 @@ API key o llamada real es manual, opt-in y solo con datos sinteticos.
 ### H1.2-RNF-010 - Compatibilidad Windows y Python 3.12
 
 La implementacion conserva Python `>=3.12,<3.13`, `urllib` y rutas portables. No
-requiere shell, `curl`, daemon adicional ni SDK nativo.
+requiere shell, `curl`, daemon adicional ni SDK nativo. La CLI preserva Unicode
+en Windows PowerShell sin exigir `chcp 65001`, `PYTHONUTF8` o
+`PYTHONIOENCODING`: los streams redirigidos emiten UTF-8 estricto y los streams
+interactivos conservan el manejo nativo de consola. Nunca oculta errores de
+codificacion con reemplazos. Requests, responses, archivos generados y logs
+usan UTF-8 explicito donde corresponde.
 
 ### H1.2-RNF-011 - Observabilidad segura
 
 Logs registran proveedor, modelo, etapa, timeout, tamaños, duracion, resultado y
-codigo tecnico. No registran API key, headers, prompt, respuesta ni fragmentos.
+codigo tecnico. Para Anthropic, cualquier estimacion previa se identifica como
+`prompt_tokens_est_local`; el uso real posterior procede exclusivamente de
+`usage.input_tokens` y `usage.output_tokens`, acumulado entre generacion y
+reparacion. Contadores ausentes no se inventan. No se llama a
+`/v1/messages/count_tokens`, no se calculan costos y no se registran API key,
+headers, prompt, respuesta ni fragmentos.
 
 ### H1.2-RNF-012 - Alcance cerrado
 

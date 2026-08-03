@@ -226,9 +226,17 @@ Logs de cada generacion:
 
 ```text
 provider, model, stage, timeout_seconds,
-prompt_chars, prompt_tokens_est, duration_ms,
+prompt_chars, prompt_tokens_est|prompt_tokens_est_local, duration_ms,
 result, response_chars?, error_code?, request_id?
 ```
+
+`prompt_tokens_est` conserva el contrato Ollama. En Anthropic se denomina
+`prompt_tokens_est_local` para marcar que es solo una aproximacion previa. Tras
+cada respuesta valida, el adaptador conserva `usage.input_tokens` y
+`usage.output_tokens` como fuente real, calcula `total_tokens` mediante su suma
+y acumula solo series completas entre generacion y reparacion. Un contador
+ausente permanece no disponible; no se ajusta por proporcion ni se ejecuta
+`POST /v1/messages/count_tokens`.
 
 Nunca se registran key, headers, prompt, respuesta o body remoto. El debug RAG
 local conserva su semantica actual; H1.2 no amplía lo que muestra.
@@ -464,12 +472,19 @@ para operar dos adaptadores:
 - proveedor/modelo efectivos;
 - etapa `generation|repair|h4_summary`;
 - timeout;
-- caracteres y tokens estimados del prompt;
+- caracteres del prompt y estimacion local claramente etiquetada;
 - duracion y resultado;
 - caracteres de respuesta solo en exito;
 - codigo tecnico y request-id acotado en error.
 
-No se crea telemetria remota, medicion de costo ni persistencia adicional.
+Para Anthropic, la CLI puede mostrar `input_tokens`, `output_tokens`, su suma y
+tiempo transcurrido usando exclusivamente el `usage` devuelto. La serializacion
+HTTP, decodificacion de respuesta, JSON/Markdown y logs usan UTF-8 explicito. En
+Windows, cada stream redirigido de la raiz CLI usa un contrato UTF-8 estable y
+`errors="strict"`; la consola interactiva conserva el manejo de su stream
+nativo. La decision se toma por stream mediante `isatty()` y no depende del
+codepage externo. No se crea conteo remoto previo, medicion de costo ni
+persistencia adicional.
 
 ## 16. Estrategia de dependencias
 

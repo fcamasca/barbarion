@@ -157,6 +157,39 @@ def test_messages_request_is_fixed_minimal_and_non_streaming() -> None:
     assert response.closed is True
 
 
+def test_unicode_is_preserved_in_utf8_request_and_response() -> None:
+    prompt = (
+        "¿Dónde se calcula la provisión diaria? "
+        "Configuración, adquisición, días, cupón, último y cálculo."
+    )
+    answer = "Conclusión: configuración, días y cupón [F1]."
+    response_body = json.dumps(
+        {
+            "content": [{"type": "text", "text": answer}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10198, "output_tokens": 612},
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    provider, opener = _provider(FakeResponse(response_body))
+
+    assert provider.generate(prompt=prompt, timeout_seconds=30.0) == answer
+
+    request, _timeout = opener.requests[0]
+    assert request.data.decode("utf-8") == json.dumps(
+        {
+            "model": "claude-test",
+            "max_tokens": 4096,
+            "temperature": 0.2,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    assert "provisión".encode("utf-8") in request.data
+    assert b"\\u00f3" not in request.data
+
+
 def test_usage_and_elapsed_time_are_captured_without_changing_generate_result() -> None:
     clock_values = iter((10.0, 14.18))
     response = FakeResponse(
@@ -224,10 +257,45 @@ def test_usage_is_aggregated_across_generation_and_repair() -> None:
     assert usage is not None
     assert usage.input_tokens == 220
     assert usage.output_tokens == 22
-    assert usage.total_tokens == 243
+    assert usage.total_tokens == 242
     assert usage.elapsed_seconds == 3.5
     assert usage.request_count == 2
     assert len(opener.requests) == 2
+
+
+def test_usage_aggregation_does_not_present_partial_counters_as_complete() -> None:
+    opener = SequenceOpener(
+        [
+            FakeResponse(
+                _body(
+                    [{"type": "text", "text": "Primera"}],
+                    usage={"input_tokens": 100},
+                )
+            ),
+            FakeResponse(
+                _body(
+                    [{"type": "text", "text": "Segunda [F1]"}],
+                    usage={"output_tokens": 12},
+                )
+            ),
+        ]
+    )
+    provider = AnthropicLlmProvider(
+        model="claude-test",
+        temperature=0.2,
+        max_output_tokens=4096,
+        _api_key_resolver=lambda: CANARY_KEY,
+        _opener=opener,
+    )
+
+    provider.generate(prompt="generation", timeout_seconds=30.0)
+    provider.generate(prompt="repair", timeout_seconds=30.0)
+    usage = provider.usage_snapshot()
+
+    assert usage is not None
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert usage.total_tokens is None
 
 
 def test_invalid_usage_is_ignored_without_rejecting_valid_text() -> None:
@@ -388,6 +456,7 @@ def test_max_tokens_never_returns_partial_text() -> None:
     message = str(caught.value)
     assert "respuesta parcial sensible" not in message
     assert "request-id=req_safe-123" in message
+    assert provider.usage_snapshot() is None
 
 
 @pytest.mark.parametrize(
@@ -445,6 +514,7 @@ def test_transport_failures_are_mapped_once(
 
     assert len(opener.requests) == 1
     assert caught.value.__cause__ is None
+    assert provider.usage_snapshot() is None
 
 
 @pytest.mark.parametrize(
@@ -539,5 +609,6 @@ def test_keyboard_interrupt_propagates_without_retry(result: object) -> None:
         provider.generate(prompt="x", timeout_seconds=2.0)
 
     assert len(opener.requests) == 1
+    assert provider.usage_snapshot() is None
     if isinstance(result, FakeResponse):
         assert result.closed is True

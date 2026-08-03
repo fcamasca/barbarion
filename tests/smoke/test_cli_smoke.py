@@ -74,7 +74,6 @@ def run_barbarion(
     """Ejecuta el entry point instalado con un entorno controlado."""
     environment = os.environ.copy()
     environment.pop("BARBARION_CONFIG", None)
-    environment["PYTHONUTF8"] = "1"
     return subprocess.run(
         [str(installed_cli()), *args],
         cwd=cwd,
@@ -83,6 +82,26 @@ def run_barbarion(
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="strict",
+        timeout=timeout,
+    )
+
+
+def run_barbarion_bytes(
+    *args: str,
+    cwd: Path,
+    timeout: float = 15,
+) -> subprocess.CompletedProcess[bytes]:
+    """Captura los bytes del entry point sin reemplazar sus streams."""
+    environment = os.environ.copy()
+    environment.pop("BARBARION_CONFIG", None)
+    return subprocess.run(
+        [str(installed_cli()), *args],
+        cwd=cwd,
+        env=environment,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         timeout=timeout,
     )
 
@@ -250,6 +269,39 @@ def test_h3_help_from_installed_cli_has_no_side_effects(tmp_path: Path) -> None:
         assert result.returncode == 0
         assert "uso:" in result.stdout
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Contrato de streams de Windows")
+def test_installed_cli_emits_utf8_bytes_for_redirected_windows_streams(
+    tmp_path: Path,
+    ollama_url: str,
+) -> None:
+    question = "¿Configuración, provisión, días, cupón, último y cálculo?"
+    corpus = build_h2_corpus(tmp_path / "corpus")
+    source = write_ingest_config(tmp_path, ollama_url, corpus)
+    doctor = run_barbarion("--config", str(source), "doctor", cwd=tmp_path)
+    ingest = run_barbarion("--config", str(source), "ingest", cwd=tmp_path)
+
+    result = run_barbarion_bytes(
+        "--config",
+        str(source),
+        "ask",
+        question,
+        "--mode",
+        "keyword",
+        "--no-llm",
+        "--debug",
+        cwd=tmp_path,
+    )
+
+    assert doctor.returncode == 0
+    assert ingest.returncode == 0
+    assert result.returncode == 0
+    stdout = result.stdout.decode("utf-8", errors="strict")
+    stderr = result.stderr.decode("utf-8", errors="strict")
+    assert question.encode("utf-8") in result.stderr
+    assert question in stderr
+    assert "\ufffd" not in stdout + stderr
 
 
 def test_ingest_requires_doctor_bootstrap(

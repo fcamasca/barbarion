@@ -389,6 +389,32 @@ def test_ask_logs_success_without_prompt_or_response_content(
     assert response_secret not in log_text
 
 
+def test_anthropic_labels_local_prompt_estimate_without_claiming_actual_usage(
+    tmp_path,
+    ask_log_records,
+) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1].",
+    )
+    fake_llm.provider = "anthropic"
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    log_text = "\n".join(record.getMessage() for record in ask_log_records)
+    assert "prompt_tokens_est_local=" in log_text
+    assert " prompt_tokens_est=" not in log_text
+    assert "prompt_tokens_est_local" in result.debug
+    assert "prompt_tokens_est" not in result.debug
+
+
 def test_ask_logs_timeout_during_initial_generation(
     tmp_path,
     ask_log_records,

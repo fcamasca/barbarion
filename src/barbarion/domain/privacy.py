@@ -350,6 +350,26 @@ class PrivacyAuthorization:
         )
         return authorization
 
+    def is_valid_for(
+        self,
+        *,
+        operation_id: str,
+        target: InferenceTarget,
+        policy: PrivacyPolicy,
+    ) -> bool:
+        """Valida vinculacion local sin pretender autenticidad criptografica."""
+        if not isinstance(target, InferenceTarget) or not isinstance(
+            policy, PrivacyPolicy
+        ):
+            return False
+        if not isinstance(operation_id, str) or not operation_id.strip():
+            return False
+        return (
+            self.operation_id == operation_id.strip().lower()
+            and self.target_fingerprint == target.fingerprint
+            and self.policy_fingerprint == policy.fingerprint
+        )
+
 
 def _require_current_pass_evidence(
     evaluations: tuple[ConstraintEvaluation, ...],

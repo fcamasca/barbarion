@@ -74,6 +74,10 @@ class PrivacyPreflightBlockedError(RuntimeError):
         super().__init__("Privacy preflight bloqueo la inferencia remota.")
 
 
+class InvalidPrivacyAuthorizationError(RuntimeError):
+    """La autorizacion no corresponde a la invocacion generativa efectiva."""
+
+
 @dataclass(frozen=True, slots=True)
 class PrivacyPreflightService:
     """Combina evidencia local y evaluadores puros para emitir autorizacion."""

@@ -13,12 +13,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
-from barbarion.config import Settings
 from barbarion.application.privacy import (
+    InvalidPrivacyAuthorizationError,
     PrivacyPreflightService,
     resolve_inference_target,
 )
-from barbarion.domain.privacy import PrivacyAuthorization
+from barbarion.config import Settings
+from barbarion.domain.privacy import (
+    InferenceTarget,
+    PrivacyAuthorization,
+    PrivacyPolicy,
+)
 from barbarion.domain.progress import (
     CancellationTokenPort,
     ProgressReporterPort,
@@ -2197,6 +2202,9 @@ class AskService:
         *,
         stage: str,
         authorization: PrivacyAuthorization,
+        operation_id: str,
+        target: InferenceTarget,
+        policy: PrivacyPolicy,
     ) -> str:
         """Genera una respuesta registrando métricas sin contenido sensible.
 
@@ -2210,8 +2218,14 @@ class AskService:
         Raises:
             Exception: Conserva sin cambios cualquier error del proveedor.
         """
-        if not isinstance(authorization, PrivacyAuthorization):
-            raise ValueError("PrivacyAuthorization es obligatoria para generar.")
+        if not isinstance(authorization, PrivacyAuthorization) or not authorization.is_valid_for(
+            operation_id=operation_id,
+            target=target,
+            policy=policy,
+        ):
+            raise InvalidPrivacyAuthorizationError(
+                "PrivacyAuthorization ausente o invalida para esta operacion."
+            )
         timeout_seconds = self.settings.llm.timeout_seconds
         prompt_chars = len(prompt)
         prompt_tokens_est = estimate_tokens(prompt)
@@ -2504,8 +2518,9 @@ class AskService:
                 debug=base_debug_payload if debug else {},
             )
         target = resolve_inference_target(self.settings)
+        operation_id = uuid.uuid4().hex
         authorization = self.privacy_preflight.authorize(
-            operation_id=uuid.uuid4().hex,
+            operation_id=operation_id,
             target=target,
         )
         prompt = self.prompt_builder.build(question=question, context=context)
@@ -2531,6 +2546,9 @@ class AskService:
                 prompt,
                 stage="generation",
                 authorization=authorization,
+                operation_id=operation_id,
+                target=target,
+                policy=self.privacy_preflight.policy,
             )
         except (Exception, KeyboardInterrupt):
             self._record_failed_llm_query(
@@ -2630,6 +2648,9 @@ class AskService:
                         repair_prompt,
                         stage="repair",
                         authorization=authorization,
+                        operation_id=operation_id,
+                        target=target,
+                        policy=self.privacy_preflight.policy,
                     )
                 except (Exception, KeyboardInterrupt):
                     self._record_failed_llm_query(

@@ -48,6 +48,7 @@ from barbarion.application.model_benchmark_reporting import (
 )
 from barbarion.application.model_benchmark_scoring import aggregate_model_benchmark
 from barbarion.application.privacy import (
+    InvalidPrivacyAuthorizationError,
     PrivacyPreflightBlockedError,
     PrivacyPreflightService,
     UnavailableAccountPrivacyVerifier,
@@ -1410,7 +1411,7 @@ def _run_ask(args: argparse.Namespace) -> int:
             no_llm=args.no_llm,
             debug=args.debug,
         )
-    except PrivacyPreflightBlockedError:
+    except (PrivacyPreflightBlockedError, InvalidPrivacyAuthorizationError):
         print(
             "Privacy preflight bloqueo la inferencia remota; no se envio ningun prompt.",
             file=sys.stderr,

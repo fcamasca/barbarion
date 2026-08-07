@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from barbarion.application.privacy import (
+    InvalidPrivacyAuthorizationError,
     PrivacyPreflightBlockedError,
     PrivacyPreflightService,
     UnavailableAccountPrivacyVerifier,
@@ -20,6 +21,7 @@ from barbarion.application.rag import (
     PromptBuilder,
 )
 from barbarion.domain.privacy import (
+    InferenceExecution,
     InferenceTarget,
     PrivacyConstraint,
     PrivacyEvidence,
@@ -319,11 +321,18 @@ def test_common_generation_wrapper_rejects_missing_authorization(tmp_path) -> No
         evidence=_passing_evidence(),
     )
 
-    with pytest.raises(ValueError, match="PrivacyAuthorization"):
+    with pytest.raises(InvalidPrivacyAuthorizationError, match="PrivacyAuthorization"):
         service._generate_with_observability(
             "synthetic prompt",
             stage="generation",
             authorization=None,  # type: ignore[arg-type]
+            operation_id="synthetic-operation",
+            target=InferenceTarget(
+                execution=InferenceExecution.REMOTE,
+                provider="anthropic",
+                platform="direct_api",
+            ),
+            policy=PrivacyPolicy(),
         )
 
     assert llm.prompts == []

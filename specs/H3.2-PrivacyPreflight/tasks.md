@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T08
-completadas; T09-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T09
+completadas; T10-T13 pendientes.
 
 ## 2. Tareas
 
@@ -186,7 +186,7 @@ preflight.
 
 ### H3.2-T09 - Blindar repair y cambios de identidad
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** impedir bypass o reutilizacion indebida.  
 **Archivos/componentes esperados:** guard de autorizacion, tests generation y
 repair.  
@@ -195,6 +195,13 @@ y policy fingerprints; negar autorizacion ausente, de otra operacion o target.
 **Pruebas:** H3.2-TP-044..047, INT-008.  
 **Dependencias:** T08.  
 **Checkpoint:** generation y repair pasan por el mismo guard; un solo preflight.
+
+**Evidencia:** validacion determinista en `PrivacyAuthorization.is_valid_for`,
+guard comun en `AskService._generate_with_observability`, matriz TP-044..047 en
+`tests/unit/test_h32_privacy_authorization_guard.py` y reporte
+`reports/h32/t09-authorization-guard.md`. Generation y repair reutilizan una
+autorizacion emitida por un unico preflight; operation, target o policy distintos
+fallan antes de logs y `generate()`.
 
 ### H3.2-T10 - Exponer CLI, debug y observabilidad segura
 

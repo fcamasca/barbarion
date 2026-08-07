@@ -1,5 +1,7 @@
 """Pruebas de recuperacion documental H5 sobre contratos H3."""
 
+import pytest
+
 from barbarion.application.rag import ContextBuilder
 from barbarion.application.spec_mode import (
     DocumentEvidenceCollector,
@@ -50,7 +52,10 @@ def candidate(
     )
 
 
-def test_document_evidence_collector_delegates_to_h3_services() -> None:
+@pytest.mark.parametrize("selection_policy", ["baseline_v1", "optimized_v1"])
+def test_document_evidence_collector_delegates_to_h3_services(
+    selection_policy: str,
+) -> None:
     intent = RequirementAnalyzer().analyze(
         "Validar limite de credito antes de aprobar pedidos en pkg_credito"
     )
@@ -79,6 +84,7 @@ def test_document_evidence_collector_delegates_to_h3_services() -> None:
         max_chunk_tokens=80,
         dedupe_min_hash_prefix=8,
         threshold=0.0,
+        selection_policy=selection_policy,
     )
 
     result = DocumentEvidenceCollector(search, builder).collect(

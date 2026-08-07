@@ -365,6 +365,75 @@ def _with_input_budget(service: AskService, budget: int) -> AskService:
     )
 
 
+def _with_optimized_policy(service: AskService, budget: int = 1000) -> AskService:
+    return replace(
+        _with_input_budget(service, budget),
+        context_builder=replace(
+            service.context_builder,
+            selection_policy="optimized_v1",
+        ),
+        settings=replace(
+            service.settings,
+            rag=replace(
+                service.settings.rag,
+                input_token_budget_est=budget,
+                context_selection_policy="optimized_v1",
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize("provider", ["ollama", "anthropic"])
+def test_optimized_policy_supports_fake_providers_and_unicode(
+    tmp_path,
+    provider: str,
+) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1].",
+    )
+    fake_llm.provider = provider
+    service = _with_optimized_policy(service)
+
+    result = service.ask(
+        "¿order_total ñ?",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.status is RagQueryStatus.COMPLETED
+    assert len(fake_llm.prompts) == 1
+    assert "¿order_total ñ?" in fake_llm.prompts[0]
+    assert result.debug["observability"]["selection_policy"] == "optimized_v1"
+    assert result.debug["prompt_composition"]["tokens_est_local"] <= 1000
+
+
+def test_optimized_policy_preserves_no_llm_without_provider_call(tmp_path) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        "esta respuesta no debe generarse [F1].",
+    )
+    service = _with_optimized_policy(service)
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        no_llm=True,
+        debug=True,
+    )
+
+    assert result.status is RagQueryStatus.COMPLETED
+    assert result.no_llm is True
+    assert fake_llm.prompts == []
+    assert result.context.debug["selection_policy"] == "optimized_v1"
+
+
 def test_input_budget_applies_to_complete_generation_prompt(tmp_path) -> None:
     service, fake_llm = ask_service(
         tmp_path,

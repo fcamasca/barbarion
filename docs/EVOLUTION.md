@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T09 completadas.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T10 completadas.
 
 Pregunta que responde:
 
@@ -307,6 +307,11 @@ T09 añade el resumen seguro `h31_observability_v1` y un reporte comparable entr
 en stderr con `--debug`, y etiqueta por separado el uso real opcional del
 proveedor. JSON normal y SQLite conservan sus contratos de privacidad; no se
 persisten prompts, respuestas, preguntas ni contenido.
+
+T10 valida `optimized_v1` sobre benchmark, consumidores y regresion completa:
+`907 passed, 3 skipped`, smoke instalado `11 passed` y matriz opt-in `76 passed`.
+La politica queda calificada como candidata a default, pero no se promueve;
+`baseline_v1` sigue siendo el valor efectivo hasta una decision explicita.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

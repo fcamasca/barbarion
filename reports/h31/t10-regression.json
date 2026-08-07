@@ -1,0 +1,48 @@
+{
+  "report_id": "h31-t10-regression-v1",
+  "benchmark": {
+    "key_case": "relevant-at-six",
+    "baseline_fact_coverage": 0.0,
+    "optimized_fact_coverage": 1.0,
+    "baseline_status": "insufficient",
+    "optimized_status": "completed",
+    "no_retrieval_or_citation_regression": true
+  },
+  "default_decision": {
+    "current_default": "baseline_v1",
+    "optimized_v1_status": "qualified_candidate",
+    "promoted": false,
+    "reason": "Benchmark, focused opt-in matrix, full regression and installed smoke pass; promotion remains an explicit later decision."
+  },
+  "validation": {
+    "focused_optimized_matrix": {
+      "passed": 76,
+      "failed": 0,
+      "covers": [
+        "H4.1 structured evidence",
+        "H4 impact",
+        "H5 evidence and spec",
+        "no-llm",
+        "Ollama fake",
+        "Anthropic fake",
+        "formats",
+        "Unicode"
+      ]
+    },
+    "full_suite": {
+      "passed": 907,
+      "skipped": 3,
+      "failed": 0
+    },
+    "installed_smoke": {
+      "passed": 11,
+      "skipped": 0,
+      "failed": 0
+    }
+  },
+  "limitations": [
+    "The H3.1 benchmark is synthetic and offline.",
+    "T10 validates Anthropic and Ollama with fakes; it does not claim a new real-provider run.",
+    "chars4_v1 remains a local estimate rather than provider token usage."
+  ]
+}

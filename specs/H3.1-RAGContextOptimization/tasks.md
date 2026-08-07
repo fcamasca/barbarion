@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T09
-completadas; H3.1-T10 a H3.1-T12 pendientes. T08 fue completada mediante una
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T10
+completadas; H3.1-T11 a H3.1-T12 pendientes. T08 fue completada mediante una
 decision explicita de diferimiento basada en la baseline.
 
 ## 2. Tareas
@@ -208,7 +208,7 @@ se amplía persistencia SQLite: solo se versionan agregados sinteticos.
 
 ### H3.1-T10 - Validar regresion funcional y consumidores
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** demostrar que reducir contexto no degrada Barbarion.  
 **Descripcion:** ejecutar benchmark baseline/optimized y regresion H1-H5, H4.1,
 H1.1 y H1.2. Verificar Ollama fake, Anthropic fake, `--no-llm`, evidencia
@@ -218,6 +218,13 @@ insuficiente, H4 y H5 consumidores de contexto, formatos y Unicode.
 si no, optimizacion se desactiva y el hallazgo se documenta.  
 **Requisitos:** REQ-009, REQ-010, REQ-013, REQ-014; NFR-002.  
 **Checkpoint:** suite completa y comparador sin regresiones Must.
+
+**Evidencia:** `reports/h31/t10-regression.json`/`.md`; matriz opt-in con `76`
+pruebas, suite completa `907 passed, 3 skipped` y smoke instalado `11 passed`.
+`relevant-at-six` conserva la mejora de cobertura `0 -> 1`, sin regresion en
+retrieval o citas. H4.1, H4, H5, `--no-llm`, Ollama/Anthropic fake, formatos y
+Unicode pasan. `optimized_v1` queda `qualified_candidate` para default, pero T10
+no lo promueve: `baseline_v1` sigue siendo el default efectivo.
 
 ### H3.1-T11 - Documentar operacion y decisiones
 

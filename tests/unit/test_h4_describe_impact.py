@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from barbarion.application.rag import ContextBuilder
 from barbarion.application.reverse_engineering import (
     DependencyWalkService,
     DescribeRequest,
@@ -10,6 +11,7 @@ from barbarion.application.reverse_engineering import (
     ImpactRequest,
     ImpactService,
 )
+from barbarion.domain.rag import RetrievalCandidate
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
     EvidenceClassification,
@@ -141,6 +143,73 @@ def test_impact_consumes_dependency_walk_and_keeps_rag_out_of_selection() -> Non
     assert len(result.consumers) == 1
     assert len(result.dependencies) == 1
     assert len(result.cross_technology) == 1
+
+
+def test_h4_impact_accepts_optimized_context_without_changing_graph_selection() -> None:
+    root = _symbol("pkg.root")
+    dependency = _symbol("pkg.dependency")
+    repository = _FakeRepository(
+        symbols=(root, dependency),
+        relations=(_relation(root, dependency),),
+    )
+    candidates = (
+        RetrievalCandidate(
+            chunk_id="low-document-first",
+            content_sha256="a" * 64,
+            combined_score=0.2,
+            source={
+                "document_id": 1,
+                "ordinal": 0,
+                "relative_path": "synthetic/low.sql",
+                "content": "evidencia complementaria baja",
+            },
+        ),
+        RetrievalCandidate(
+            chunk_id="high-relevance",
+            content_sha256="b" * 64,
+            combined_score=0.9,
+            source={
+                "document_id": 2,
+                "ordinal": 0,
+                "relative_path": "synthetic/high.sql",
+                "content": "evidencia complementaria relevante",
+            },
+        ),
+    )
+
+    class Search:
+        def search(self, request):  # noqa: ANN001, ANN201
+            del request
+            return _FakeSearchResponse(candidates=candidates)
+
+    service = ImpactService(
+        repository=repository,
+        dependency_walk_service=DependencyWalkService(repository),
+        search_service=Search(),
+        context_builder=ContextBuilder(
+            token_budget=500,
+            max_chunk_tokens=100,
+            dedupe_min_hash_prefix=16,
+            selection_policy="optimized_v1",
+        ),
+    )
+
+    result = service.analyze(
+        ImpactRequest(
+            target=ObjectRequest(query="pkg.root"),
+            include_rag=True,
+        )
+    )
+
+    assert result.walk is not None
+    assert tuple(node.symbol.symbol_id for node in result.walk.nodes) == (
+        root.symbol_id,
+        dependency.symbol_id,
+    )
+    assert result.rag_sources == (
+        "F1:low-document-first",
+        "F2:high-relevance",
+    )
 
 
 def test_impact_reports_cycles_and_unresolved_edges_as_risks() -> None:

@@ -256,7 +256,9 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T11 completadas.
+Estado: completada y aceptada. `baseline_v1` permanece como default y
+`optimized_v1` continúa opt-in hasta reunir validaciones adicionales en corpus
+distintos.
 
 Pregunta que responde:
 

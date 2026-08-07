@@ -38,6 +38,20 @@ configurarlo, Barbarion valida por separado los prompts completos de generation
 y repair. Si no cabe evidencia suficiente, termina de forma segura sin llamar
 al LLM.
 
+Generation y repair comparten el mismo límite, pero distribuyen su presupuesto
+independientemente. Repair vuelve a calcular su overhead incluyendo la respuesta
+rechazada y reduce, cuando hace falta, el contenido de las mismas fuentes usadas
+en generation. Conserva sus IDs, candidatos, orden y trazabilidad; no ejecuta un
+nuevo retrieval. Si el prompt reconciliado todavía no cabe o el contexto
+reducido deja de responder la pregunta, repair queda `NOT_EXECUTED` y la salida
+se rechaza de forma segura.
+
+Las reglas de grounding no se mantienen en strings independientes: generation
+y repair reutilizan literalmente el mismo contrato de cita para toda afirmación
+factual, cita por cada párrafo/bullet y prohibición de inferir o inventar
+conclusiones. Repair añade únicamente que debe corregir los problemas de soporte
+y citación de la respuesta anterior.
+
 La configuración legacy permanece intacta mientras la clave nueva no se
 declare. `context_token_budget` e `input_token_budget_est` son contratos
 alternativos y no pueden declararse juntos.

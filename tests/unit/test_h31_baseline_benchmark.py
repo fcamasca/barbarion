@@ -79,7 +79,7 @@ def test_baseline_measures_prompt_components_redundancy_and_repair() -> None:
     assert result["generation_components"]["source_content"]["tokens_est_local"] > 0
     assert metrics["generation_prompt_tokens_est_local_total"] == 2523
     assert metrics["repair_prompt_count"] == 1
-    assert metrics["repair_prompt_tokens_est_local_total"] == 154
+    assert metrics["repair_prompt_tokens_est_local_total"] == 219
     assert cases["citation-repair"]["repair"] is not None
     literal_decisions = cases["literal-single"]["evidence_decisions"]
     assert {decision["citation_status"] for decision in literal_decisions} == {

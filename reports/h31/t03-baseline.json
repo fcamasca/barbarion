@@ -1373,15 +1373,15 @@
       "recall_at_10": 1.0,
       "recall_at_5": 1.0,
       "repair": {
-        "chars": 615,
+        "chars": 876,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 337,
+            "chars": 598,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 85,
-            "utf8_bytes": 337
+            "tokens_est_local": 150,
+            "utf8_bytes": 598
           },
           {
             "chars": 52,
@@ -1433,8 +1433,8 @@
             "utf8_bytes": 20
           }
         ],
-        "tokens_est_local": 154,
-        "utf8_bytes": 617,
+        "tokens_est_local": 219,
+        "utf8_bytes": 878,
         "utf8_bytes_reconciled": true
       },
       "result_status": "completed",
@@ -1502,19 +1502,19 @@
     "recall_at_5": 0.888889,
     "redundancy_prompt_tokens_est_local": 7,
     "redundancy_share_of_generation_prompt": 0.002774,
-    "repair_prompt_chars_total": 615,
+    "repair_prompt_chars_total": 876,
     "repair_prompt_count": 1,
-    "repair_prompt_tokens_est_local_total": 154,
-    "repair_prompt_utf8_bytes_total": 617,
+    "repair_prompt_tokens_est_local_total": 219,
+    "repair_prompt_utf8_bytes_total": 878,
     "selected_source_recall": 0.888889
   },
   "optimization_enabled": false,
   "policy": "baseline_v1",
   "repair_components": {
     "instructions": {
-      "chars": 337,
-      "tokens_est_local": 85,
-      "utf8_bytes": 337
+      "chars": 598,
+      "tokens_est_local": 150,
+      "utf8_bytes": 598
     },
     "output_format": {
       "chars": 20,

@@ -31,9 +31,9 @@ El dataset y todas sus fuentes son sinteticos y publicables.
 | `generation_prompt_utf8_bytes_total` | `10117` |
 | `generation_prompt_tokens_est_local_total` | `2523` |
 | `repair_prompt_count` | `1` |
-| `repair_prompt_chars_total` | `615` |
-| `repair_prompt_utf8_bytes_total` | `617` |
-| `repair_prompt_tokens_est_local_total` | `154` |
+| `repair_prompt_chars_total` | `876` |
+| `repair_prompt_utf8_bytes_total` | `878` |
+| `repair_prompt_tokens_est_local_total` | `219` |
 
 ## Composicion de generation
 
@@ -51,7 +51,7 @@ Metadata de fuentes: `539` tokens (`21.4%` del prompt de generacion). Evidencia:
 
 | Componente | Chars | UTF-8 bytes | Tokens est. local |
 |---|---:|---:|---:|
-| `instructions` | 337 | 337 | 85 |
+| `instructions` | 598 | 598 | 150 |
 | `output_format` | 20 | 20 | 5 |
 | `question` | 52 | 54 | 13 |
 | `rejected_answer` | 51 | 51 | 13 |

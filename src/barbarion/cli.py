@@ -2216,6 +2216,22 @@ def _render_h31_observability(value: object) -> None:
             "result",
         ):
             print(f"input_budget_{key}={budget.get(key)}", file=sys.stderr)
+    repair_budget = value.get("repair_input_budget")
+    if isinstance(repair_budget, Mapping):
+        for key in (
+            "configured_tokens_est_local",
+            "initial_prompt_tokens_est_local",
+            "final_prompt_tokens_est_local",
+            "original_evidence_tokens_est_local",
+            "final_evidence_tokens_est_local",
+            "trimmed_evidence_tokens_est_local",
+            "same_sources",
+            "result",
+        ):
+            print(
+                f"repair_input_budget_{key}={repair_budget.get(key)}",
+                file=sys.stderr,
+            )
     _render_decision_metrics("candidate", value.get("candidate_selection"))
     _render_decision_metrics("context", value.get("context_decisions"))
     redundancy = value.get("redundancy")

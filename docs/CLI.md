@@ -385,6 +385,12 @@ respuesta sean válidas. Estos eventos no registran el
 prompt, el contexto, la respuesta completa, el texto de los claims ni contenido
 de razonamiento interno devuelto por un modelo.
 
+Cuando una respuesta requiere repair y existe `input_token_budget_est`, el
+debug expone `repair_input_budget_*`: tamaño inicial/final, evidencia
+original/final, tokens recortados, confirmación `same_sources` y resultado. Son
+métricas agregadas; no incluyen contenido. Repair no realiza una segunda
+búsqueda ni cambia IDs de fuente.
+
 Errores operativos frecuentes:
 
 - Base ausente: ejecuta `barbarion doctor` e ingesta antes de RAG.

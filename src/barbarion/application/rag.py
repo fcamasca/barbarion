@@ -1748,19 +1748,19 @@ class PromptBuilder:
             Componentes ordenados y reconciliables con el prompt enviado.
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
+        factual_rule, block_rule, inference_rule = _grounding_rules()
         components = (
             PromptComponent(
                 "instructions",
                 "Responde en espanol usando solo la evidencia provista.\n"
-                "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
+                f"{factual_rule}"
                 "Usa solo estos IDs de fuente existentes: "
                 f"{source_ids}.\n"
-                "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
+                f"{block_rule}"
                 "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n"
                 "Si la evidencia no responde directamente la pregunta, responde "
                 "\"Evidencia insuficiente\".\n"
-                "No infieras, no completes con conocimiento general y no inventes "
-                "conclusiones.\n"
+                f"{inference_rule}"
                 "Cuando declares evidencia insuficiente, indica que evidencia falto "
                 "y cita las fuentes que demuestran el limite.\n\n",
             ),
@@ -1801,12 +1801,17 @@ class PromptBuilder:
             Componentes ordenados del prompt de reparacion.
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
+        factual_rule, block_rule, inference_rule = _grounding_rules()
         components = (
             PromptComponent(
                 "instructions",
                 "Reescribe la respuesta en espanol usando solo la evidencia provista.\n"
-                "Incluye citas inline validas como [F1].\n"
+                f"{factual_rule}"
+                f"{block_rule}"
                 f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
+                f"{inference_rule}"
+                "Corrige unicamente los problemas de soporte y citacion de la "
+                "respuesta anterior.\n"
                 "Si el contexto no responde la pregunta, responde "
                 "\"Evidencia insuficiente\" y cita la evidencia disponible.\n"
                 "No generes codigo ni completes codigo; solo corrige la respuesta textual.\n\n",
@@ -1834,6 +1839,16 @@ class PromptBuilder:
             context=context,
             answer=answer,
         ).rendered_prompt
+
+
+def _grounding_rules() -> tuple[str, str, str]:
+    """Devuelve las reglas literales compartidas por generation y repair."""
+    return (
+        "Toda afirmacion factual debe citar una fuente inline como [F1].\n",
+        "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n",
+        "No infieras, no completes con conocimiento general y no inventes "
+        "conclusiones.\n",
+    )
 
 
 def _evidence_decisions(
@@ -2353,6 +2368,7 @@ class AskService:
                 policy=self.settings.rag.context_selection_policy,
                 candidate_selection=candidate_selection_debug,
                 input_budget=input_budget_debug,
+                repair_input_budget=None,
                 generation=None,
                 repair=None,
                 citation_coverage=None,
@@ -2441,20 +2457,39 @@ class AskService:
         repair_attempted = False
         repair_valid = None
         if not validation.valid:
-            repair_prompt = self.prompt_builder.repair(
-                question=question,
-                context=context,
-                answer=answer,
-            )
-            repair_composition = self.prompt_builder.compose_repair(
-                question=question,
-                context=context,
-                answer=answer,
-            )
+            repair_context = context
+            repair_budget_debug = None
+            if input_budget is not None:
+                (
+                    repair_context,
+                    repair_composition,
+                    repair_budget_debug,
+                ) = _build_repair_context_for_input_budget(
+                    prompt_builder=self.prompt_builder,
+                    generation_context=context,
+                    question=question,
+                    rejected_answer=answer,
+                    input_token_budget_est=input_budget,
+                )
+                repair_prompt = repair_composition.rendered_prompt
+            else:
+                repair_prompt = self.prompt_builder.repair(
+                    question=question,
+                    context=repair_context,
+                    answer=answer,
+                )
+                repair_composition = self.prompt_builder.compose_repair(
+                    question=question,
+                    context=repair_context,
+                    answer=answer,
+                )
             _require_reconciled_prompt(repair_prompt, repair_composition)
             repair_fits_budget = (
-                input_budget is None
-                or repair_composition.tokens_est_local <= input_budget
+                repair_context is not None
+                and (
+                    input_budget is None
+                    or repair_composition.tokens_est_local <= input_budget
+                )
             )
             if not repair_fits_budget:
                 answer = _invalid_citations_answer(
@@ -2469,7 +2504,9 @@ class AskService:
                     debug_payload["repair_prompt_composition"] = (
                         repair_composition.metrics()
                     )
+                    debug_payload["repair_input_budget"] = repair_budget_debug
             else:
+                context = repair_context
                 repair_attempted = True
                 try:
                     repaired_answer = self._generate_with_observability(
@@ -2486,7 +2523,7 @@ class AskService:
                     raise
                 validation = self.citation_validator.validate(
                     repaired_answer,
-                    context,
+                    repair_context,
                     question=question,
                 )
                 self._log_citation_validation(validation, stage="repair")
@@ -2499,9 +2536,10 @@ class AskService:
                     debug_payload["repair_response"] = repaired_answer
                     debug_payload["repair_validation"] = _citation_validation_debug(
                         answer=repaired_answer,
-                        context=context,
+                        context=repair_context,
                         validation=validation,
                     )
+                    debug_payload["repair_input_budget"] = repair_budget_debug
                 if validation.valid:
                     answer = repaired_answer
                 else:
@@ -2522,11 +2560,13 @@ class AskService:
                 debug_payload.setdefault("repair_prompt_composition", None)
                 debug_payload["repair_response"] = None
                 debug_payload["repair_validation"] = None
+                debug_payload.setdefault("repair_input_budget", None)
             debug_payload["observability"] = _ask_observability_summary(
                 context=context,
                 policy=self.settings.rag.context_selection_policy,
                 candidate_selection=candidate_selection_debug,
                 input_budget=input_budget_debug,
+                repair_input_budget=debug_payload.get("repair_input_budget"),
                 generation=debug_payload.get("prompt_composition"),
                 repair=debug_payload.get("repair_prompt_composition"),
                 citation_coverage=debug_payload.get("citation_coverage"),
@@ -2618,6 +2658,162 @@ def _build_context_for_input_budget(
             else "insufficient_evidence"
         ),
     }
+
+
+def _build_repair_context_for_input_budget(
+    *,
+    prompt_builder: PromptBuilder,
+    generation_context: ContextBuildResult,
+    question: str,
+    rejected_answer: str,
+    input_token_budget_est: int,
+) -> tuple[ContextBuildResult | None, PromptComposition, dict[str, object]]:
+    """Redistribuye el presupuesto de repair sin cambiar fuentes ni IDs."""
+    source_ids = tuple(source.source_id for source in generation_context.sources)
+    original_evidence_tokens = sum(
+        estimate_tokens(source.content) for source in generation_context.sources
+    )
+    target_evidence_tokens = original_evidence_tokens
+    attempted_context = generation_context
+    composition = prompt_builder.compose_repair(
+        question=question,
+        context=attempted_context,
+        answer=rejected_answer,
+    )
+    initial_prompt_tokens = composition.tokens_est_local
+
+    while composition.tokens_est_local > input_token_budget_est:
+        overage = composition.tokens_est_local - input_token_budget_est
+        target_evidence_tokens -= max(1, overage)
+        fitted_sources = _fit_same_sources_to_content_budget(
+            generation_context.sources,
+            target_evidence_tokens,
+        )
+        if fitted_sources is None:
+            return None, composition, {
+                "configured_tokens_est_local": input_token_budget_est,
+                "estimator_id": TOKEN_ESTIMATOR_ID,
+                "initial_prompt_tokens_est_local": initial_prompt_tokens,
+                "final_prompt_tokens_est_local": composition.tokens_est_local,
+                "original_evidence_tokens_est_local": original_evidence_tokens,
+                "final_evidence_tokens_est_local": sum(
+                    estimate_tokens(source.content)
+                    for source in attempted_context.sources
+                ),
+                "trimmed_evidence_tokens_est_local": max(
+                    0,
+                    original_evidence_tokens
+                    - sum(
+                        estimate_tokens(source.content)
+                        for source in attempted_context.sources
+                    ),
+                ),
+                "source_ids": source_ids,
+                "same_sources": True,
+                "result": "insufficient_evidence_budget",
+            }
+        attempted_context = _context_with_sources(
+            generation_context,
+            fitted_sources,
+        )
+        composition = prompt_builder.compose_repair(
+            question=question,
+            context=attempted_context,
+            answer=rejected_answer,
+        )
+
+    evidence_is_sufficient = _context_answers_question(
+        question,
+        attempted_context,
+    )
+    final_evidence_tokens = sum(
+        estimate_tokens(source.content) for source in attempted_context.sources
+    )
+    debug = {
+        "configured_tokens_est_local": input_token_budget_est,
+        "estimator_id": TOKEN_ESTIMATOR_ID,
+        "initial_prompt_tokens_est_local": initial_prompt_tokens,
+        "final_prompt_tokens_est_local": composition.tokens_est_local,
+        "original_evidence_tokens_est_local": original_evidence_tokens,
+        "final_evidence_tokens_est_local": final_evidence_tokens,
+        "trimmed_evidence_tokens_est_local": (
+            original_evidence_tokens - final_evidence_tokens
+        ),
+        "source_ids": source_ids,
+        "same_sources": True,
+        "result": "fits" if evidence_is_sufficient else "insufficient_evidence",
+    }
+    if not evidence_is_sufficient:
+        return None, composition, debug
+    return attempted_context, composition, debug
+
+
+def _fit_same_sources_to_content_budget(
+    sources: tuple[ContextSource, ...],
+    token_budget: int,
+) -> tuple[ContextSource, ...] | None:
+    """Trunca contenido proporcionalmente conservando todas las fuentes."""
+    if not sources or token_budget < len(sources):
+        return None
+    weights = [max(1, estimate_tokens(source.content)) for source in sources]
+    allocations = [1] * len(sources)
+    remaining = token_budget - len(sources)
+    if remaining > 0:
+        capacities = [max(0, weight - 1) for weight in weights]
+        total_capacity = sum(capacities)
+        if total_capacity > 0:
+            raw = [remaining * capacity / total_capacity for capacity in capacities]
+            extras = [
+                min(capacity, int(value))
+                for capacity, value in zip(capacities, raw)
+            ]
+            for index, extra in enumerate(extras):
+                allocations[index] += extra
+            leftover = remaining - sum(extras)
+            order = sorted(
+                range(len(sources)),
+                key=lambda index: (-(raw[index] - int(raw[index])), index),
+            )
+            for index in order:
+                if leftover <= 0:
+                    break
+                if allocations[index] < weights[index]:
+                    allocations[index] += 1
+                    leftover -= 1
+    fitted: list[ContextSource] = []
+    for source, allocation in zip(sources, allocations):
+        content = _truncate_to_tokens(source.content, allocation)
+        if not content:
+            return None
+        fitted.append(
+            replace(
+                source,
+                content=content,
+                token_estimate=estimate_tokens(content),
+                content_truncated=(
+                    source.content_truncated or content != source.content
+                ),
+            )
+        )
+    return tuple(fitted)
+
+
+def _context_with_sources(
+    original: ContextBuildResult,
+    sources: tuple[ContextSource, ...],
+) -> ContextBuildResult:
+    """Reconcilia un contexto reducido conservando identidad y trazabilidad."""
+    rendered = _render_context(list(sources))
+    return ContextBuildResult(
+        sources=sources,
+        omitted=original.omitted,
+        rendered_context=rendered,
+        token_estimate=sum(
+            estimate_tokens(_render_source_context(source)) for source in sources
+        ),
+        metrics=original.metrics,
+        debug=dict(original.debug),
+    )
 
 
 def _select_ask_candidates_relevance_first(
@@ -3104,6 +3300,7 @@ def _ask_observability_summary(
     policy: str,
     candidate_selection: object,
     input_budget: object,
+    repair_input_budget: object,
     generation: object,
     repair: object,
     citation_coverage: object,
@@ -3119,6 +3316,7 @@ def _ask_observability_summary(
         "context_decisions": context_debug.get("evidence_decisions", ()),
         "redundancy": context_debug.get("redundancy_report"),
         "input_budget": input_budget,
+        "repair_input_budget": repair_input_budget,
         "generation": generation,
         "repair": repair,
         "citation_coverage": citation_coverage,

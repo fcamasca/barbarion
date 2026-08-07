@@ -13,6 +13,8 @@ from barbarion.application.rag import (
     CitationValidator,
     ContextBuilder,
     PromptBuilder,
+    _build_context_for_input_budget,
+    _build_repair_context_for_input_budget,
 )
 from barbarion.domain.rag import (
     CitationValidation,
@@ -435,8 +437,36 @@ def test_prompt_builder_generation_and_repair_text_are_characterized_before_adap
         "62c2f942c9c14acf1ce6f0b2c30fcd8c73fbc9c5debf78142eb41853e72d573a"
     )
     assert hashlib.sha256(repair.encode("utf-8")).hexdigest() == (
-        "91b4a24790cafa2c6fc90433862d9a5f97626702aaffb535d24cf10262d3f5ff"
+        "ad7bfb55ce1d62589d4ac3c0c958b5c6192b3ded75094d0455df32fcbb9c26a2"
     )
+
+
+def test_generation_and_repair_share_the_same_grounding_rules() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9),))
+    builder = PromptBuilder()
+    generation = builder.build(question="order_total", context=context)
+    repair = builder.repair(
+        question="order_total",
+        context=context,
+        answer="Respuesta sin cita.",
+    )
+    shared_rules = (
+        "Toda afirmacion factual debe citar una fuente inline como [F1].",
+        "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.",
+        "No infieras, no completes con conocimiento general y no inventes conclusiones.",
+    )
+
+    for rule in shared_rules:
+        assert generation.count(rule) == 1
+        assert repair.count(rule) == 1
+    assert (
+        "Corrige unicamente los problemas de soporte y citacion de la "
+        "respuesta anterior."
+    ) in repair
 
 
 def ask_service(
@@ -625,6 +655,10 @@ def test_repair_is_not_called_when_its_complete_prompt_exceeds_input_budget(
         result.debug["repair_prompt_composition"]["tokens_est_local"]
         > result.debug["input_budget"]["configured_tokens_est_local"]
     )
+    assert result.debug["repair_input_budget"]["same_sources"] is True
+    assert result.debug["repair_input_budget"]["result"] == (
+        "insufficient_evidence_budget"
+    )
 
 
 def test_generation_and_repair_each_fit_the_configured_input_budget(tmp_path) -> None:
@@ -650,6 +684,68 @@ def test_generation_and_repair_each_fit_the_configured_input_budget(tmp_path) ->
     assert len(fake_llm.prompts) == 2
     assert result.debug["prompt_composition"]["tokens_est_local"] <= 1000
     assert result.debug["repair_prompt_composition"]["tokens_est_local"] <= 1000
+    assert result.debug["repair_input_budget"]["same_sources"] is True
+    assert result.debug["repair_input_budget"]["result"] == "fits"
+
+
+def test_repair_rebudgets_same_sources_when_generation_fills_input_budget() -> None:
+    candidates = tuple(
+        candidate(
+            f"source-{index}",
+            f"{index}" * 64,
+            1.0 - (index / 10),
+            document_id=index,
+            content=(f"order_total evidencia fuente {index} " * 700),
+        )
+        for index in range(1, 5)
+    )
+    builder = ContextBuilder(
+        token_budget=6000,
+        max_chunk_tokens=1200,
+        dedupe_min_hash_prefix=8,
+        threshold=0,
+        selection_policy="optimized_v1",
+    )
+    prompt_builder = PromptBuilder()
+    generation_context, generation_budget = _build_context_for_input_budget(
+        context_builder=builder,
+        prompt_builder=prompt_builder,
+        candidates=candidates,
+        question="order_total",
+        input_token_budget_est=4500,
+        debug=True,
+    )
+    rejected_answer = "respuesta factual sin cita " * 55
+    initial_repair = prompt_builder.compose_repair(
+        question="order_total",
+        context=generation_context,
+        answer=rejected_answer,
+    )
+
+    repair_context, repair_composition, repair_budget = (
+        _build_repair_context_for_input_budget(
+            prompt_builder=prompt_builder,
+            generation_context=generation_context,
+            question="order_total",
+            rejected_answer=rejected_answer,
+            input_token_budget_est=4500,
+        )
+    )
+
+    assert generation_budget["final_prompt_tokens_est_local"] <= 4500
+    assert generation_budget["final_prompt_tokens_est_local"] >= 4400
+    assert initial_repair.tokens_est_local > 4500
+    assert repair_context is not None
+    assert repair_composition.tokens_est_local <= 4500
+    assert [source.source_id for source in repair_context.sources] == [
+        source.source_id for source in generation_context.sources
+    ]
+    assert [source.candidate.chunk_id for source in repair_context.sources] == [
+        source.candidate.chunk_id for source in generation_context.sources
+    ]
+    assert repair_budget["same_sources"] is True
+    assert repair_budget["trimmed_evidence_tokens_est_local"] > 0
+    assert repair_budget["result"] == "fits"
 
 
 def test_ask_logs_success_without_prompt_or_response_content(

@@ -174,3 +174,25 @@ prompt en cada párrafo o bullet factual. La corrección clasifica esos bloques
 sin cita como claims no soportados, conserva la detección de citas inexistentes,
 contradicciones e invenciones, y mantiene el repair y su presupuesto seguro.
 Encabezados, líneas vacías y bloques de código quedan fuera de esta regla.
+
+## Addendum post-H3.1: presupuesto independiente de repair
+
+El validador estricto hizo visible que generation podía ocupar todo el
+presupuesto y dejar a repair sin espacio para agregar la respuesta rechazada.
+La corrección recalcula repair desde cero y trunca proporcionalmente solo el
+contenido de las mismas fuentes, conservando IDs, candidatos y trazabilidad. No
+hay nuevo retrieval ni aumento del presupuesto configurado. Si aun así no cabe
+evidencia suficiente, repair permanece sin ejecutar y el resultado se rechaza.
+
+El posible falso negativo de soporte factual observado en otra afirmación se
+mantiene separado de este cambio y no se usa para relajar el validador.
+
+## Addendum post-H3.1: contrato compartido de grounding
+
+Una ejecución real confirmó que el repair presupuestado se ejecutaba, pero su
+prompt había divergido de generation y no exigía una cita por cada párrafo o
+bullet factual. Ambos prompts reutilizan ahora las mismas reglas literales de
+citas y no inferencia. Repair agrega solo la instrucción de corregir los
+problemas de soporte y citación de la respuesta rechazada. El prompt de
+generation conserva su hash; la caracterización y métricas de repair se
+actualizan de forma explícita.

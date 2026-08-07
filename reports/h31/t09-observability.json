@@ -56,12 +56,12 @@
         "overlap_tokens_est_local": 7
       },
       "repair": {
-        "chars": 615,
+        "chars": 876,
         "components": {
           "instructions": {
-            "chars": 337,
-            "tokens_est_local": 85,
-            "utf8_bytes": 337
+            "chars": 598,
+            "tokens_est_local": 150,
+            "utf8_bytes": 598
           },
           "output_format": {
             "chars": 20,
@@ -90,8 +90,8 @@
           }
         },
         "request_count": 1,
-        "tokens_est_local": 154,
-        "utf8_bytes": 617
+        "tokens_est_local": 219,
+        "utf8_bytes": 878
       }
     },
     "optimized_v1": {
@@ -143,12 +143,12 @@
         "overlap_tokens_est_local": 0
       },
       "repair": {
-        "chars": 615,
+        "chars": 876,
         "components": {
           "instructions": {
-            "chars": 337,
-            "tokens_est_local": 85,
-            "utf8_bytes": 337
+            "chars": 598,
+            "tokens_est_local": 150,
+            "utf8_bytes": 598
           },
           "output_format": {
             "chars": 20,
@@ -177,8 +177,8 @@
           }
         },
         "request_count": 1,
-        "tokens_est_local": 154,
-        "utf8_bytes": 617
+        "tokens_est_local": 219,
+        "utf8_bytes": 878
       }
     }
   },

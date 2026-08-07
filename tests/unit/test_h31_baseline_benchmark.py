@@ -127,6 +127,8 @@ def test_relevance_first_recovers_rank_six_without_quality_regression() -> None:
     assert optimized_cases["relevant-at-six"]["fact_coverage"] == 1.0
     assert baseline_cases["relevant-at-six"]["result_status"] == "insufficient"
     assert optimized_cases["relevant-at-six"]["result_status"] == "completed"
+    assert optimized["metrics"]["trimmed_overlap_tokens_est_local"] == 7
+    assert optimized["metrics"]["overlap_tokens_est_local"] == 0
     for metric in (
         "recall_at_5",
         "recall_at_10",
@@ -141,6 +143,7 @@ def test_relevance_first_recovers_rank_six_without_quality_regression() -> None:
 def test_versioned_artifacts_do_not_contain_private_path_or_secret_canaries() -> None:
     paths = (
         ROOT / DEFAULT_DATASET,
+        ROOT / "tests/fixtures/h31_mixed_family_benchmark.json",
         REPORT_DIR / "t03-baseline.json",
         REPORT_DIR / "t03-baseline.md",
         REPORT_DIR / "t09-observability.json",

@@ -234,10 +234,10 @@ estimacion local, no el contador real del proveedor.
 
 `rag.context_selection_policy` admite `baseline_v1` (default) y
 `optimized_v1`. La politica optimizada requiere `input_token_budget_est`, ordena
-candidatos globalmente por score antes de gastar `top_k` o presupuesto y usa
-`chunk_id` como desempate determinista. La precedencia estructurada y el orden
-documental solo se aplican para presentar las fuentes ya seleccionadas. No usa
-un reranker nuevo ni diversidad semantica.
+cada familia por su score original y fusiona candidatos por rango relativo antes
+de gastar `top_k` o presupuesto. Conserva el score original y desempates
+deterministas. Tambien recorta overlap solo ante igualdad exacta, mismo documento
+y continuidad de rangos. No usa un reranker nuevo ni diversidad semantica.
 
 Con `ask --debug`, la seccion `H3.1 OBSERVABILITY` usa el schema
 `h31_observability_v1` y muestra politica, `estimator_id`, composicion de
@@ -431,18 +431,24 @@ Argumentos principales:
 - `--document ID`: limita a un documento.
 - `--chunk-id ID`: limita a un chunk.
 - `--dry-run`: muestra alcance sin escribir ni llamar modelos.
-- `--delete-obsolete`: elimina vectores obsoletos durante una reindexacion completa.
+- `--delete-obsolete`: elimina vectores obsoletos y huérfanos durante una
+  reindexación completa.
 
 Ejemplos:
 
 ```bash
 barbarion reindex --full
+barbarion reindex --full --delete-obsolete
 barbarion reindex --path sources/oracle --dry-run
 barbarion reindex --document 12
 barbarion reindex --chunk-id chunk-abc
 ```
 
 Usalo cuando cambia el modelo de embeddings, la version de indice o quieres reconstruir un subconjunto. Requiere al menos uno de `--full`, `--path`, `--document` o `--chunk-id`. Modifica SQLite y vectores salvo en `--dry-run`. Requiere embeddings en ejecución real; no requiere LLM. Codigos de salida: `0`, `1`, `2` o `130` segun resultado.
+
+Si hubo una nueva ingesta después de la última indexación, usa
+`reindex --full --delete-obsolete`. La limpieza global retira vectores cuyo
+`chunk_id` ya no existe; no se ejecuta en alcances parciales.
 
 ### search
 

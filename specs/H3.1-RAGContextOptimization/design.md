@@ -326,8 +326,11 @@ Resueltas con evidencia de T01-T08:
 - `input_token_budget_est` es opcional, sin default numerico, y su migracion
   rechaza la declaracion simultanea con `context_token_budget`;
 - el estimador local inicial es `chars4_v1`, siempre etiquetado como estimacion;
-- `trim_overlap_v1` queda diferido: T04 midio solo `0.277%` del prompt y T08
-  conserva deteccion `report_only` sin fijar un umbral lexical arbitrario;
+- `trim_overlap_v1` se activo tras reabrir T08: solo igualdad exacta
+  sufijo/prefijo, mismo documento y continuidad de rangos; no usa similitud
+  lexical aproximada;
+- los scores H3/H4.1 se conservan, pero la mezcla usa rango relativo por familia
+  porque sus escalas absolutas no estan calibradas entre si;
 
 Pendientes para las tareas restantes:
 

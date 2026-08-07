@@ -275,6 +275,13 @@ class IndexService:
             )
             tracker.finish(summary.status.value)
             return summary
+        if scope is None and delete_obsolete:
+            pruned_vectors = self.vector_store.prune_orphans()
+            if pruned_vectors:
+                _LOGGER.info(
+                    "index_vector_integrity_pruned vectors=%d",
+                    pruned_vectors,
+                )
         if not chunks and not plan.deleted_chunks:
             tracker.advance("final", current=1, total=1)
             summary = IndexRunSummary(
@@ -1513,7 +1520,7 @@ class ContextBuilder:
             else self._stable_document_order(deduped)
         )
         sources: list[ContextSource] = []
-        budget_omitted: list[dict[str, object]] = []
+        budget_candidates: list[RetrievalCandidate] = []
         content_omitted: list[dict[str, object]] = []
         used_tokens = 0
         for candidate in ordered:
@@ -1523,28 +1530,46 @@ class ContextBuilder:
                     {"chunk_id": candidate.chunk_id, "reason": "missing_content"}
                 )
                 continue
-            original_token_estimate = estimate_tokens(content)
-            source_id = f"F{len(sources) + 1}"
-            content = _truncate_to_tokens(content, self.max_chunk_tokens)
-            source = ContextSource(
-                source_id=source_id,
-                candidate=candidate,
-                content=content,
-                token_estimate=estimate_tokens(content),
-                original_token_estimate=original_token_estimate,
-                content_truncated=original_token_estimate > self.max_chunk_tokens,
-            )
             remaining_tokens = self.token_budget - used_tokens
-            source = _fit_source_to_budget(source, remaining_tokens)
+            source = _source_for_context_budget(
+                candidate,
+                source_id=f"F{len(sources) + 1}",
+                max_chunk_tokens=self.max_chunk_tokens,
+                remaining_tokens=remaining_tokens,
+            )
             if source is None:
-                budget_omitted.append(
-                    {"chunk_id": candidate.chunk_id, "reason": "budget"}
-                )
+                budget_candidates.append(candidate)
                 continue
             token_estimate = estimate_tokens(_render_source_context(source))
             sources.append(source)
             used_tokens += token_estimate
         if self.selection_policy == "optimized_v1":
+            pending = list(budget_candidates)
+            while True:
+                sources, _trimmed_pairs = _trim_exact_contiguous_overlaps(sources)
+                used_tokens = sum(
+                    estimate_tokens(_render_source_context(source))
+                    for source in sources
+                )
+                added = False
+                still_pending: list[RetrievalCandidate] = []
+                for candidate in pending:
+                    source = _source_for_context_budget(
+                        candidate,
+                        source_id=f"F{len(sources) + 1}",
+                        max_chunk_tokens=self.max_chunk_tokens,
+                        remaining_tokens=self.token_budget - used_tokens,
+                    )
+                    if source is None:
+                        still_pending.append(candidate)
+                        continue
+                    sources.append(source)
+                    used_tokens += estimate_tokens(_render_source_context(source))
+                    added = True
+                pending = still_pending
+                if not added:
+                    break
+            budget_candidates = pending
             sources = [
                 replace(source, source_id=f"F{index}")
                 for index, source in enumerate(
@@ -1557,7 +1582,10 @@ class ContextBuilder:
                 *score_omitted,
                 *duplicate_omitted,
                 *content_omitted,
-                *budget_omitted,
+                *(
+                    {"chunk_id": candidate.chunk_id, "reason": "budget"}
+                    for candidate in budget_candidates
+                ),
             )
         )
         duplicate_ratio = (
@@ -1661,6 +1689,11 @@ class ContextBuilder:
             sorted(
                 candidates,
                 key=lambda candidate: (
+                    int(
+                        candidate.source.get("selection_global_rank")
+                        if candidate.source.get("selection_global_rank") is not None
+                        else 0
+                    ),
                     -candidate.combined_score,
                     candidate.chunk_id,
                 ),
@@ -1800,8 +1833,13 @@ def _evidence_decisions(
     for index, candidate in enumerate(candidates):
         source = selected.get(id(candidate))
         if source is not None:
-            action = "truncated" if source.content_truncated else "selected"
-            reasons = ("max_chunk_tokens",) if source.content_truncated else ("selected",)
+            reasons_list: list[str] = []
+            if source.content_truncated:
+                reasons_list.append("max_chunk_tokens")
+            if source.overlap_trimmed_chars:
+                reasons_list.append("exact_contiguous_overlap")
+            action = "truncated" if reasons_list else "selected"
+            reasons = tuple(reasons_list) if reasons_list else ("selected",)
             contribution = estimate_tokens(_render_source_context(source))
         else:
             action = "omitted"
@@ -1889,8 +1927,22 @@ def _context_redundancy_report(
         for candidate, kind in zip(candidates, duplicate_kinds, strict=True)
         if kind is not None
     )
+    trimmed_pairs = tuple(
+        {
+            "left_chunk_id": source.overlap_trimmed_from_chunk_id,
+            "right_chunk_id": source.candidate.chunk_id,
+            "overlap_chars": source.overlap_trimmed_chars,
+            "overlap_tokens_est_local": estimate_tokens(
+                "x" * source.overlap_trimmed_chars
+            ),
+            "effect": "trim_overlap_v1",
+        }
+        for source in sources
+        if source.overlap_trimmed_chars
+        and source.overlap_trimmed_from_chunk_id is not None
+    )
     return {
-        "mode": "report_only",
+        "mode": "trim_overlap_v1" if trimmed_pairs else "report_only",
         "exact_duplicate_candidates": exact_candidates,
         "exact_duplicate_count": len(exact_candidates),
         "exact_duplicate_prompt_tokens_est_local": 0,
@@ -1904,6 +1956,13 @@ def _context_redundancy_report(
         ),
         "overlap_tokens_est_local": sum(
             int(pair["overlap_tokens_est_local"]) for pair in overlap_pairs
+        ),
+        "trimmed_overlap_pairs": trimmed_pairs,
+        "trimmed_overlap_chars": sum(
+            int(pair["overlap_chars"]) for pair in trimmed_pairs
+        ),
+        "trimmed_overlap_tokens_est_local": sum(
+            int(pair["overlap_tokens_est_local"]) for pair in trimmed_pairs
         ),
     }
 
@@ -2547,14 +2606,17 @@ def _select_ask_candidates_relevance_first(
     limit: int,
     dedupe_min_hash_prefix: int,
 ) -> tuple[tuple[RetrievalCandidate, ...], tuple[dict[str, object], ...]]:
-    """Selecciona globalmente por score antes de gastar top-k."""
+    """Fusiona familias por rango relativo antes de gastar top-k."""
     pool = tuple((*structured, *chunks))
     has_structured_configuration = any(
         candidate.source.get("evidence_kind") == "structured_symbol"
         for candidate in structured
     )
     decisions: list[dict[str, object] | None] = [None] * len(pool)
-    eligible: list[tuple[int, RetrievalCandidate]] = []
+    eligible_by_family: dict[str, list[tuple[int, RetrievalCandidate]]] = {
+        "chunks": [],
+        "structured": [],
+    }
     for index, candidate in enumerate(pool):
         if (
             has_structured_configuration
@@ -2566,11 +2628,39 @@ def _select_ask_candidates_relevance_first(
                 action="omitted",
                 reason="shadowed_configuration",
             )
+        elif not _candidate_has_materializable_content(candidate):
+            decisions[index] = _candidate_selection_decision(
+                candidate,
+                action="omitted",
+                reason="missing_content",
+            )
         else:
-            eligible.append((index, candidate))
-    eligible.sort(
+            family = "structured" if index < len(structured) else "chunks"
+            eligible_by_family[family].append((index, candidate))
+    ranked: list[tuple[int, RetrievalCandidate, str, int, float]] = []
+    for family, items in eligible_by_family.items():
+        items.sort(
+            key=lambda item: (
+                -item[1].combined_score,
+                item[1].chunk_id,
+                item[0],
+            )
+        )
+        denominator = max(1, len(items) - 1)
+        for family_rank, (index, candidate) in enumerate(items):
+            relative_score = (
+                1.0
+                if len(items) == 1
+                else 1.0 - (family_rank / denominator)
+            )
+            ranked.append(
+                (index, candidate, family, family_rank, relative_score)
+            )
+    family_tie_order = {"chunks": 0, "structured": 1}
+    ranked.sort(
         key=lambda item: (
-            -item[1].combined_score,
+            -item[4],
+            family_tie_order[item[2]],
             item[1].chunk_id,
             item[0],
         )
@@ -2578,7 +2668,13 @@ def _select_ask_candidates_relevance_first(
     selected: list[RetrievalCandidate] = []
     seen_chunks: set[str] = set()
     seen_hashes: set[str] = set()
-    for index, candidate in eligible:
+    for global_rank, (
+        index,
+        candidate,
+        family,
+        family_rank,
+        relative_score,
+    ) in enumerate(ranked):
         hash_prefix = candidate.content_sha256[:dedupe_min_hash_prefix]
         if candidate.chunk_id in seen_chunks:
             action, reason = "omitted", "duplicate_chunk_id"
@@ -2588,17 +2684,36 @@ def _select_ask_candidates_relevance_first(
             action, reason = "omitted", "top_k"
         else:
             action, reason = "selected", "relevance"
-            selected.append(candidate)
+            selected.append(
+                replace(
+                    candidate,
+                    source={
+                        **dict(candidate.source),
+                        "selection_family": family,
+                        "selection_family_rank": family_rank,
+                        "selection_relative_score": relative_score,
+                        "selection_global_rank": global_rank,
+                    },
+                )
+            )
             seen_chunks.add(candidate.chunk_id)
             seen_hashes.add(hash_prefix)
         decisions[index] = _candidate_selection_decision(
             candidate,
             action=action,
             reason=reason,
+            family=family,
+            family_rank=family_rank,
+            relative_score=relative_score,
         )
     return tuple(selected), tuple(
         decision for decision in decisions if decision is not None
     )
+
+
+def _candidate_has_materializable_content(candidate: RetrievalCandidate) -> bool:
+    """Indica si el candidato puede convertirse en evidencia citable."""
+    return bool(candidate.source.get("content") or candidate.source.get("snippet"))
 
 
 def _candidate_selection_decision(
@@ -2606,14 +2721,26 @@ def _candidate_selection_decision(
     *,
     action: str,
     reason: str,
+    family: str | None = None,
+    family_rank: int | None = None,
+    relative_score: float | None = None,
 ) -> dict[str, object]:
-    return {
+    decision: dict[str, object] = {
         "chunk_id": candidate.chunk_id,
         "action": action,
         "reasons": (reason,),
         "combined_score": candidate.combined_score,
         "evidence_kind": candidate.source.get("evidence_kind"),
     }
+    if family is not None:
+        decision.update(
+            {
+                "selection_family": family,
+                "selection_family_rank": family_rank,
+                "selection_relative_score": relative_score,
+            }
+        )
+    return decision
 
 
 def _merge_ask_candidates(
@@ -2652,6 +2779,102 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
+def _source_for_context_budget(
+    candidate: RetrievalCandidate,
+    *,
+    source_id: str,
+    max_chunk_tokens: int,
+    remaining_tokens: int,
+) -> ContextSource | None:
+    """Materializa un candidato respetando limites por fuente y contexto."""
+    content = str(candidate.source.get("content") or candidate.source.get("snippet") or "")
+    if not content:
+        return None
+    original_token_estimate = estimate_tokens(content)
+    content = _truncate_to_tokens(content, max_chunk_tokens)
+    source = ContextSource(
+        source_id=source_id,
+        candidate=candidate,
+        content=content,
+        token_estimate=estimate_tokens(content),
+        original_token_estimate=original_token_estimate,
+        content_truncated=original_token_estimate > max_chunk_tokens,
+    )
+    return _fit_source_to_budget(source, remaining_tokens)
+
+
+def _trim_exact_contiguous_overlaps(
+    sources: list[ContextSource],
+) -> tuple[list[ContextSource], tuple[dict[str, object], ...]]:
+    """Recorta prefijos repetidos solo con igualdad y continuidad demostrables."""
+    ordered = sorted(
+        sources,
+        key=lambda source: (
+            int(source.candidate.source.get("document_id") or 0),
+            int(source.candidate.source.get("start_line") or 0),
+            int(source.candidate.source.get("ordinal") or 0),
+            source.candidate.chunk_id,
+        ),
+    )
+    by_identity = {id(source): source for source in sources}
+    pairs: list[dict[str, object]] = []
+    for index, left_original in enumerate(ordered):
+        left = by_identity[id(left_original)]
+        for right_original in ordered[index + 1 :]:
+            right = by_identity[id(right_original)]
+            if not _sources_have_contiguous_ranges(left, right):
+                continue
+            overlap_chars = _suffix_prefix_overlap_chars(left.content, right.content)
+            if overlap_chars <= 0 or overlap_chars >= len(right.content):
+                continue
+            overlap_text = right.content[:overlap_chars]
+            trimmed = replace(
+                right,
+                content=right.content[overlap_chars:],
+                token_estimate=estimate_tokens(right.content[overlap_chars:]),
+                overlap_trimmed_chars=(
+                    right.overlap_trimmed_chars + overlap_chars
+                ),
+                overlap_trimmed_from_chunk_id=left.candidate.chunk_id,
+            )
+            by_identity[id(right_original)] = trimmed
+            pairs.append(
+                {
+                    "left_chunk_id": left.candidate.chunk_id,
+                    "right_chunk_id": right.candidate.chunk_id,
+                    "overlap_chars": overlap_chars,
+                    "overlap_utf8_bytes": len(overlap_text.encode("utf-8")),
+                    "overlap_tokens_est_local": estimate_tokens(overlap_text),
+                    "effect": "trim_overlap_v1",
+                }
+            )
+    return [by_identity[id(source)] for source in sources], tuple(pairs)
+
+
+def _sources_have_contiguous_ranges(
+    left: ContextSource,
+    right: ContextSource,
+) -> bool:
+    """Confirma mismo documento y continuidad/solape de rangos de lineas."""
+    left_source = left.candidate.source
+    right_source = right.candidate.source
+    if left_source.get("document_id") != right_source.get("document_id"):
+        return False
+    values = (
+        left_source.get("start_line"),
+        left_source.get("end_line"),
+        right_source.get("start_line"),
+        right_source.get("end_line"),
+    )
+    if any(not isinstance(value, int) for value in values):
+        return False
+    left_start, left_end, right_start, right_end = values
+    return bool(
+        left_start <= right_start <= left_end + 1
+        and left_end <= right_end
+    )
+
+
 def _fit_source_to_budget(
     source: ContextSource,
     remaining_tokens: int,
@@ -2674,6 +2897,8 @@ def _fit_source_to_budget(
         token_estimate=estimate_tokens(content),
         original_token_estimate=source.original_token_estimate,
         content_truncated=True,
+        overlap_trimmed_chars=source.overlap_trimmed_chars,
+        overlap_trimmed_from_chunk_id=source.overlap_trimmed_from_chunk_id,
     )
     if estimate_tokens(_render_source_context(fitted)) > remaining_tokens:
         return None

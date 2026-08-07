@@ -207,6 +207,9 @@ class VectorStorePort(Protocol):
     def delete(self, *, manifest: EmbeddingManifest, chunk_id: str) -> None:
         """Elimina o invalida un vector asociado a un chunk."""
 
+    def prune_orphans(self) -> int:
+        """Elimina vectores cuyos chunks ya no existen."""
+
     def search(
         self,
         *,

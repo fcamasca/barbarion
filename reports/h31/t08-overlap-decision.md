@@ -1,34 +1,40 @@
-# H3.1-T08 - Decision sobre trim de overlap
+# H3.1-T08 - Decisión revisada sobre trim de overlap
 
-## Decision
+## Decisión inicial
 
-**DIFERIDO — no implementar `trim_overlap_v1` en H3.1.**
+T04 encontró `27` caracteres o `7` tokens locales estimados de overlap
+(`0.277%` del prompt sintético). Con esa evidencia, T08 se difirió y mantuvo el
+diagnóstico `report_only`.
 
-T04 encontro un unico overlap contiguo demostrado: `27` caracteres, equivalentes
-a `7` tokens estimados con `chars4_v1`. Esto representa `0.277%` del prompt de
-generacion medido. El duplicado exacto observado ya era omitido por
-`baseline_v1` y no aportaba tokens al prompt.
+## Evidencia que reabre T08
 
-T07, en contraste, produjo una mejora funcional medible mediante seleccion
-relevance-first: la cobertura de fuentes, hechos y citas aumento sin regresion
-en recall@5, recall@10, MRR, precision o validez de citas.
+Una validación autorizada posterior detectó un único overlap exacto de `2,446`
+caracteres, equivalente a `612` tokens con `chars4_v1`, aproximadamente `14%`
+del contexto de esa ejecución. Los valores son métricas agregadas y este reporte
+no contiene preguntas, rutas, nombres ni contenido del corpus validado.
 
-## Justificacion
+El resultado demuestra que la baseline sintética inicial no representaba todas
+las ventanas extensas posibles y satisface la condición explícita de
+reevaluación de la decisión anterior.
 
-El beneficio medido de recortar overlap es marginal y no justifica incorporar
-en H3.1 complejidad para modificar contenido, reconciliar rangos originales y
-enviados, o ampliar riesgos sobre citas. Diferir la implementacion es el
-resultado previsto por T08 cuando la evidencia no supera las puertas empiricas.
+## Decisión revisada
 
-## Estado conservado
+**IMPLEMENTAR `trim_overlap_v1` de forma conservadora.**
 
-- el diagnostico de overlap permanece `report_only`;
-- no se elimina ni modifica contenido recuperado;
-- no cambian IDs, rangos, citas, seleccion ni presupuesto;
-- `trim_overlap_v1` no es una politica configurable ni activa.
+El recorte solo se aplica cuando:
 
-## Condicion de reevaluacion
+- el sufijo de una fuente es exactamente igual al prefijo de otra;
+- ambas fuentes pertenecen al mismo documento;
+- sus rangos confirman continuidad o intersección;
+- el recorte no elimina por completo la fuente posterior.
 
-La decision puede revisarse si un benchmark reproducible futuro demuestra una
-proporcion material de overlap enviado y una reduccion segura que preserve
-recall, cobertura de hechos y citas. No se fija ahora un umbral arbitrario.
+No se usa similitud semántica, normalización lexical aproximada ni comparación
+entre documentos. El contexto conserva IDs de cita y scores originales. Debug
+registra caracteres/tokens estimados evitados y overlap residual.
+
+## Validación sintética
+
+El benchmark `window-overlap` conserva cobertura y citas, reduce el overlap
+residual de `7` a `0` tokens estimados y registra `7` tokens evitados. Una prueba
+de presupuesto adicional demuestra que `400` caracteres/`100` tokens estimados
+liberados permiten incorporar una fuente útil posterior.

@@ -1,11 +1,16 @@
 {
   "algorithm": {
     "exact_dedupe": true,
+    "families": [
+      "chunks",
+      "structured"
+    ],
     "new_reranker": false,
+    "original_score_preserved": true,
     "presentation_order_after_selection": true,
-    "primary": "combined_score_desc",
+    "primary": "family_relative_rank_desc",
     "semantic_diversity": false,
-    "tie_break": "chunk_id_asc"
+    "tie_break": "chunks_then_structured_then_chunk_id"
   },
   "baseline_policy": "baseline_v1",
   "dataset_id": "h31-synthetic-baseline-v1",
@@ -26,7 +31,10 @@
         "evidence_kind": null,
         "reasons": [
           "relevance"
-        ]
+        ],
+        "selection_family": "chunks",
+        "selection_family_rank": 0,
+        "selection_relative_score": 1.0
       },
       {
         "action": "selected",
@@ -35,7 +43,10 @@
         "evidence_kind": null,
         "reasons": [
           "relevance"
-        ]
+        ],
+        "selection_family": "chunks",
+        "selection_family_rank": 2,
+        "selection_relative_score": 0.6
       },
       {
         "action": "selected",
@@ -44,7 +55,10 @@
         "evidence_kind": null,
         "reasons": [
           "relevance"
-        ]
+        ],
+        "selection_family": "chunks",
+        "selection_family_rank": 3,
+        "selection_relative_score": 0.4
       },
       {
         "action": "selected",
@@ -53,7 +67,10 @@
         "evidence_kind": null,
         "reasons": [
           "relevance"
-        ]
+        ],
+        "selection_family": "chunks",
+        "selection_family_rank": 4,
+        "selection_relative_score": 0.19999999999999996
       },
       {
         "action": "omitted",
@@ -62,7 +79,10 @@
         "evidence_kind": null,
         "reasons": [
           "top_k"
-        ]
+        ],
+        "selection_family": "chunks",
+        "selection_family_rank": 5,
+        "selection_relative_score": 0.0
       },
       {
         "action": "selected",
@@ -71,7 +91,10 @@
         "evidence_kind": null,
         "reasons": [
           "relevance"
-        ]
+        ],
+        "selection_family": "chunks",
+        "selection_family_rank": 1,
+        "selection_relative_score": 0.8
       }
     ],
     "optimized_fact_coverage": 1.0,
@@ -121,6 +144,11 @@
     }
   },
   "optimized_policy": "optimized_v1",
+  "overlap": {
+    "baseline_tokens_est_local": 7,
+    "optimized_residual_tokens_est_local": 0,
+    "optimized_trimmed_tokens_est_local": 7
+  },
   "quality_gate": {
     "key_case_recovered": true,
     "no_retrieval_or_citation_regression": true

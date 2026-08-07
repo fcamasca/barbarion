@@ -97,11 +97,11 @@
     "optimized_v1": {
       "decisions_by_action": {
         "omitted": 0,
-        "selected": 20,
-        "truncated": 0
+        "selected": 19,
+        "truncated": 1
       },
       "generation": {
-        "chars": 10075,
+        "chars": 10048,
         "components": {
           "instructions": {
             "chars": 5448,
@@ -119,9 +119,9 @@
             "utf8_bytes": 489
           },
           "source_content": {
-            "chars": 1155,
-            "tokens_est_local": 297,
-            "utf8_bytes": 1173
+            "chars": 1128,
+            "tokens_est_local": 290,
+            "utf8_bytes": 1145
           },
           "source_metadata": {
             "chars": 2087,
@@ -129,8 +129,8 @@
             "utf8_bytes": 2087
           }
         },
-        "tokens_est_local": 2522,
-        "utf8_bytes": 10115
+        "tokens_est_local": 2515,
+        "utf8_bytes": 10087
       },
       "quality": {
         "citation_recall": 1.0,
@@ -139,8 +139,8 @@
       },
       "redundancy": {
         "exact_duplicate_count": 0,
-        "overlap_chars": 27,
-        "overlap_tokens_est_local": 7
+        "overlap_chars": 0,
+        "overlap_tokens_est_local": 0
       },
       "repair": {
         "chars": 615,

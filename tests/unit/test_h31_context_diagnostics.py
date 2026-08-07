@@ -13,6 +13,8 @@ def _candidate(
     document_id: int = 1,
     ordinal: int = 0,
     score: float = 0.9,
+    start_line: int | None = None,
+    end_line: int | None = None,
 ) -> RetrievalCandidate:
     return RetrievalCandidate(
         chunk_id=chunk_id,
@@ -23,6 +25,8 @@ def _candidate(
             "ordinal": ordinal,
             "relative_path": f"synthetic/{chunk_id}.txt",
             "content": content,
+            "start_line": start_line,
+            "end_line": end_line,
         },
     )
 
@@ -92,6 +96,129 @@ def test_overlap_is_measured_only_for_selected_chunks_of_same_document() -> None
     assert report["overlap_tokens_est_local"] == 5
     assert len(report["overlap_pairs"]) == 1
     assert report["overlap_pairs"][0]["effect"] == "report_only"
+
+
+def test_optimized_trims_only_exact_overlap_with_contiguous_ranges() -> None:
+    shared = "segmento exactamente compartido " * 4
+    candidates = (
+        _candidate(
+            "left",
+            f"inicio {shared}",
+            ordinal=0,
+            start_line=1,
+            end_line=10,
+            score=0.9,
+        ),
+        _candidate(
+            "right",
+            f"{shared}final",
+            ordinal=1,
+            start_line=8,
+            end_line=16,
+            score=0.8,
+        ),
+    )
+
+    result = ContextBuilder(
+        token_budget=1000,
+        max_chunk_tokens=1200,
+        dedupe_min_hash_prefix=16,
+        selection_policy="optimized_v1",
+    ).build(candidates, debug=True)
+    report = result.debug["redundancy_report"]
+
+    right = next(
+        source for source in result.sources
+        if source.candidate.chunk_id == "right"
+    )
+    assert right.content == "final"
+    assert right.overlap_trimmed_chars == len(shared)
+    assert report["mode"] == "trim_overlap_v1"
+    assert report["trimmed_overlap_chars"] == len(shared)
+    assert report["overlap_chars"] == 0
+
+
+def test_optimized_does_not_trim_without_range_continuity() -> None:
+    shared = "segmento exactamente compartido"
+    candidates = (
+        _candidate(
+            "left",
+            f"inicio {shared}",
+            ordinal=0,
+            start_line=1,
+            end_line=5,
+        ),
+        _candidate(
+            "right",
+            f"{shared} final",
+            ordinal=1,
+            start_line=20,
+            end_line=25,
+        ),
+    )
+
+    result = ContextBuilder(
+        token_budget=1000,
+        max_chunk_tokens=1200,
+        dedupe_min_hash_prefix=16,
+        selection_policy="optimized_v1",
+    ).build(candidates, debug=True)
+
+    assert all(source.overlap_trimmed_chars == 0 for source in result.sources)
+    assert result.debug["redundancy_report"]["mode"] == "report_only"
+
+
+def test_exact_overlap_trim_releases_budget_for_additional_evidence() -> None:
+    shared = "S" * 400
+    candidates = (
+        _candidate(
+            "left",
+            "A" * 200 + shared,
+            ordinal=0,
+            start_line=1,
+            end_line=20,
+            score=0.9,
+        ),
+        _candidate(
+            "right",
+            shared + "B" * 200,
+            ordinal=1,
+            start_line=10,
+            end_line=30,
+            score=0.8,
+        ),
+        _candidate(
+            "additional",
+            "evidencia adicional util " * 12,
+            document_id=2,
+            ordinal=0,
+            start_line=1,
+            end_line=10,
+            score=0.7,
+        ),
+    )
+    baseline = ContextBuilder(
+        token_budget=300,
+        max_chunk_tokens=1200,
+        dedupe_min_hash_prefix=16,
+        selection_policy="baseline_v1",
+    ).build(candidates)
+    optimized = ContextBuilder(
+        token_budget=300,
+        max_chunk_tokens=1200,
+        dedupe_min_hash_prefix=16,
+        selection_policy="optimized_v1",
+    ).build(candidates, debug=True)
+
+    assert len(baseline.sources) == 2
+    assert {source.candidate.chunk_id for source in optimized.sources} == {
+        "left",
+        "right",
+        "additional",
+    }
+    report = optimized.debug["redundancy_report"]
+    assert report["trimmed_overlap_chars"] == 400
+    assert report["trimmed_overlap_tokens_est_local"] == 100
 
 
 def test_every_candidate_has_a_stable_selection_or_omission_reason() -> None:

@@ -291,16 +291,18 @@ separadas para generation y repair y salida segura sin LLM cuando no cabe
 evidencia relevante. La selección continúa siendo `baseline_v1`.
 
 T07 incorpora `optimized_v1` como política opt-in. La comparación reproduce la
-pérdida de la fuente relevante en posición seis y la recupera por score global:
-la cobertura de fuentes/hechos y el recall de citas suben `0.111111`, sin
-regresión en retrieval ni validez de citas. No se agregó reranker, diversidad
-semántica ni inferencia de hechos.
+pérdida de la fuente relevante en posición seis. Una validación posterior mostró
+además que los scores absolutos H3/H4.1 no comparten calibración; la política
+conserva esos scores para trazabilidad, ordena dentro de cada familia y fusiona
+por rango relativo. Los casos `relevant-at-six` y `mixed-family-competition`
+recuperan cobertura sin regresión de retrieval o citas.
 
-T08 se cierra con una decisión explícita de diferimiento: no se implementa
-`trim_overlap_v1` en H3.1. Los `7` tokens estimados de overlap (`0.277%`) no
-justifican manipular contenido y rangos. El diagnóstico `report_only` permanece
-disponible y la decisión solo se reevaluará ante nueva evidencia reproducible y
-material.
+T08 fue inicialmente diferida por los `7` tokens estimados del benchmark, pero
+se reabrió cuando una validación autorizada detectó `2,446` caracteres o `612`
+tokens locales estimados repetidos. `trim_overlap_v1` quedó activo únicamente
+para igualdad exacta sufijo/prefijo del mismo documento con continuidad de
+rangos. El presupuesto liberado puede incorporar evidencia posterior; no existe
+trim semántico ni aproximado.
 
 T09 añade el resumen seguro `h31_observability_v1` y un reporte comparable entre
 `baseline_v1` y `optimized_v1`. La CLI expone métricas estructurales y estimadas

@@ -1,0 +1,17 @@
+{
+  "benchmark_id": "h31-mixed-family-v1",
+  "license": "synthetic-for-barbarion",
+  "top_k": 5,
+  "structured": [
+    {"chunk_id": "structured-specific", "score": 0.526, "content": "La Configuración Lambda declara la regla sintética horizonte estable."},
+    {"chunk_id": "structured-generic", "score": 0.336, "content": "La Configuración Lambda dispone de metadata auxiliar."}
+  ],
+  "chunks": [
+    {"chunk_id": "chunk-1", "score": 0.961, "content": "El módulo Lambda contiene lógica documental general."},
+    {"chunk_id": "chunk-2", "score": 0.762, "content": "El módulo Lambda registra operaciones auxiliares."},
+    {"chunk_id": "chunk-3", "score": 0.758, "content": "El módulo Lambda valida entradas de ejecución."},
+    {"chunk_id": "chunk-4", "score": 0.736, "content": "El módulo Lambda publica resultados técnicos."},
+    {"chunk_id": "chunk-5", "score": 0.700, "content": "El módulo Lambda conserva trazas locales."}
+  ],
+  "expected_chunk_id": "structured-specific"
+}

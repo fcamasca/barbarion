@@ -5,24 +5,25 @@ puede explicar cuánto ocupa cada componente del prompt, presupuestar el input
 completo de forma opt-in y comparar políticas de selección sin confundir una
 estimación local con el consumo informado por el proveedor.
 
-El hallazgo principal no fue el overlap. El benchmark mostró que el orden de
-selección podía dejar fuera una fuente más relevante —el caso
-`relevant-at-six`— antes de agotar los candidatos. `optimized_v1` corrige ese
-caso comparando primero la relevancia global. En cambio, la redundancia medida
-fue marginal: un duplicado exacto ya omitido y `27` caracteres, aproximadamente
-`7` tokens estimados, de overlap enviado (`0.277%` del prompt observado).
+El benchmark mostró que el orden de selección podía dejar fuera una fuente más
+relevante —el caso `relevant-at-six`— antes de agotar los candidatos.
+`optimized_v1` corrige ese caso y evita comparar como absolutos los scores
+heterogéneos de H3 y H4.1: ordena dentro de cada familia, transforma la posición
+en una señal relativa y fusiona después. Una validación autorizada posterior
+también demostró que el overlap de ventanas podía ser material, por lo que T08
+fue reabierta y `trim_overlap_v1` quedó implementado de forma conservadora.
 
 ## Políticas disponibles
 
 | Política | Selección | Presupuesto | Estado |
 |---|---|---|---|
 | `baseline_v1` | Conserva la precedencia y el comportamiento legado | `context_token_budget` o, de forma opt-in, presupuesto del input completo | Default vigente |
-| `optimized_v1` | Ordena candidatos globalmente por score, deduplica exactamente y desempata por `chunk_id` | Requiere `input_token_budget_est` | Candidata calificada; todavía no es default |
+| `optimized_v1` | Ordena cada familia por su score original, fusiona por rango relativo, deduplica y recorta solo overlap exacto/continuo | Requiere `input_token_budget_est` | Candidata; todavía no es default |
 
 `optimized_v1` no incorpora reranker, diversidad semántica ni inferencia de
-hechos. La precedencia estructurada y el orden documental se conservan para la
-presentación de las fuentes seleccionadas, no para desplazar evidencia con
-mejor score.
+hechos. El score original permanece visible para trazabilidad, pero no se
+compara directamente entre familias. Los empates de rango relativo usan una
+regla estable y el orden documental se aplica después para presentar fuentes.
 
 ## Presupuesto y medición
 
@@ -52,10 +53,35 @@ context_selection_policy = "optimized_v1"
 
 ## Decisión sobre overlap
 
-`trim_overlap_v1` fue diferido y no se implementó en H3.1. El impacto observado
-no justifica añadir manipulación de contenido y rangos. El diagnóstico
-`report_only` se conserva para detectar futuros casos y la decisión puede
-reevaluarse si aparece evidencia reproducible y material.
+La decisión inicial de diferir `trim_overlap_v1` se reabrió cuando una ejecución
+autorizada midió `2,446` caracteres o `612` tokens locales estimados repetidos,
+aproximadamente `14%` del contexto. La política recorta únicamente cuando el
+sufijo de una fuente coincide exactamente con el prefijo de otra, ambas
+pertenecen al mismo documento y sus rangos confirman continuidad. No aplica
+similitud semántica, normalización aproximada ni manipulación entre documentos.
+Los caracteres/tokens evitados y el overlap residual permanecen trazables.
+
+## Integridad entre ingesta e índice vectorial
+
+Una reingesta puede reemplazar IDs de chunks. Los vectores correspondientes a
+IDs que ya no existen no son evidencia materializable y nunca deben consumir un
+cupo de `optimized_v1`: se omiten como `missing_content` antes de aplicar
+`top_k`, y la selección continúa con el siguiente candidato relevante.
+
+El indexado global elimina además vectores huérfanos antes de persistir los
+chunks vigentes. Las reindexaciones parciales no realizan esta limpieza global,
+porque operan sobre un alcance deliberadamente incompleto.
+
+Para reparar una instalación que fue ingerida después de su última indexación:
+
+```bash
+barbarion reindex --full --delete-obsolete
+```
+
+Después del comando, repite la consulta con `--debug`: los candidatos válidos
+deben tener contenido y cualquier `missing_content` residual debe quedar visible
+como omisión, sin desplazar evidencia posterior. No es necesario cambiar
+`top_k`, el modelo de embeddings ni la política predeterminada.
 
 ## Reproducir el benchmark
 

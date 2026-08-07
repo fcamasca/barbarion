@@ -3,11 +3,18 @@
 import sqlite3
 from pathlib import Path
 
-from barbarion.application.rag import IndexService
+from barbarion.application.rag import IndexService, SearchService
 from barbarion.config import load_settings
 from barbarion.database import initialize_database
 from barbarion.domain.progress import ProgressSnapshot
-from barbarion.domain.rag import EmbeddingRunMode, EmbeddingRunStatus, IndexScope
+from barbarion.domain.rag import (
+    EmbeddingRunMode,
+    EmbeddingRunStatus,
+    IndexScope,
+    RetrievalFilter,
+    RetrievalMode,
+    SearchRequest,
+)
 from barbarion.infrastructure.embeddings import DeterministicFakeEmbeddingProvider
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
@@ -137,6 +144,32 @@ def seed_chunks(path: Path) -> None:
         connection.commit()
 
 
+def replace_ingested_chunks(path: Path) -> None:
+    """Simula una reingesta que reemplaza IDs y activa cascadas de metadata."""
+    with sqlite3.connect(path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("DELETE FROM chunks")
+        connection.execute(
+            """
+            INSERT INTO chunks(
+                id, document_id, ordinal, chunk_type, content, content_sha256,
+                start_line, end_line, object_type, object_name, metadata_json,
+                chunker_version, created_at
+            )
+            VALUES
+                ('chunk-current-1', 1, 0, 'procedure', 'contenido vigente uno', ?, 1, 2, 'procedure', 'current_one', '{}', '2', ?),
+                ('chunk-current-2', 1, 1, 'procedure', 'contenido vigente dos', ?, 3, 4, 'procedure', 'current_two', '{}', '2', ?)
+            """,
+            (
+                "e" * 64,
+                "2026-01-02T00:00:00+00:00",
+                "f" * 64,
+                "2026-01-02T00:00:00+00:00",
+            ),
+        )
+        connection.commit()
+
+
 def service_for(tmp_path: Path, provider: CountingProvider | None = None) -> tuple[IndexService, CountingProvider]:
     db_path = tmp_path / "barbarion.db"
     initialize_database(db_path)
@@ -176,6 +209,72 @@ def test_index_service_skips_unchanged_without_embedding_calls(tmp_path: Path) -
     assert second.unchanged_chunks == 2
     assert second.new_chunks == 0
     assert provider.calls == 0
+
+
+def test_reingest_then_reindex_prunes_orphans_and_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    service, provider = service_for(tmp_path)
+    first = service.run()
+    assert first.new_chunks == 2
+    replace_ingested_chunks(tmp_path / "barbarion.db")
+
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM chunk_embeddings"
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM rag_vectors"
+        ).fetchone() == (2,)
+
+    second = service.run()
+
+    assert second.status == EmbeddingRunStatus.COMPLETED
+    assert second.new_chunks == 2
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        assert connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM rag_vectors AS vector
+            LEFT JOIN chunks AS chunk ON chunk.id = vector.chunk_id
+            WHERE chunk.id IS NULL
+            """
+        ).fetchone() == (0,)
+        assert connection.execute("SELECT COUNT(*) FROM rag_vectors").fetchone() == (2,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM chunk_embeddings WHERE status = 'indexed'"
+        ).fetchone() == (2,)
+
+    search = SearchService(
+        settings=service.settings,
+        repository=service.repository,
+        embedding_provider=provider,
+        vector_store=service.vector_store,
+    ).search(
+        SearchRequest(
+            query="contenido vigente",
+            mode=RetrievalMode.SEMANTIC,
+            filters=RetrievalFilter(domain="default"),
+            top_k=2,
+            candidate_k=2,
+            similarity_threshold=0.0,
+            vector_weight=0.65,
+            keyword_weight=0.35,
+        )
+    )
+    assert {candidate.chunk_id for candidate in search.candidates} == {
+        "chunk-current-1",
+        "chunk-current-2",
+    }
+    assert all(candidate.source.get("content") for candidate in search.candidates)
+
+    object.__setattr__(provider, "calls", 0)
+    third = service.run()
+
+    assert third.unchanged_chunks == 2
+    assert provider.calls == 0
+    with sqlite3.connect(tmp_path / "barbarion.db") as connection:
+        assert connection.execute("SELECT COUNT(*) FROM rag_vectors").fetchone() == (2,)
 
 
 def test_index_service_dry_run_does_not_write_or_embed(tmp_path: Path) -> None:

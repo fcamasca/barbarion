@@ -158,6 +158,23 @@ class SQLiteVecStore:
             )
             connection.commit()
 
+    def prune_orphans(self) -> int:
+        """Elimina vectores que una reingesta dejo sin chunk vigente."""
+        self.ensure_schema()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"""
+                DELETE FROM {self._vector_table}
+                WHERE NOT EXISTS (
+                      SELECT 1
+                      FROM chunks
+                      WHERE chunks.id = {self._vector_table}.chunk_id
+                  )
+                """
+            )
+            connection.commit()
+            return max(0, cursor.rowcount)
+
     def search(
         self,
         *,

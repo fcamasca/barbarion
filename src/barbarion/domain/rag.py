@@ -396,12 +396,15 @@ class ContextSource:
     token_estimate: int
     original_token_estimate: int = 0
     content_truncated: bool = False
+    overlap_trimmed_chars: int = 0
+    overlap_trimmed_from_chunk_id: str | None = None
 
     def __post_init__(self) -> None:
         _require_non_empty(self.source_id, "source_id")
         _require_non_empty(self.content, "content")
         _require_non_negative(self.token_estimate, "token_estimate")
         _require_non_negative(self.original_token_estimate, "original_token_estimate")
+        _require_non_negative(self.overlap_trimmed_chars, "overlap_trimmed_chars")
 
 
 @dataclass(frozen=True, slots=True)

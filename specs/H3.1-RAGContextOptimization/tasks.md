@@ -145,8 +145,8 @@ relevance-first.
 **Estado:** completada.
 **Objetivo:** evitar que orden documental o procedencia consuman presupuesto sin
 comparacion global.  
-**Descripcion:** seleccionar por score/relevancia, penalizar duplicados exactos
-y overlap demostrado, y aplicar desempates deterministas; ordenar para
+**Descripcion:** ordenar por relevancia dentro de cada familia, fusionar por
+rango relativo, penalizar duplicados exactos y aplicar desempates deterministas; ordenar para
 presentacion despues. Integrar candidatos H3 y H4.1 sin perder trazabilidad ni
 citas. Cobertura y diversidad se miden en el benchmark, pero no gobiernan esta
 politica inicial. Mantener politica baseline elegible para comparacion.  
@@ -157,16 +157,16 @@ candidato.
 **Checkpoint:** tests con top-k, structured/chunks, scores, empates y fuente unica.
 
 **Evidencia:** `reports/h31/t07-relevance-first.json`/`.md`. La politica opt-in
-`optimized_v1` compara globalmente `combined_score`, aplica dedupe exacto antes
-de gastar `top_k`, desempata por `chunk_id` y ordena para presentacion despues
-de seleccionar. `relevant-at-six` pasa de cobertura `0`/`insufficient` a
-`1`/`completed`; selected-source recall, fact coverage y citation recall suben
-`0.111111`, sin regresion en recall@5, recall@10, MRR, precision ni validez de
-citas. No incorpora diversidad semantica, cobertura inteligente ni reranker.
+`optimized_v1` conserva el `combined_score` original, pero no lo compara como
+absoluto entre H3/H4.1: transforma la posicion dentro de cada familia a rango
+relativo y fusiona despues. Aplica dedupe exacto antes de `top_k`, desempates
+deterministas y orden de presentacion posterior. `relevant-at-six` y el nuevo
+caso sintetico `mixed-family-competition` pasan de cobertura `0` a `1`, sin
+regresion de retrieval o citas. No incorpora diversidad semantica ni reranker.
 
 ### H3.1-T08 - Reducir overlap demostrable
 
-**Estado:** completada — `trim_overlap_v1` diferido.
+**Estado:** reabierta y completada — `trim_overlap_v1` implementado.
 **Objetivo:** evitar repetir contenido sin eliminar hechos.  
 **Descripcion:** decidir con evidencia de T03/T04 si se activa `trim_overlap_v1`.
 Si se activa, recortar solo segmentos contiguos demostrables, conservar rangos
@@ -178,12 +178,12 @@ y documentar la decision.
 **Checkpoint:** tests de overlap real, similitud accidental, codigo repetitivo,
 documentos distintos y citas por rango.
 
-**Decision:** no implementar trim de overlap en H3.1. T04 midio solo `27`
-caracteres/`7` tokens estimados de overlap (`0.277%` del prompt), mientras T07
-demostro una mejora funcional material corrigiendo seleccion. Se conserva el
-diagnostico `report_only` y se reevaluara solo ante evidencia reproducible de
-impacto material, sin fijar un umbral arbitrario. Evidencia:
-`reports/h31/t08-overlap-decision.md`.
+**Decision revisada:** T04 justifico inicialmente diferir el trim con solo `27`
+caracteres/`7` tokens estimados. Una validacion autorizada posterior midio
+`2,446` caracteres/`612` tokens estimados repetidos y reabrio T08. La politica
+`trim_overlap_v1` recorta solo igualdad exacta sufijo/prefijo, mismo documento y
+continuidad de rangos; conserva trazabilidad, reasigna el presupuesto liberado y
+no usa similitud aproximada. Evidencia: `reports/h31/t08-overlap-decision.md`.
 
 ### H3.1-T09 - Extender observabilidad, CLI y reportes
 
@@ -261,6 +261,22 @@ No inventar uso real si un proveedor no fue ejecutado.
 **Resultado esperado:** ACCEPTED, REJECTED o aceptacion condicionada explicita.  
 **Requisitos:** todos.  
 **Checkpoint:** `acceptance.md` respaldado por artefactos reproducibles.
+
+**Puerta correctiva previa:** una ejecucion real posterior a T11 detecto
+candidatos vectoriales sin chunk vigente. Antes de T12 se corrigio el consumo
+prematuro de `top_k` en `optimized_v1` y la limpieza de vectores huerfanos en
+reindexado global. La cobertura sintetica demuestra backfill, trazabilidad
+`missing_content`, dedupe, presupuesto, desempates, reingesta/reindexado,
+recuperacion de contenido e idempotencia. Esta correccion no completa T12, no
+promueve `optimized_v1` y no crea `acceptance.md`.
+
+Una segunda validacion mostro dos escalas no calibradas H3/H4.1 y `612` tokens
+locales estimados de overlap exacto. La correccion conserva scores originales,
+fusiona por rango relativo de familia y reabre T08 para activar trim exacto con
+continuidad demostrable. El fixture publico
+`tests/fixtures/h31_mixed_family_benchmark.json` y el benchmark H3.1 cubren la
+puerta; matriz de consumidores `316 passed, 11 skipped` y suite completa
+`906 passed, 14 skipped`. T12 permanece pendiente.
 
 ## 3. Orden de implementacion
 

@@ -5,7 +5,7 @@ Schema: `h31_observability_v1`. Estimador: `chars4_v1`.
 | Politica | Generation tokens est. | Repair tokens est. | Seleccion | Hechos | Citas |
 |---|---:|---:|---:|---:|---:|
 | `baseline_v1` | 2523 | 154 | 0.888889 | 0.888889 | 0.888889 |
-| `optimized_v1` | 2522 | 154 | 1.0 | 1.0 | 1.0 |
+| `optimized_v1` | 2515 | 154 | 1.0 | 1.0 | 1.0 |
 
 ## Uso real
 

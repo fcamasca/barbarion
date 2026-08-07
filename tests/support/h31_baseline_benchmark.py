@@ -119,6 +119,22 @@ def _run_policy(dataset: dict[str, Any], *, policy: str) -> dict[str, Any]:
                 case["diagnostics"]["overlap_chars"] for case in cases
             ),
             "overlap_tokens_est_local": redundancy_tokens,
+            **(
+                {
+                    "trimmed_overlap_chars": sum(
+                        case["diagnostics"].get("trimmed_overlap_chars", 0)
+                        for case in cases
+                    ),
+                    "trimmed_overlap_tokens_est_local": sum(
+                        case["diagnostics"].get(
+                            "trimmed_overlap_tokens_est_local", 0
+                        )
+                        for case in cases
+                    ),
+                }
+                if policy == "optimized_v1"
+                else {}
+            ),
             "redundancy_prompt_tokens_est_local": redundancy_tokens,
             "redundancy_share_of_generation_prompt": round(
                 redundancy_tokens / generation_tokens if generation_tokens else 0.0,
@@ -177,10 +193,20 @@ def _run_case(
     expected_ids = tuple(dict.fromkeys(fact["chunk_id"] for fact in expected_facts))
     retrieved_ids = tuple(candidate.chunk_id for candidate in candidates)
     if selection_policy == "optimized_v1":
+        structured_candidates = tuple(
+            candidate
+            for candidate in candidates
+            if candidate.source.get("evidence_kind") == "structured_symbol"
+        )
+        chunk_candidates = tuple(
+            candidate
+            for candidate in candidates
+            if candidate.source.get("evidence_kind") != "structured_symbol"
+        )
         selected_candidates, candidate_selection = (
             _select_ask_candidates_relevance_first(
-                (),
-                candidates,
+                structured_candidates,
+                chunk_candidates,
                 limit=top_k,
                 dedupe_min_hash_prefix=16,
             )
@@ -261,6 +287,14 @@ def _run_case(
             else "not_cited"
         )
         evidence_decisions.append(row)
+    diagnostics = _plain_value(context.debug["redundancy_report"])
+    if selection_policy == "baseline_v1":
+        for key in (
+            "trimmed_overlap_pairs",
+            "trimmed_overlap_chars",
+            "trimmed_overlap_tokens_est_local",
+        ):
+            diagnostics.pop(key, None)
     return {
         "id": case["id"],
         "category": case["category"],
@@ -288,7 +322,7 @@ def _run_case(
         "repair": repair,
         "evidence_decisions": evidence_decisions,
         "candidate_selection": [dict(decision) for decision in candidate_selection],
-        "diagnostics": _plain_value(context.debug["redundancy_report"]),
+        "diagnostics": diagnostics,
     }
 
 
@@ -617,9 +651,11 @@ def _t07_comparison(
         "baseline_policy": baseline["policy"],
         "optimized_policy": optimized["policy"],
         "algorithm": {
-            "primary": "combined_score_desc",
+            "primary": "family_relative_rank_desc",
+            "original_score_preserved": True,
+            "families": ["chunks", "structured"],
             "exact_dedupe": True,
-            "tie_break": "chunk_id_asc",
+            "tie_break": "chunks_then_structured_then_chunk_id",
             "presentation_order_after_selection": True,
             "semantic_diversity": False,
             "new_reranker": False,
@@ -647,6 +683,17 @@ def _t07_comparison(
             "optimized_status": optimized_cases["relevant-at-six"]["result_status"],
             "optimized_candidate_selection": optimized_cases["relevant-at-six"][
                 "candidate_selection"
+            ],
+        },
+        "overlap": {
+            "baseline_tokens_est_local": baseline["metrics"][
+                "overlap_tokens_est_local"
+            ],
+            "optimized_residual_tokens_est_local": optimized["metrics"][
+                "overlap_tokens_est_local"
+            ],
+            "optimized_trimmed_tokens_est_local": optimized["metrics"][
+                "trimmed_overlap_tokens_est_local"
             ],
         },
         "quality_gate": {
@@ -696,8 +743,9 @@ def _render_t07_markdown(report: dict[str, Any]) -> str:
             "",
             "## Alcance",
             "",
-            "`optimized_v1` ordena globalmente por `combined_score`, evita duplicados",
-            "exactos antes de gastar `top_k`, desempata por `chunk_id` y ordena para",
+            "`optimized_v1` ordena cada familia por su score original, transforma la",
+            "posicion a rango relativo y fusiona ambas senales antes de `top_k`.",
+            "Conserva el score original, evita duplicados exactos y ordena para",
             "presentacion despues de seleccionar. No agrega diversidad semantica,",
             "cobertura inteligente, embeddings adicionales ni reranker.",
             "",

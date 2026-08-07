@@ -137,9 +137,9 @@ sin cambiar seleccion baseline.
 
 ### H3.1-TP-007 - Trim conservador
 
-Si se implementa T08, comprobar que solo se recorta interseccion demostrable,
-no se pierden hechos esperados, rango original/enviado es trazable y contenido
-final coincide con la cita.
+Comprobar que solo se recorta interseccion exacta demostrable del mismo
+documento con continuidad de rangos, no se pierden hechos esperados, el ahorro
+es trazable y el presupuesto liberado puede incorporar evidencia posterior.
 
 ### H3.1-TP-008 - Presupuesto completo
 
@@ -154,9 +154,11 @@ Casos:
 
 ### H3.1-TP-009 - Seleccion relevance-first
 
-Una fuente de score alto no puede ser desplazada solo por `document_id`; empates
-son deterministas; duplicados y overlap demostrado reciben la penalizacion
-definida; una fuente unica no se elimina por similitud aproximada.
+Una fuente de score alto no puede ser desplazada solo por `document_id`; los
+scores originales de H3/H4.1 se conservan pero se comparan por rango relativo
+dentro de su familia; empates son deterministas; una fuente unica no se elimina
+por similitud aproximada. Incluir un caso mixto donde evidencia estructurada
+especifica compite con chunks documentales fuertes.
 
 ### H3.1-TP-010 - IDs y citas
 

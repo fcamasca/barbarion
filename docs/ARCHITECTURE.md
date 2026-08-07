@@ -431,11 +431,16 @@ fuentes. Los contadores reales opcionales se etiquetan `provider_*_tokens` y
 nunca se derivan de `chars4_v1`. La CLI los presenta en stderr; SQLite conserva
 su esquema vigente y los reportes versionados usan solo agregados sinteticos.
 La selección `baseline_v1` continúa como default. `optimized_v1` es opt-in,
-requiere el presupuesto estimado del input completo y prioriza score global con
-desempate determinista antes de ordenar la presentación. El benchmark demostró
-que esta selección, y no el overlap marginal, explica la mejora material. La
+requiere el presupuesto estimado del input completo y fusiona rangos relativos
+de las familias H3/H4.1 sin alterar sus scores originales. Usa desempates
+deterministas antes de ordenar la presentación. `trim_overlap_v1` recorta solo
+igualdad sufijo/prefijo con documento y continuidad de rangos demostrables. La
 guía operativa y de métricas está en
 [`H31-RAG-CONTEXT.md`](H31-RAG-CONTEXT.md).
+Los candidatos sin contenido materializable se trazan como `missing_content`
+antes de gastar `top_k` en `optimized_v1`. En un indexado global con limpieza
+habilitada, el adaptador vectorial elimina entradas cuyo `chunk_id` ya no existe;
+los alcances parciales no aplican esa limpieza global.
 
 ## 9. Estrategia de pruebas
 

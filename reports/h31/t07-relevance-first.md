@@ -19,7 +19,8 @@
 
 ## Alcance
 
-`optimized_v1` ordena globalmente por `combined_score`, evita duplicados
-exactos antes de gastar `top_k`, desempata por `chunk_id` y ordena para
+`optimized_v1` ordena cada familia por su score original, transforma la
+posicion a rango relativo y fusiona ambas senales antes de `top_k`.
+Conserva el score original, evita duplicados exactos y ordena para
 presentacion despues de seleccionar. No agrega diversidad semantica,
 cobertura inteligente, embeddings adicionales ni reranker.

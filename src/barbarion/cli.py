@@ -2225,6 +2225,8 @@ def _render_h31_observability(value: object) -> None:
             "exact_duplicate_prompt_tokens_est_local",
             "overlap_chars",
             "overlap_tokens_est_local",
+            "trimmed_overlap_chars",
+            "trimmed_overlap_tokens_est_local",
         ):
             print(f"redundancy_{key}={redundancy.get(key)}", file=sys.stderr)
     citation = value.get("citation_coverage")
@@ -2260,11 +2262,19 @@ def _render_decision_metrics(prefix: str, value: object) -> None:
     for decision in value:
         if not isinstance(decision, Mapping):
             continue
+        family = decision.get("selection_family")
+        relative_score = decision.get("selection_relative_score")
+        family_trace = (
+            f" family={family} relative_score={relative_score}"
+            if family is not None
+            else ""
+        )
         print(
             f"{prefix}_decision chunk_id={decision.get('chunk_id')} "
             f"action={decision.get('action')} "
             f"reasons={_format_debug_list(decision.get('reasons'))} "
-            f"score={decision.get('combined_score')}",
+            f"score={decision.get('combined_score')}"
+            f"{family_trace}",
             file=sys.stderr,
         )
 

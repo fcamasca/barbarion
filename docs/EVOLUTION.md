@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: especificada para revisión; implementación no iniciada.
+Estado: implementación iniciada; H3.1-T01 baseline completada.
 
 Pregunta que responde:
 

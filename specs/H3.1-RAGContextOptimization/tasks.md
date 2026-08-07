@@ -12,13 +12,14 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: especificado para revision; implementacion no iniciada.
+Estado actual del hito: implementacion iniciada. H3.1-T01 completada;
+H3.1-T02 a H3.1-T12 pendientes.
 
 ## 2. Tareas
 
 ### H3.1-T01 - Caracterizar y congelar la baseline vigente
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** demostrar el comportamiento anterior a cualquier optimizacion.  
 **Descripcion:** crear pruebas de caracterizacion para retrieval por modo,
 fusion, merge estructurado, orden, dedupe, truncado, presupuesto de contexto,
@@ -29,6 +30,10 @@ prompt inicial, reparacion, citas y debug. Registrar defaults y algoritmos como
 **Requisitos:** REQ-001, REQ-009, REQ-014; NFR-002.  
 **Checkpoint:** tests de caracterizacion H3/H4.1 y `git diff` sin cambios de
 algoritmo productivo.
+
+**Evidencia:** `reports/h31/baseline-v1.json` y
+`reports/h31/baseline-v1.md`; 9 pruebas baseline y 72 pruebas de regresion
+focalizada aprobadas. No se modifico ningun archivo bajo `src/`.
 
 ### H3.1-T02 - Modelar composicion y tamanos del prompt
 

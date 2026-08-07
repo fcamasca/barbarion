@@ -1,0 +1,106 @@
+{
+  "baseline_id": "h31-baseline-v1",
+  "status": "characterized-not-optimized",
+  "scope": "H3.1-T01",
+  "source_of_truth": {
+    "application": "src/barbarion/application/rag.py",
+    "domain": "src/barbarion/domain/rag.py",
+    "configuration": "src/barbarion/config.py"
+  },
+  "defaults": {
+    "retrieval": {
+      "mode": "hybrid",
+      "top_k": 10,
+      "candidate_k": 40,
+      "similarity_threshold": 0.2,
+      "vector_weight": 0.7,
+      "keyword_weight": 0.3
+    },
+    "rag": {
+      "context_token_budget": 6000,
+      "max_chunk_tokens": 1200,
+      "dedupe_min_hash_prefix": 16,
+      "include_snippets": true
+    },
+    "token_estimator": {
+      "id": "chars4-current-unversioned",
+      "formula": "max(1, ceil(characters / 4))"
+    }
+  },
+  "retrieval_characterization": {
+    "query": "order_total (fixture sintetico H3)",
+    "semantic_order": ["chunk-2", "chunk-1"],
+    "keyword_order": ["chunk-2"],
+    "hybrid_order": ["chunk-2", "chunk-1"],
+    "hybrid_deduplicates_by": "chunk_id",
+    "hybrid_ranking": "per-channel normalization plus configured weighted sum",
+    "cross_encoder_reranker": false
+  },
+  "ask_merge_characterization": {
+    "input_structured": ["structured"],
+    "input_chunks": ["high-chunk", "structured"],
+    "limit": 2,
+    "output": ["structured", "high-chunk"],
+    "rule": "structured candidates precede chunks; duplicate chunk_id is omitted"
+  },
+  "context_characterization": {
+    "input": ["highest", "document-first", "duplicate", "below"],
+    "selected_order": ["document-first", "highest"],
+    "omitted": [
+      {"chunk_id": "below", "reason": "threshold"},
+      {"chunk_id": "duplicate", "reason": "duplicate"}
+    ],
+    "token_budget_est_local": 80,
+    "max_chunk_tokens_est_local": 4,
+    "rendered_context_tokens_est_local": 48,
+    "rendered_context_chars": 191,
+    "truncated_sources": 2,
+    "rendered_context_sha256": "287dc51309bb13728803c8aa9b3a6d9f93fa60845a107a1f3a07899fd3729fe8",
+    "ordering_rule": "structured first, then document_id, ordinal, score descending and chunk_id",
+    "dedupe_rule": "chunk_id or configured content_sha256 prefix",
+    "partial_overlap_detection": false
+  },
+  "prompt_characterization": {
+    "question": "Que evidencia existe?",
+    "generation_chars": 942,
+    "repair_chars": 640,
+    "generation_sha256": "8275ed041cc3d8de6001056d9bbdf9b55bcdec08faf33fdd33ee908dd18d15a9",
+    "repair_sha256": "d0fcae51103419dd21a987a3ac18d165abf687eed66d3ca6a4e6e4b4c34659c2",
+    "repair_resends_question_and_context": true,
+    "repair_adds_rejected_answer": true
+  },
+  "citation_characterization": {
+    "allowed_ids_come_from_final_context": true,
+    "unknown_source_id_is_rejected": true,
+    "answer_without_valid_inline_citation_is_rejected": true
+  },
+  "debug_characterization": {
+    "size_metrics": [
+      "sources",
+      "retrieved_chunks",
+      "reranked_chunks",
+      "context_chars",
+      "context_tokens_est",
+      "prompt_chars",
+      "prompt_tokens_est",
+      "truncated_sources"
+    ],
+    "prompt_and_response_are_ephemeral_when_debug_is_explicit": true,
+    "prompt_and_response_are_not_persisted_in_sqlite": true
+  },
+  "historical_h12_observation": {
+    "prompt_tokens_est_local": 6190,
+    "provider_input_tokens": 10198,
+    "provider_output_tokens": 529,
+    "provider_total_tokens": 10727,
+    "input_difference_real_minus_estimate": 4008,
+    "exact_component_breakdown_available": false,
+    "interpretation": "aggregate observation only; it is not a synthetic benchmark expectation"
+  },
+  "optimization": {
+    "enabled": false,
+    "new_budget": null,
+    "overlap_trimming": false,
+    "relevance_first_selection": false
+  }
+}

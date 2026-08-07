@@ -417,6 +417,10 @@ def test_input_budget_returns_insufficient_without_calling_llm_when_overhead_doe
     assert result.no_llm is True
     assert fake_llm.prompts == []
     assert result.debug["input_budget"]["result"] == "fixed_overhead_exceeds_budget"
+    assert result.debug["observability"]["generation"] is None
+    assert result.debug["observability"]["input_budget"]["result"] == (
+        "fixed_overhead_exceeds_budget"
+    )
 
 
 def test_repair_is_not_called_when_its_complete_prompt_exceeds_input_budget(
@@ -953,6 +957,14 @@ def test_ask_debug_reports_size_metrics_without_context_dump(tmp_path) -> None:
     assert result.debug["prompt_chars"] > result.debug["context_chars"]
     assert result.debug["llm_timeout_seconds"] > 0
     assert result.debug["truncated_sources"] == 0
+    observability = result.debug["observability"]
+    assert observability["schema_version"] == "h31_observability_v1"
+    assert observability["selection_policy"] == "baseline_v1"
+    assert observability["estimator_id"] == "chars4_v1"
+    assert observability["generation"]["tokens_est_local"] == result.debug[
+        "prompt_composition"
+    ]["tokens_est_local"]
+    assert observability["provider_usage"] is None
     assert "order_total :=" not in str(dict(result.debug))
 
 
@@ -972,6 +984,7 @@ def test_ask_debug_does_not_persist_prompts_or_responses(tmp_path) -> None:
     )
 
     assert "secret=visible" in result.debug["llm_response"]
+    assert "secret=visible" not in str(result.debug["observability"])
     with sqlite3.connect(tmp_path / "barbarion.db") as connection:
         dump = "\n".join(connection.iterdump())
     assert "secret=visible" not in dump

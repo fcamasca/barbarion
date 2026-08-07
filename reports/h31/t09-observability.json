@@ -1,0 +1,202 @@
+{
+  "dataset_id": "h31-synthetic-baseline-v1",
+  "estimator_id": "chars4_v1",
+  "input_budget": {
+    "configured_tokens_est_local": null,
+    "coverage": 0.0,
+    "reason": "offline benchmark does not impose an arbitrary input budget"
+  },
+  "policies": {
+    "baseline_v1": {
+      "decisions_by_action": {
+        "omitted": 1,
+        "selected": 20,
+        "truncated": 0
+      },
+      "generation": {
+        "chars": 10077,
+        "components": {
+          "instructions": {
+            "chars": 5448,
+            "tokens_est_local": 1364,
+            "utf8_bytes": 5448
+          },
+          "output_format": {
+            "chars": 918,
+            "tokens_est_local": 234,
+            "utf8_bytes": 918
+          },
+          "question": {
+            "chars": 467,
+            "tokens_est_local": 118,
+            "utf8_bytes": 489
+          },
+          "source_content": {
+            "chars": 1163,
+            "tokens_est_local": 299,
+            "utf8_bytes": 1181
+          },
+          "source_metadata": {
+            "chars": 2081,
+            "tokens_est_local": 539,
+            "utf8_bytes": 2081
+          }
+        },
+        "tokens_est_local": 2523,
+        "utf8_bytes": 10117
+      },
+      "quality": {
+        "citation_recall": 0.888889,
+        "fact_coverage": 0.888889,
+        "selected_source_recall": 0.888889
+      },
+      "redundancy": {
+        "exact_duplicate_count": 1,
+        "overlap_chars": 27,
+        "overlap_tokens_est_local": 7
+      },
+      "repair": {
+        "chars": 615,
+        "components": {
+          "instructions": {
+            "chars": 337,
+            "tokens_est_local": 85,
+            "utf8_bytes": 337
+          },
+          "output_format": {
+            "chars": 20,
+            "tokens_est_local": 5,
+            "utf8_bytes": 20
+          },
+          "question": {
+            "chars": 52,
+            "tokens_est_local": 13,
+            "utf8_bytes": 54
+          },
+          "rejected_answer": {
+            "chars": 51,
+            "tokens_est_local": 13,
+            "utf8_bytes": 51
+          },
+          "source_content": {
+            "chars": 46,
+            "tokens_est_local": 12,
+            "utf8_bytes": 46
+          },
+          "source_metadata": {
+            "chars": 109,
+            "tokens_est_local": 29,
+            "utf8_bytes": 109
+          }
+        },
+        "request_count": 1,
+        "tokens_est_local": 154,
+        "utf8_bytes": 617
+      }
+    },
+    "optimized_v1": {
+      "decisions_by_action": {
+        "omitted": 0,
+        "selected": 20,
+        "truncated": 0
+      },
+      "generation": {
+        "chars": 10075,
+        "components": {
+          "instructions": {
+            "chars": 5448,
+            "tokens_est_local": 1364,
+            "utf8_bytes": 5448
+          },
+          "output_format": {
+            "chars": 918,
+            "tokens_est_local": 234,
+            "utf8_bytes": 918
+          },
+          "question": {
+            "chars": 467,
+            "tokens_est_local": 118,
+            "utf8_bytes": 489
+          },
+          "source_content": {
+            "chars": 1155,
+            "tokens_est_local": 297,
+            "utf8_bytes": 1173
+          },
+          "source_metadata": {
+            "chars": 2087,
+            "tokens_est_local": 541,
+            "utf8_bytes": 2087
+          }
+        },
+        "tokens_est_local": 2522,
+        "utf8_bytes": 10115
+      },
+      "quality": {
+        "citation_recall": 1.0,
+        "fact_coverage": 1.0,
+        "selected_source_recall": 1.0
+      },
+      "redundancy": {
+        "exact_duplicate_count": 0,
+        "overlap_chars": 27,
+        "overlap_tokens_est_local": 7
+      },
+      "repair": {
+        "chars": 615,
+        "components": {
+          "instructions": {
+            "chars": 337,
+            "tokens_est_local": 85,
+            "utf8_bytes": 337
+          },
+          "output_format": {
+            "chars": 20,
+            "tokens_est_local": 5,
+            "utf8_bytes": 20
+          },
+          "question": {
+            "chars": 52,
+            "tokens_est_local": 13,
+            "utf8_bytes": 54
+          },
+          "rejected_answer": {
+            "chars": 51,
+            "tokens_est_local": 13,
+            "utf8_bytes": 51
+          },
+          "source_content": {
+            "chars": 46,
+            "tokens_est_local": 12,
+            "utf8_bytes": 46
+          },
+          "source_metadata": {
+            "chars": 109,
+            "tokens_est_local": 29,
+            "utf8_bytes": 109
+          }
+        },
+        "request_count": 1,
+        "tokens_est_local": 154,
+        "utf8_bytes": 617
+      }
+    }
+  },
+  "privacy": {
+    "contains_prompts": false,
+    "contains_questions": false,
+    "contains_responses": false,
+    "contains_source_content": false,
+    "persistence": "versioned synthetic aggregates only"
+  },
+  "provider_usage": {
+    "coverage": 0.0,
+    "provider_input_tokens": null,
+    "provider_output_tokens": null,
+    "provider_total_tokens": null,
+    "reason": "offline benchmark does not call a remote provider",
+    "request_count": null
+  },
+  "report_id": "h31-t09-observability-v1",
+  "schema_version": "h31_observability_v1"
+}

@@ -239,6 +239,14 @@ candidatos globalmente por score antes de gastar `top_k` o presupuesto y usa
 documental solo se aplican para presentar las fuentes ya seleccionadas. No usa
 un reranker nuevo ni diversidad semantica.
 
+Con `ask --debug`, la seccion `H3.1 OBSERVABILITY` usa el schema
+`h31_observability_v1` y muestra politica, `estimator_id`, composicion de
+generation/repair, presupuesto, decisiones, redundancia y cobertura de citas.
+No copia esos datos al JSON de respuesta ni los persiste en SQLite. Cuando
+Anthropic devuelve uso real, stderr incluye ademas `provider_input_tokens`,
+`provider_output_tokens`, `provider_total_tokens` y `provider_request_count`;
+un contador ausente no se convierte en cero ni se infiere desde `chars4_v1`.
+
 ### models
 
 Proposito: descubrir, instalar, validar, seleccionar y comparar modelos

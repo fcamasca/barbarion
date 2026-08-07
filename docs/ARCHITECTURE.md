@@ -423,6 +423,14 @@ Para un MVP local basta con:
 
 No se requiere una plataforma de métricas, trazas distribuidas ni telemetría remota.
 
+H3.1 agrega `h31_observability_v1` como resumen efimero y seguro para comparar
+politicas RAG. Contiene composicion y estimacion local por solicitud, presupuesto,
+decisiones de candidatos, redundancia y cobertura de citas; generation y repair
+permanecen separadas. No contiene pregunta, prompt, respuesta ni contenido de
+fuentes. Los contadores reales opcionales se etiquetan `provider_*_tokens` y
+nunca se derivan de `chars4_v1`. La CLI los presenta en stderr; SQLite conserva
+su esquema vigente y los reportes versionados usan solo agregados sinteticos.
+
 ## 9. Estrategia de pruebas
 
 - **Unitarias:** chunking, checksums, parsers, filtros, renderers y validadores de citas.

@@ -459,6 +459,130 @@ def write_t07_comparison(
     (output_dir / "t07-relevance-first.md").write_text(
         _render_t07_markdown(report), encoding="utf-8"
     )
+    observability = _t09_observability_report(baseline, optimized)
+    (output_dir / "t09-observability.json").write_text(
+        json.dumps(observability, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "t09-observability.md").write_text(
+        _render_t09_markdown(observability), encoding="utf-8"
+    )
+
+
+def _t09_observability_report(
+    baseline: dict[str, Any],
+    optimized: dict[str, Any],
+) -> dict[str, Any]:
+    def policy_summary(result: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "generation": {
+                "chars": result["metrics"]["generation_prompt_chars_total"],
+                "utf8_bytes": result["metrics"][
+                    "generation_prompt_utf8_bytes_total"
+                ],
+                "tokens_est_local": result["metrics"][
+                    "generation_prompt_tokens_est_local_total"
+                ],
+                "components": result["generation_components"],
+            },
+            "repair": {
+                "request_count": result["metrics"]["repair_prompt_count"],
+                "chars": result["metrics"]["repair_prompt_chars_total"],
+                "utf8_bytes": result["metrics"][
+                    "repair_prompt_utf8_bytes_total"
+                ],
+                "tokens_est_local": result["metrics"][
+                    "repair_prompt_tokens_est_local_total"
+                ],
+                "components": result["repair_components"],
+            },
+            "decisions_by_action": _decision_counts(result["cases"]),
+            "redundancy": {
+                "exact_duplicate_count": result["metrics"][
+                    "exact_duplicate_pairs"
+                ],
+                "overlap_chars": result["metrics"]["overlap_chars"],
+                "overlap_tokens_est_local": result["metrics"][
+                    "overlap_tokens_est_local"
+                ],
+            },
+            "quality": {
+                "selected_source_recall": result["metrics"][
+                    "selected_source_recall"
+                ],
+                "fact_coverage": result["metrics"]["fact_coverage"],
+                "citation_recall": result["metrics"]["citation_recall"],
+            },
+        }
+
+    return {
+        "report_id": "h31-t09-observability-v1",
+        "schema_version": "h31_observability_v1",
+        "dataset_id": baseline["dataset_id"],
+        "estimator_id": baseline["estimator_id"],
+        "policies": {
+            "baseline_v1": policy_summary(baseline),
+            "optimized_v1": policy_summary(optimized),
+        },
+        "input_budget": {
+            "configured_tokens_est_local": None,
+            "coverage": 0.0,
+            "reason": "offline benchmark does not impose an arbitrary input budget",
+        },
+        "provider_usage": {
+            "provider_input_tokens": None,
+            "provider_output_tokens": None,
+            "provider_total_tokens": None,
+            "request_count": None,
+            "coverage": 0.0,
+            "reason": "offline benchmark does not call a remote provider",
+        },
+        "privacy": {
+            "contains_questions": False,
+            "contains_prompts": False,
+            "contains_responses": False,
+            "contains_source_content": False,
+            "persistence": "versioned synthetic aggregates only",
+        },
+    }
+
+
+def _render_t09_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# H3.1-T09 - Observabilidad comparable",
+        "",
+        f"Schema: `{report['schema_version']}`. Estimador: `{report['estimator_id']}`.",
+        "",
+        "| Politica | Generation tokens est. | Repair tokens est. | Seleccion | Hechos | Citas |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for policy, values in report["policies"].items():
+        lines.append(
+            f"| `{policy}` | {values['generation']['tokens_est_local']} | "
+            f"{values['repair']['tokens_est_local']} | "
+            f"{values['quality']['selected_source_recall']} | "
+            f"{values['quality']['fact_coverage']} | "
+            f"{values['quality']['citation_recall']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Uso real",
+            "",
+            "El benchmark es offline: los campos `provider_*_tokens` permanecen",
+            "`null` y la cobertura es `0.0`. No se infieren contadores reales desde",
+            "`chars4_v1`.",
+            "",
+            "## Privacidad y formatos",
+            "",
+            "El reporte contiene solo agregados sinteticos. No incluye preguntas,",
+            "prompts, respuestas ni contenido de fuentes. La CLI mantiene respuestas",
+            "JSON limpias y emite observabilidad detallada solo por stderr con",
+            "`--debug`.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _t07_comparison(

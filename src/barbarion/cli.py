@@ -2120,6 +2120,8 @@ def _render_ask_diagnostics(
     _render_prompt_composition_metrics(debug.get("prompt_composition"))
     print("", file=sys.stderr)
 
+    _render_h31_observability(debug.get("observability"))
+
     print("=== CHUNKS ===", file=sys.stderr)
     for source in result.context.sources:
         _render_ask_debug_chunk(source)
@@ -2173,6 +2175,96 @@ def _render_prompt_composition_metrics(value: object) -> None:
             f"chars={component.get('chars')} "
             f"utf8_bytes={component.get('utf8_bytes')} "
             f"tokens_est_local={component.get('tokens_est_local')}",
+            file=sys.stderr,
+        )
+
+
+def _render_h31_observability(value: object) -> None:
+    """Renderiza el resumen H3.1 sin revelar texto controlado o evidencia."""
+    if not isinstance(value, Mapping):
+        return
+    print("=== H3.1 OBSERVABILITY ===", file=sys.stderr)
+    for key in ("schema_version", "selection_policy", "estimator_id"):
+        print(f"{key}={value.get(key)}", file=sys.stderr)
+    context = value.get("context")
+    if isinstance(context, Mapping):
+        for key in (
+            "selected_sources",
+            "omitted_candidates",
+            "chars",
+            "tokens_est_local",
+        ):
+            print(f"context_{key}={context.get(key)}", file=sys.stderr)
+    for stage in ("generation", "repair"):
+        composition = value.get(stage)
+        if not isinstance(composition, Mapping):
+            print(f"{stage}_tokens_est_local=null", file=sys.stderr)
+            continue
+        print(
+            f"{stage}_chars={composition.get('chars')} "
+            f"{stage}_utf8_bytes={composition.get('utf8_bytes')} "
+            f"{stage}_tokens_est_local={composition.get('tokens_est_local')}",
+            file=sys.stderr,
+        )
+    budget = value.get("input_budget")
+    if isinstance(budget, Mapping):
+        for key in (
+            "configured_tokens_est_local",
+            "fixed_overhead_tokens_est_local",
+            "evidence_budget_tokens_est_local",
+            "final_prompt_tokens_est_local",
+            "result",
+        ):
+            print(f"input_budget_{key}={budget.get(key)}", file=sys.stderr)
+    _render_decision_metrics("candidate", value.get("candidate_selection"))
+    _render_decision_metrics("context", value.get("context_decisions"))
+    redundancy = value.get("redundancy")
+    if isinstance(redundancy, Mapping):
+        for key in (
+            "exact_duplicate_count",
+            "exact_duplicate_prompt_tokens_est_local",
+            "overlap_chars",
+            "overlap_tokens_est_local",
+        ):
+            print(f"redundancy_{key}={redundancy.get(key)}", file=sys.stderr)
+    citation = value.get("citation_coverage")
+    if isinstance(citation, Mapping):
+        print(
+            "citation_coverage "
+            f"selected={citation.get('selected_source_count')} "
+            f"cited={citation.get('cited_source_count')} "
+            "uncited_ids="
+            f"{_format_debug_list(citation.get('uncited_selected_source_ids'))}",
+            file=sys.stderr,
+        )
+    provider_usage = value.get("provider_usage")
+    if isinstance(provider_usage, Mapping):
+        for key in (
+            "provider_input_tokens",
+            "provider_output_tokens",
+            "provider_total_tokens",
+            "provider_request_count",
+            "provider_elapsed_seconds",
+        ):
+            metric = provider_usage.get(key)
+            print(
+                f"{key}={'null' if metric is None else metric}",
+                file=sys.stderr,
+            )
+    print("", file=sys.stderr)
+
+
+def _render_decision_metrics(prefix: str, value: object) -> None:
+    if not isinstance(value, (list, tuple)):
+        return
+    for decision in value:
+        if not isinstance(decision, Mapping):
+            continue
+        print(
+            f"{prefix}_decision chunk_id={decision.get('chunk_id')} "
+            f"action={decision.get('action')} "
+            f"reasons={_format_debug_list(decision.get('reasons'))} "
+            f"score={decision.get('combined_score')}",
             file=sys.stderr,
         )
 
@@ -2565,11 +2657,15 @@ def _render_anthropic_usage(service: object) -> None:
     if usage is None or not _has_token_usage(usage):
         return
     if usage.input_tokens is not None:
+        print(f"provider_input_tokens={usage.input_tokens}", file=sys.stderr)
         print(f"Input tokens : {usage.input_tokens:,}", file=sys.stderr)
     if usage.output_tokens is not None:
+        print(f"provider_output_tokens={usage.output_tokens}", file=sys.stderr)
         print(f"Output tokens: {usage.output_tokens:,}", file=sys.stderr)
     if usage.total_tokens is not None:
+        print(f"provider_total_tokens={usage.total_tokens}", file=sys.stderr)
         print(f"Total tokens : {usage.total_tokens:,}", file=sys.stderr)
+    print(f"provider_request_count={usage.request_count}", file=sys.stderr)
     print(f"Elapsed time : {usage.elapsed_seconds:.2f}s", file=sys.stderr)
 
 

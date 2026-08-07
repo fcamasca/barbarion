@@ -2267,6 +2267,17 @@ class AskService:
         )
         if budget_has_insufficient_evidence and input_budget_debug is not None:
             input_budget_debug["result"] = "insufficient_evidence"
+        if debug:
+            base_debug_payload["observability"] = _ask_observability_summary(
+                context=context,
+                policy=self.settings.rag.context_selection_policy,
+                candidate_selection=candidate_selection_debug,
+                input_budget=input_budget_debug,
+                generation=None,
+                repair=None,
+                citation_coverage=None,
+                provider_usage=None,
+            )
         if not context.sources or budget_has_insufficient_evidence:
             answer = _insufficient_evidence_answer()
             self.search_service.repository.update_rag_query_metrics(
@@ -2431,6 +2442,16 @@ class AskService:
                 debug_payload.setdefault("repair_prompt_composition", None)
                 debug_payload["repair_response"] = None
                 debug_payload["repair_validation"] = None
+            debug_payload["observability"] = _ask_observability_summary(
+                context=context,
+                policy=self.settings.rag.context_selection_policy,
+                candidate_selection=candidate_selection_debug,
+                input_budget=input_budget_debug,
+                generation=debug_payload.get("prompt_composition"),
+                repair=debug_payload.get("repair_prompt_composition"),
+                citation_coverage=debug_payload.get("citation_coverage"),
+                provider_usage=_provider_usage_debug(self.llm_provider),
+            )
         self.search_service.repository.update_rag_query_metrics(
             query_id=search.query_id,
             context_sources=len(context.sources),
@@ -2787,6 +2808,56 @@ def _ask_debug_payload(
         ),
         "context_builder": dict(context.debug),
         "search": dict(search.debug),
+    }
+
+
+def _ask_observability_summary(
+    *,
+    context: ContextBuildResult,
+    policy: str,
+    candidate_selection: object,
+    input_budget: object,
+    generation: object,
+    repair: object,
+    citation_coverage: object,
+    provider_usage: object,
+) -> dict[str, object]:
+    """Construye una vista comparable sin prompt, pregunta ni contenido."""
+    context_debug = dict(context.debug)
+    return {
+        "schema_version": "h31_observability_v1",
+        "selection_policy": policy,
+        "estimator_id": TOKEN_ESTIMATOR_ID,
+        "candidate_selection": candidate_selection or (),
+        "context_decisions": context_debug.get("evidence_decisions", ()),
+        "redundancy": context_debug.get("redundancy_report"),
+        "input_budget": input_budget,
+        "generation": generation,
+        "repair": repair,
+        "citation_coverage": citation_coverage,
+        "context": {
+            "selected_sources": len(context.sources),
+            "omitted_candidates": len(context.omitted),
+            "chars": len(context.rendered_context),
+            "tokens_est_local": context.token_estimate,
+        },
+        "provider_usage": provider_usage,
+    }
+
+
+def _provider_usage_debug(provider: object) -> dict[str, object] | None:
+    snapshot = getattr(provider, "usage_snapshot", None)
+    if not callable(snapshot):
+        return None
+    usage = snapshot()
+    if usage is None:
+        return None
+    return {
+        "provider_input_tokens": getattr(usage, "input_tokens", None),
+        "provider_output_tokens": getattr(usage, "output_tokens", None),
+        "provider_total_tokens": getattr(usage, "total_tokens", None),
+        "provider_request_count": getattr(usage, "request_count", None),
+        "provider_elapsed_seconds": getattr(usage, "elapsed_seconds", None),
     }
 
 

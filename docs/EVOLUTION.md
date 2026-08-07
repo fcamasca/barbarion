@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T08 completadas.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T09 completadas.
 
 Pregunta que responde:
 
@@ -301,6 +301,12 @@ T08 se cierra con una decisión explícita de diferimiento: no se implementa
 justifican manipular contenido y rangos. El diagnóstico `report_only` permanece
 disponible y la decisión solo se reevaluará ante nueva evidencia reproducible y
 material.
+
+T09 añade el resumen seguro `h31_observability_v1` y un reporte comparable entre
+`baseline_v1` y `optimized_v1`. La CLI expone métricas estructurales y estimadas
+en stderr con `--debug`, y etiqueta por separado el uso real opcional del
+proveedor. JSON normal y SQLite conservan sus contratos de privacidad; no se
+persisten prompts, respuestas, preguntas ni contenido.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

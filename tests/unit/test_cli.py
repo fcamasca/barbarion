@@ -1126,6 +1126,51 @@ def _ask_debug_payload(
         "repair_prompt": None,
         "repair_response": None,
         "repair_validation": None,
+        "observability": {
+            "schema_version": "h31_observability_v1",
+            "selection_policy": "optimized_v1",
+            "estimator_id": "chars4_v1",
+            "candidate_selection": (
+                {
+                    "chunk_id": "chunk-safe",
+                    "action": "selected",
+                    "reasons": ("relevance",),
+                    "combined_score": 0.9,
+                },
+            ),
+            "context_decisions": (),
+            "redundancy": {
+                "exact_duplicate_count": 0,
+                "exact_duplicate_prompt_tokens_est_local": 0,
+                "overlap_chars": 0,
+                "overlap_tokens_est_local": 0,
+            },
+            "input_budget": {
+                "configured_tokens_est_local": 9000,
+                "fixed_overhead_tokens_est_local": 180,
+                "evidence_budget_tokens_est_local": 8820,
+                "final_prompt_tokens_est_local": 10,
+                "result": "fits",
+            },
+            "generation": {
+                "chars": len(prompt),
+                "utf8_bytes": len(prompt.encode("utf-8")),
+                "tokens_est_local": 10,
+            },
+            "repair": None,
+            "citation_coverage": {
+                "selected_source_count": 1,
+                "cited_source_count": 1 if valid else 0,
+                "uncited_selected_source_ids": () if valid else ("F1",),
+            },
+            "context": {
+                "selected_sources": 1,
+                "omitted_candidates": 0,
+                "chars": 20,
+                "tokens_est_local": 5,
+            },
+            "provider_usage": None,
+        },
     }
     if repair_attempted:
         repair_response = "Respuesta reparada [F1]" if repair_valid else "Sin cita"
@@ -1199,6 +1244,10 @@ def test_anthropic_debug_distinguishes_local_estimate_from_actual_usage(
     assert "Input tokens : 10,198" in captured.err
     assert "Output tokens: 612" in captured.err
     assert "Total tokens : 10,810" in captured.err
+    assert "provider_input_tokens=10198" in captured.err
+    assert "provider_output_tokens=612" in captured.err
+    assert "provider_total_tokens=10810" in captured.err
+    assert "provider_request_count=1" in captured.err
     assert "Elapsed time : 6.17s" in captured.err
 
 
@@ -1277,6 +1326,12 @@ def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
     assert "embedding_provider=ollama" in captured.err
     assert "mode=hybrid" in captured.err
     assert "retrieved_chunks=3" in captured.err
+    assert "=== H3.1 OBSERVABILITY ===" in captured.err
+    assert "selection_policy=optimized_v1" in captured.err
+    assert "estimator_id=chars4_v1" in captured.err
+    assert "candidate_decision chunk_id=chunk-safe" in captured.err
+    assert "input_budget_configured_tokens_est_local=9000" in captured.err
+    assert "generation_tokens_est_local=10" in captured.err
     assert "[F1] score=0.800" in captured.err
     assert "validation: PASS" in captured.err
     assert "final_result: ACCEPTED" in captured.err

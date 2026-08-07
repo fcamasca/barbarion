@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T08
-completadas; H3.1-T09 a H3.1-T12 pendientes. T08 fue completada mediante una
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T09
+completadas; H3.1-T10 a H3.1-T12 pendientes. T08 fue completada mediante una
 decision explicita de diferimiento basada en la baseline.
 
 ## 2. Tareas
@@ -187,7 +187,7 @@ impacto material, sin fijar un umbral arbitrario. Evidencia:
 
 ### H3.1-T09 - Extender observabilidad, CLI y reportes
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** hacer comparables runs sin exponer contenido.  
 **Descripcion:** mostrar resumen estructural y estimado; integrar uso real opcional
 por solicitud/run; decidir persistencia segura de agregados; extender JSON/text
@@ -196,6 +196,15 @@ y benchmark. Mantener contenido solo en debug explicito y no persistido.
 **Resultado esperado:** baseline/optimized comparables con cobertura de metricas.  
 **Requisitos:** REQ-003, REQ-004, REQ-006, REQ-012, REQ-014.  
 **Checkpoint:** tests SQLite/logs/canarios, nulls, generacion y reparacion.
+
+**Evidencia:** schema seguro `h31_observability_v1` en memoria/debug y reportes
+`reports/h31/t09-observability.json`/`.md`. Expone politica, estimador,
+composicion separada de generation/repair, presupuesto, decisiones, redundancia
+y citas sin copiar pregunta, prompt, respuesta o contenido. La CLI mantiene JSON
+limpio, renderiza el detalle por stderr con `--debug` y etiqueta uso Anthropic
+real como `provider_input_tokens`, `provider_output_tokens` y
+`provider_total_tokens`; valores ausentes permanecen `null`/no se muestran. No
+se amplía persistencia SQLite: solo se versionan agregados sinteticos.
 
 ### H3.1-T10 - Validar regresion funcional y consumidores
 

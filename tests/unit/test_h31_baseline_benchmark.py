@@ -110,6 +110,8 @@ def test_committed_reports_are_exactly_reproducible(tmp_path: Path) -> None:
         "t04-redundancy-report.md",
         "t07-relevance-first.json",
         "t07-relevance-first.md",
+        "t09-observability.json",
+        "t09-observability.md",
     ):
         assert (tmp_path / name).read_bytes() == (REPORT_DIR / name).read_bytes()
 
@@ -141,6 +143,8 @@ def test_versioned_artifacts_do_not_contain_private_path_or_secret_canaries() ->
         ROOT / DEFAULT_DATASET,
         REPORT_DIR / "t03-baseline.json",
         REPORT_DIR / "t03-baseline.md",
+        REPORT_DIR / "t09-observability.json",
+        REPORT_DIR / "t09-observability.md",
     )
     forbidden = (
         "C:\\Users\\",

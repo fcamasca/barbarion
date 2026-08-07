@@ -286,6 +286,13 @@ para que los empates compartan `relative_score` y conserva la coincidencia
 exacta de identificador como senal trazable de precision. No cambia `top_k`, el
 presupuesto de `4500`, `baseline_v1` ni el estado pendiente de T12.
 
+La misma consulta expuso despues un falso negativo del validador de citas:
+`ROUND(...,2)` no respaldaba lexicalmente la frase "redondea a 2 decimales".
+La puerta previa a T12 incorpora solo inferencias sintacticas directas,
+enumeracion completa de identificadores y limites literales verificables de la
+fuente. Las afirmaciones inventadas, ausencias contradichas y contradicciones
+generales permanecen rechazadas. No cambia retrieval, presupuesto ni politicas.
+
 ## 3. Orden de implementacion
 
 ```mermaid

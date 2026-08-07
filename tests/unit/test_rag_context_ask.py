@@ -266,6 +266,72 @@ def test_citation_validator_rejects_valid_citation_with_unsupported_content() ->
     assert "no respaldadas" in validation.reason
 
 
+@pytest.mark.parametrize(
+    ("content", "answer"),
+    (
+        (
+            "VAL_FORMULA=ROUND(([@NOM_OPERACION_DIA] * [@TASA_CUPON]),2)",
+            "El resultado final se redondea a 2 decimales mediante ROUND [F1].",
+        ),
+        (
+            "VAL_FORMULA=ROUND(([@NOM_OPERACION_DIA] * [@TASA_CUPON]),2)",
+            "La formula usa NOM_OPERACION_DIA y TASA_CUPON [F1].",
+        ),
+        (
+            "des_variable=provision diaria para la operacion vigente",
+            "La descripcion corresponde a una provision diaria de la operacion [F1].",
+        ),
+        (
+            "VAL_FORMULA=ROUND([@IMPORTE] * [@TASA],2)",
+            "La evidencia no especifica la moneda del importe [F1].",
+        ),
+    ),
+)
+def test_citation_validator_accepts_direct_formula_and_evidence_claims(
+    content: str,
+    answer: str,
+) -> None:
+    context = ContextBuilder(
+        token_budget=200,
+        max_chunk_tokens=100,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9, content=content),))
+
+    validation = CitationValidator().validate(answer, context)
+
+    assert validation.valid is True
+    assert validation.unsupported_claims == ()
+
+
+@pytest.mark.parametrize(
+    ("content", "answer"),
+    (
+        (
+            "VAL_FORMULA=ROUND([@IMPORTE] * [@TASA],2)",
+            "La evidencia no especifica el redondeo [F1].",
+        ),
+        (
+            "VAL_FORMULA=ROUND([@IMPORTE] * [@TASA],2)",
+            "La formula usa IMPORTE, TASA y BONIFICACION_SECRETA [F1].",
+        ),
+    ),
+)
+def test_citation_validator_rejects_false_limitation_and_invented_claim(
+    content: str,
+    answer: str,
+) -> None:
+    context = ContextBuilder(
+        token_budget=200,
+        max_chunk_tokens=100,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9, content=content),))
+
+    validation = CitationValidator().validate(answer, context)
+
+    assert validation.valid is False
+    assert validation.unsupported_claims
+
+
 def test_citation_validator_rejects_answer_contradicted_by_context() -> None:
     context = ContextBuilder(
         token_budget=100,

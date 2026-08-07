@@ -133,3 +133,17 @@ credenciales ni contenido de corpus reales. Los reportes agregan métricas y
 razones seguras: no persisten preguntas, prompts, respuestas ni contenido de
 fuentes. Una ejecución con un corpus privado debe conservar sus artefactos fuera
 de Git y revisar cualquier dato antes de publicarlo.
+
+## Validación de inferencias directas
+
+La validación de citas continúa siendo estricta para afirmaciones positivas.
+Además del soporte léxico, reconoce inferencias sintácticas cerradas y
+reproducibles, como `ROUND(expresión, 2)` expresado como “redondea a 2
+decimales”. Una enumeración de variables solo es válida si todos sus
+identificadores aparecen en la fuente citada.
+
+Las frases de limitación deben referirse explícitamente a “la evidencia” o “la
+fuente” y describir una ausencia comprobable en ese texto. Si el concepto está
+presente literalmente o mediante un patrón sintáctico conocido, el claim
+negativo falla. Esta excepción no desactiva la detección de contradicciones ni
+autoriza inferencias semánticas abiertas.

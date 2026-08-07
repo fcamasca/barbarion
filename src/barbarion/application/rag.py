@@ -3277,6 +3277,9 @@ def _unsupported_claims(
         source.source_id: _important_tokens(source.content)
         for source in context.sources
     }
+    source_contents = {
+        source.source_id: source.content for source in context.sources
+    }
     unsupported: list[str] = []
     for claim, source_ids in _cited_claims(answer):
         if _is_insufficient_evidence_answer(claim):
@@ -3287,7 +3290,15 @@ def _unsupported_claims(
         cited_tokens = set().union(
             *(source_tokens.get(source_id, set()) for source_id in source_ids)
         )
-        if not _claim_supported(claim_tokens, cited_tokens):
+        cited_content = "\n".join(
+            source_contents.get(source_id, "") for source_id in source_ids
+        )
+        if not _claim_supported(
+            claim_tokens,
+            cited_tokens,
+            claim=_strip_citations(claim),
+            source_content=cited_content,
+        ):
             unsupported.append(_compact_claim(claim))
     return tuple(unsupported)
 
@@ -3344,7 +3355,13 @@ def _cited_claims(answer: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
     return tuple(claims)
 
 
-def _claim_supported(claim_tokens: set[str], source_tokens: set[str]) -> bool:
+def _claim_supported(
+    claim_tokens: set[str],
+    source_tokens: set[str],
+    *,
+    claim: str = "",
+    source_content: str = "",
+) -> bool:
     """Evalua soporte lexical minimo entre una afirmacion y sus fuentes.
 
     Args:
@@ -3356,6 +3373,15 @@ def _claim_supported(claim_tokens: set[str], source_tokens: set[str]) -> bool:
     """
     if not source_tokens:
         return False
+    if _justified_evidence_limitation(claim, source_content):
+        return True
+    if _direct_formula_syntax_support(claim, source_content):
+        return True
+    claim_identifiers = _query_identifiers(claim)
+    if claim_identifiers:
+        source_identifiers = _identifier_tokens(source_content)
+        if not claim_identifiers <= source_identifiers:
+            return False
     unique_terms = {
         token
         for token in claim_tokens
@@ -3365,6 +3391,56 @@ def _claim_supported(claim_tokens: set[str], source_tokens: set[str]) -> bool:
         return bool(unique_terms & source_tokens)
     overlap = claim_tokens & source_tokens
     return len(overlap) >= min(2, len(claim_tokens))
+
+
+def _direct_formula_syntax_support(claim: str, source_content: str) -> bool:
+    """Acepta solo inferencias mecanicas explicitas desde sintaxis de formulas."""
+    normalized_claim = _normalize_text(claim)
+    normalized_source = _normalize_text(source_content)
+    describes_rounding = bool(
+        re.search(r"\bredonde[a-z]*\b", normalized_claim)
+        and re.search(r"\b2\s+decimal(?:es)?\b", normalized_claim)
+    )
+    has_round_two = bool(
+        re.search(r"\bround\s*\([\s\S]*,\s*2\s*\)", normalized_source)
+    )
+    return describes_rounding and has_round_two
+
+
+def _justified_evidence_limitation(claim: str, source_content: str) -> bool:
+    """Valida ausencias literales acotadas al texto de una fuente citada."""
+    normalized_claim = _normalize_text(claim)
+    match = re.search(
+        r"\b(?:la\s+)?(?:evidencia|fuente)(?:\s+citada)?\s+no\s+"
+        r"(?:especifica|indica|explica|detalla|menciona|contiene)\s+(.+)$",
+        normalized_claim,
+    )
+    if match is None:
+        return False
+    target_tokens = _important_tokens(match.group(1)) - {
+        "evidencia",
+        "fuente",
+        "citada",
+        "utiliza",
+        "utilizada",
+    }
+    if not target_tokens:
+        return False
+    source_tokens = _important_tokens(source_content)
+    if target_tokens & source_tokens:
+        return False
+    semantic_presence = {
+        "redondeo": r"\bround\s*\(",
+        "decimal": r"\bround\s*\([\s\S]*,\s*\d+\s*\)",
+        "decimales": r"\bround\s*\([\s\S]*,\s*\d+\s*\)",
+        "variables": r"[@%][a-z0-9_]+",
+        "formula": r"(?:\bround\s*\(|[@%][a-z0-9_]+|[+*/-])",
+    }
+    normalized_source = _normalize_text(source_content)
+    return not any(
+        token in target_tokens and re.search(pattern, normalized_source)
+        for token, pattern in semantic_presence.items()
+    )
 
 
 def _important_tokens(text: str) -> set[str]:

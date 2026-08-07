@@ -278,9 +278,11 @@ presenta capability como configuracion efectiva ni estimacion como verificacion.
 
 ### H3.2-NFR-007 - Compatibilidad
 
-Se preservan Ollama local, Ollama cloud derivado como remoto, Anthropic, `--no-llm`,
-H3, H3.1, H4.1 y la factoria cerrada. Los defaults legacy locales siguen
-funcionando; un destino remoto queda sujeto al nuevo gate.
+Se preservan Ollama local, Ollama cloud derivado como remoto, Anthropic,
+`--no-llm`, H3, H3.1, H4.1 y la factoria cerrada. Las configuraciones legacy
+siguen cargando, pero un daemon Ollama ambiguo resuelve `unknown` hasta declarar
+el override minimo; no se sacrifica fail-closed para conservar una suposicion
+historica de localidad.
 
 ### H3.2-NFR-008 - Datos publicables
 

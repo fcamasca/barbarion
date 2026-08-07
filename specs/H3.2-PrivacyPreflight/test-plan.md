@@ -90,9 +90,11 @@ Fingerprint depende solo de target/policy y operation ID, nunca de contenido.
 Rechaza autorizacion remota con NOT_APPLICABLE, evidencia vencida o identidad
 incompleta.
 
-### H3.2-TP-007 - Ollama local legacy
+### H3.2-TP-007 - Ollama local declarado
 
-Config existente resuelve local/local_runtime sin nombre de modelo especial.
+Un transporte Ollama ambiguo con `execution=local` resuelve
+local/local_runtime sin usar el nombre del modelo. Sin override, incluso
+loopback resuelve `unknown` porque el daemon puede offloadear al cloud.
 
 ### H3.2-TP-008 - Ollama cloud
 

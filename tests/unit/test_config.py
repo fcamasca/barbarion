@@ -584,6 +584,14 @@ def test_anthropic_llm_accepts_explicit_output_limit(tmp_path: Path) -> None:
             '[llm]\nprovider = "anthropic"\nmax_output_tokens = true\n',
             "llm.max_output_tokens",
         ),
+        (
+            '[llm]\nprovider = "anthropic"\nexecution = "local"\n',
+            "API directa de Anthropic",
+        ),
+        (
+            '[llm]\nprovider = "ollama"\nexecution = "automatic"\n',
+            "llm.execution",
+        ),
     ],
 )
 def test_llm_provider_specific_fields_are_rejected(

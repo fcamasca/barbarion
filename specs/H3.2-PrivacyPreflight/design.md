@@ -167,8 +167,8 @@ los campos de contratos ya controlados por Barbarion:
 
 | Señal efectiva | execution | provider | platform | offering |
 |---|---|---|---|---|
-| Ollama local legacy | local | ollama | local_runtime | null |
-| Ollama cloud declarada | remote | ollama | ollama_cloud | valor configurado/opcional |
+| Ollama declarado local ante transporte ambiguo | local | ollama | local_runtime | null |
+| Ollama cloud directo o declarado remoto | remote | ollama | ollama_cloud | valor configurado/opcional |
 | Anthropic directo | remote | anthropic | direct_api | valor configurado/opcional |
 
 Propuesta TOML minima:
@@ -193,8 +193,9 @@ operador, validado y visible en debug.
 
 Compatibilidad:
 
-- config Ollama existente deriva local/local_runtime cuando endpoint y runtime
-  lo demuestran;
+- config Ollama existente sigue cargando, pero un daemon sin señal fiable deriva
+  `unknown`; `execution=local` es el override minimo cuando el operador controla
+  y garantiza el runtime;
 - Anthropic deriva remoto/direct API en composicion;
 - Ollama cloud deriva remoto/ollama_cloud desde metadata operativa fiable, no
   desde el nombre del modelo;

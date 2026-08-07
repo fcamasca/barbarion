@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 y H3.2-T02
-completadas; T03-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T03
+completadas; T04-T13 pendientes.
 
 ## 2. Tareas
 
@@ -56,16 +56,23 @@ configuracion ni IO. La regresion focal aprobo 168 pruebas. No se modificaron
 
 ### H3.2-T03 - Resolver configuracion efectiva local/remota
 
-**Estado:** pendiente.  
+**Estado:** completada.  
 **Objetivo:** derivar Ollama local, Ollama cloud y Anthropic directo.  
 **Archivos/componentes esperados:** `config.py`, composicion CLI, TOML temporal,
 tests de config/factoria.  
-**Descripcion:** derivar `execution`/`platform` desde adaptador, endpoint y
-metadata fiable; agregar un override avanzado solo para ambiguedad, `offering`
-cuando aplique y `[privacy]` con allowlist opcional.  
-**Pruebas:** H3.2-TP-007..010, INT-002.  
+**Descripcion:** derivar `execution`/`platform` desde provider y endpoint; agregar
+solo `llm.execution` como override opcional ante transporte Ollama ambiguo. No
+agregar aun `[privacy]`, offering, registry, cache ni evaluacion strict.  
+**Pruebas:** H3.2-TP-007..009, INT-002.  
 **Dependencias:** T02.  
 **Checkpoint:** ningun nombre de modelo decide execution o politica.
+
+**Evidencia:** `src/barbarion/application/privacy.py`, extension compatible de
+`LlmSettings`, `tests/unit/test_h32_inference_target_resolution.py`,
+`tests/integration/test_h32_inference_target_config.py` y
+`reports/h32/t03-target-resolution.md`. La suite completa aprobo 953 pruebas con
+14 skips. T03 no consulta politicas, registry, cache ni integra el gate en
+`AskService`.
 
 ### H3.2-T04 - Implementar evaluadores puros strict
 
@@ -75,7 +82,7 @@ cuando aplique y `[privacy]` con allowlist opcional.
 parametrizados.  
 **Descripcion:** evaluar no-training, retencion y ubicacion; resolver evidencia
 incondicional, condicional, conflictiva, expirada y account-specific.  
-**Pruebas:** H3.2-TP-011..019.  
+**Pruebas:** H3.2-TP-010..019.  
 **Dependencias:** T02.  
 **Checkpoint:** toda combinacion remota que contenga FAIL/UNKNOWN bloquea.
 
@@ -216,8 +223,8 @@ pero T08 no comienza hasta que ambos comportamientos esten definidos.
 |---|---|---|
 | T01 | REQ-010, REQ-013, REQ-014 | TP-001..002, INT-001 |
 | T02 | REQ-001, REQ-007, REQ-008 | TP-003..006 |
-| T03 | REQ-001..003 | TP-007..010, INT-002 |
-| T04 | REQ-006..008 | TP-011..019 |
+| T03 | REQ-001 | TP-007..009, INT-002 |
+| T04 | REQ-003, REQ-006..008 | TP-010..019 |
 | T05 | REQ-004, REQ-005, REQ-011 | TP-020..024 |
 | T06 | REQ-009 | TP-025..032, INT-003 |
 | T07 | REQ-006, REQ-007 | TP-033..037 |

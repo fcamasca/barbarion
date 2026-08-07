@@ -65,6 +65,9 @@ include_snippets = true
 # Backend generativo predeterminado y local. Valores admitidos: ollama, anthropic.
 provider = "ollama"
 model = "llama3.1:8b"
+# Ollama local y Ollama Cloud comparten API. Si el endpoint no demuestra la
+# frontera, declara solo este override minimo; nunca se infiere por el modelo:
+execution = "local"
 timeout_seconds = 600.0
 temperature = 0.1
 # Desactiva el razonamiento interno en modelos compatibles para reducir latencia.

@@ -247,6 +247,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "rag.include_snippets",
         "llm.provider",
         "llm.model",
+        "llm.execution",
         "llm.timeout_seconds",
         "llm.temperature",
         "llm.max_output_tokens",
@@ -270,6 +271,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
     assert "rag.context_token_budget = 6000" in lines
     assert "rag.input_token_budget_est = no configurado" in lines
     assert "rag.context_selection_policy = baseline_v1" in lines
+    assert "llm.execution = auto" in lines
     assert "llm.max_output_tokens = no configurado" in lines
     assert "data_driven.enabled = false" in lines
     assert list(tmp_path.iterdir()) == [source]

@@ -99,6 +99,7 @@ _DEFAULT_RAG: dict[str, object] = {
 _DEFAULT_LLM: dict[str, object] = {
     "provider": "ollama",
     "model": "llama3.1:8b",
+    "execution": None,
     "timeout_seconds": 120.0,
     "temperature": 0.1,
     "think": None,
@@ -252,6 +253,7 @@ class LlmSettings:
     model: str
     timeout_seconds: float
     temperature: float
+    execution: str | None = None
     think: bool | None = None
     num_ctx: int | None = None
     max_output_tokens: int | None = None
@@ -491,6 +493,10 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("rag.include_snippets", str(settings.rag.include_snippets).lower()),
         ("llm.provider", settings.llm.provider),
         ("llm.model", settings.llm.model),
+        (
+            "llm.execution",
+            "auto" if settings.llm.execution is None else settings.llm.execution,
+        ),
         ("llm.timeout_seconds", str(settings.llm.timeout_seconds)),
         ("llm.temperature", str(settings.llm.temperature)),
         (
@@ -933,10 +939,23 @@ def _build_llm_settings(value: object) -> LlmSettings:
         "llm.provider",
         {"ollama", "anthropic"},
     )
+    execution = (
+        None
+        if values["execution"] is None
+        else _validate_choice(
+            values["execution"],
+            "llm.execution",
+            {"local", "remote"},
+        )
+    )
     think = _validate_optional_bool(values["think"], "llm.think")
     num_ctx = _validate_optional_positive_int(values["num_ctx"], "llm.num_ctx")
 
     if provider == "anthropic":
+        if execution == "local":
+            raise ConfigError(
+                "La API directa de Anthropic no admite 'llm.execution = local'."
+            )
         if think is not None:
             raise ConfigError(
                 "La clave 'llm.think' solo es compatible con el proveedor Ollama."
@@ -970,6 +989,7 @@ def _build_llm_settings(value: object) -> LlmSettings:
             "llm.timeout_seconds",
         ),
         temperature=_validate_unit_float(values["temperature"], "llm.temperature"),
+        execution=execution,
         think=think,
         num_ctx=num_ctx,
         max_output_tokens=max_output_tokens,

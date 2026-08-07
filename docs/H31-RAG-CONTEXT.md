@@ -22,8 +22,13 @@ fue reabierta y `trim_overlap_v1` quedó implementado de forma conservadora.
 
 `optimized_v1` no incorpora reranker, diversidad semántica ni inferencia de
 hechos. El score original permanece visible para trazabilidad, pero no se
-compara directamente entre familias. Los empates de rango relativo usan una
-regla estable y el orden documental se aplica después para presentar fuentes.
+compara directamente entre familias. Los candidatos empatados dentro de una
+familia comparten rango denso y `relative_score`: el orden incidental ya no
+crea percentiles distintos. Si la consulta contiene literalmente un
+identificador compuesto, su coincidencia exacta con la identidad de un símbolo
+estructurado se conserva como `selection_exact_identifier_match`; esta señal
+de precisión desempata frente a nombres solo parciales. El orden documental se
+aplica después para presentar fuentes.
 
 ## Presupuesto y medición
 

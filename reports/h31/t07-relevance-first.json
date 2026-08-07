@@ -32,6 +32,7 @@
         "reasons": [
           "relevance"
         ],
+        "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 0,
         "selection_relative_score": 1.0
@@ -44,6 +45,7 @@
         "reasons": [
           "relevance"
         ],
+        "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 2,
         "selection_relative_score": 0.6
@@ -56,6 +58,7 @@
         "reasons": [
           "relevance"
         ],
+        "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 3,
         "selection_relative_score": 0.4
@@ -68,6 +71,7 @@
         "reasons": [
           "relevance"
         ],
+        "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 4,
         "selection_relative_score": 0.19999999999999996
@@ -80,6 +84,7 @@
         "reasons": [
           "top_k"
         ],
+        "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 5,
         "selection_relative_score": 0.0
@@ -92,6 +97,7 @@
         "reasons": [
           "relevance"
         ],
+        "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 1,
         "selection_relative_score": 0.8

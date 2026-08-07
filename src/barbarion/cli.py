@@ -2264,8 +2264,12 @@ def _render_decision_metrics(prefix: str, value: object) -> None:
             continue
         family = decision.get("selection_family")
         relative_score = decision.get("selection_relative_score")
+        exact_identifier_match = decision.get(
+            "selection_exact_identifier_match"
+        )
         family_trace = (
             f" family={family} relative_score={relative_score}"
+            f" exact_identifier_match={exact_identifier_match}"
             if family is not None
             else ""
         )

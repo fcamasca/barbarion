@@ -10,6 +10,7 @@ from barbarion.application.rag import (
     _select_ask_candidates_relevance_first,
 )
 from barbarion.domain.rag import RetrievalCandidate
+from barbarion.domain.rag import SymbolMetadata
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +24,7 @@ def _candidate(
     document_id: int = 1,
     ordinal: int = 0,
     evidence_kind: str | None = None,
+    symbol_name: str | None = None,
 ) -> RetrievalCandidate:
     text = content or f"evidencia de {chunk_id}"
     source: dict[str, object] = {
@@ -37,6 +39,7 @@ def _candidate(
         chunk_id=chunk_id,
         content_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         combined_score=score,
+        metadata=SymbolMetadata(symbol_name=symbol_name),
         source=source,
     )
 
@@ -239,6 +242,89 @@ def test_relevance_ties_are_broken_deterministically_by_chunk_id() -> None:
 
     assert [item.chunk_id for item in first] == ["alpha", "zeta"]
     assert [item.chunk_id for item in second] == ["alpha", "zeta"]
+
+
+def test_exact_identifier_wins_tied_structured_candidates_under_mixed_budget() -> None:
+    question = "como se calcula PROV_INT_DIA_GOMEF y que variables intervienen"
+    related = (
+        _candidate(
+            "structured-related-z",
+            0.7199344685007878,
+            content="z" * 80,
+            evidence_kind="structured_symbol",
+            symbol_name="mci_variables.prov_int_acum_mes_ant_gomef.1",
+        ),
+        _candidate(
+            "structured-exact",
+            0.7199344685007878,
+            content="e" * 80,
+            evidence_kind="structured_symbol",
+            symbol_name="mci_variables.prov_int_dia_gomef.1",
+        ),
+        _candidate(
+            "structured-related-a",
+            0.7199344685007878,
+            content="a" * 80,
+            evidence_kind="structured_symbol",
+            symbol_name="mci_variables.prov_int_acum_dia_ajust_gomef.1",
+        ),
+    )
+    chunks = (
+        _candidate("chunk-strong", 0.95, content="c" * 80, document_id=2),
+        _candidate("chunk-second", 0.80, content="d" * 80, document_id=3),
+    )
+
+    first, first_decisions = _select_ask_candidates_relevance_first(
+        related,
+        chunks,
+        limit=4,
+        dedupe_min_hash_prefix=16,
+        question=question,
+    )
+    second, second_decisions = _select_ask_candidates_relevance_first(
+        tuple(reversed(related)),
+        tuple(reversed(chunks)),
+        limit=4,
+        dedupe_min_hash_prefix=16,
+        question=question,
+    )
+
+    assert [candidate.chunk_id for candidate in first] == [
+        "structured-exact",
+        "chunk-strong",
+        "chunk-second",
+        "structured-related-a",
+    ]
+    assert [candidate.chunk_id for candidate in second] == [
+        "structured-exact",
+        "chunk-strong",
+        "chunk-second",
+        "structured-related-a",
+    ]
+    for decisions in (first_decisions, second_decisions):
+        by_chunk = {decision["chunk_id"]: decision for decision in decisions}
+        assert by_chunk["structured-exact"]["selection_exact_identifier_match"] is True
+        assert by_chunk["structured-related-a"]["selection_family_rank"] == 1
+        assert by_chunk["structured-related-z"]["selection_family_rank"] == 1
+        assert (
+            by_chunk["structured-related-a"]["selection_relative_score"]
+            == by_chunk["structured-related-z"]["selection_relative_score"]
+        )
+
+    context = ContextBuilder(
+        token_budget=60,
+        max_chunk_tokens=100,
+        dedupe_min_hash_prefix=16,
+        selection_policy="optimized_v1",
+    ).build(first, debug=True)
+    assert [source.candidate.chunk_id for source in context.sources] == [
+        "structured-exact"
+    ]
+    assert {item["chunk_id"] for item in context.omitted} == {
+        "chunk-strong",
+        "chunk-second",
+        "structured-related-a",
+    }
 
 
 def test_optimized_context_spends_budget_by_relevance_then_orders_for_presentation() -> None:

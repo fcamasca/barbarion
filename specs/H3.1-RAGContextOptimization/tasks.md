@@ -278,6 +278,14 @@ continuidad demostrable. El fixture publico
 puerta; matriz de consumidores `316 passed, 11 skipped` y suite completa
 `906 passed, 14 skipped`. T12 permanece pendiente.
 
+Una tercera consulta real encontro una perdida de precision dentro de H4.1:
+varios candidatos con el mismo score recibian rangos ordinales distintos y la
+formula cuya identidad coincidia literalmente con el identificador consultado
+quedaba fuera del presupuesto. La correccion previa a T12 usa rangos densos
+para que los empates compartan `relative_score` y conserva la coincidencia
+exacta de identificador como senal trazable de precision. No cambia `top_k`, el
+presupuesto de `4500`, `baseline_v1` ni el estado pendiente de T12.
+
 ## 3. Orden de implementacion
 
 ```mermaid

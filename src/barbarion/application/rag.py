@@ -1083,13 +1083,33 @@ def _structured_symbol_score(
         + (0.20 * field_precision)
         + (0.10 * multi_concept)
     )
-    normalized_question = _normalize_text(question)
-    if (
-        _normalize_text(symbol.original_name) == normalized_question
-        or _normalize_text(symbol.normalized_name) == normalized_question
-    ):
+    if _symbol_matches_exact_query_identifier(symbol, question):
         score += 0.1
     return min(1.0, score)
+
+
+def _symbol_matches_exact_query_identifier(
+    symbol: TechnicalSymbol,
+    question: str,
+) -> bool:
+    """Detecta identificadores tecnicos completos en identidad/nombre del simbolo."""
+    normalized_question = _normalize_text(question).strip()
+    if normalized_question in {
+        _normalize_text(symbol.original_name),
+        _normalize_text(symbol.normalized_name),
+    }:
+        return True
+    query_identifiers = _query_identifiers(question)
+    if not query_identifiers:
+        return False
+    identity_text = " ".join(
+        (
+            symbol.original_name,
+            symbol.normalized_name,
+            _metadata_values_text(symbol, ("identity",)),
+        )
+    )
+    return bool(query_identifiers & _identifier_tokens(identity_text))
 
 
 def _query_concept_groups(text: str) -> tuple[frozenset[str], ...]:
@@ -2273,6 +2293,7 @@ class AskService:
                     chunk_candidates,
                     limit=top_k,
                     dedupe_min_hash_prefix=self.context_builder.dedupe_min_hash_prefix,
+                    question=question,
                 )
             )
         else:
@@ -2605,6 +2626,7 @@ def _select_ask_candidates_relevance_first(
     *,
     limit: int,
     dedupe_min_hash_prefix: int,
+    question: str = "",
 ) -> tuple[tuple[RetrievalCandidate, ...], tuple[dict[str, object], ...]]:
     """Fusiona familias por rango relativo antes de gastar top-k."""
     pool = tuple((*structured, *chunks))
@@ -2637,29 +2659,52 @@ def _select_ask_candidates_relevance_first(
         else:
             family = "structured" if index < len(structured) else "chunks"
             eligible_by_family[family].append((index, candidate))
-    ranked: list[tuple[int, RetrievalCandidate, str, int, float]] = []
+    ranked: list[tuple[int, RetrievalCandidate, str, int, float, bool]] = []
     for family, items in eligible_by_family.items():
+        relevance_keys = {
+            index: (
+                _candidate_matches_exact_query_identifier(candidate, question)
+                if family == "structured"
+                else False,
+                candidate.combined_score,
+            )
+            for index, candidate in items
+        }
         items.sort(
             key=lambda item: (
+                -int(relevance_keys[item[0]][0]),
                 -item[1].combined_score,
                 item[1].chunk_id,
                 item[0],
             )
         )
-        denominator = max(1, len(items) - 1)
-        for family_rank, (index, candidate) in enumerate(items):
+        levels = tuple(
+            dict.fromkeys(relevance_keys[index] for index, _candidate in items)
+        )
+        level_rank = {level: rank for rank, level in enumerate(levels)}
+        denominator = max(1, len(levels) - 1)
+        for index, candidate in items:
+            family_rank = level_rank[relevance_keys[index]]
             relative_score = (
                 1.0
-                if len(items) == 1
+                if len(levels) == 1
                 else 1.0 - (family_rank / denominator)
             )
             ranked.append(
-                (index, candidate, family, family_rank, relative_score)
+                (
+                    index,
+                    candidate,
+                    family,
+                    family_rank,
+                    relative_score,
+                    relevance_keys[index][0],
+                )
             )
     family_tie_order = {"chunks": 0, "structured": 1}
     ranked.sort(
         key=lambda item: (
             -item[4],
+            -int(item[5]),
             family_tie_order[item[2]],
             item[1].chunk_id,
             item[0],
@@ -2674,6 +2719,7 @@ def _select_ask_candidates_relevance_first(
         family,
         family_rank,
         relative_score,
+        exact_identifier_match,
     ) in enumerate(ranked):
         hash_prefix = candidate.content_sha256[:dedupe_min_hash_prefix]
         if candidate.chunk_id in seen_chunks:
@@ -2693,6 +2739,7 @@ def _select_ask_candidates_relevance_first(
                         "selection_family_rank": family_rank,
                         "selection_relative_score": relative_score,
                         "selection_global_rank": global_rank,
+                        "selection_exact_identifier_match": exact_identifier_match,
                     },
                 )
             )
@@ -2705,6 +2752,7 @@ def _select_ask_candidates_relevance_first(
             family=family,
             family_rank=family_rank,
             relative_score=relative_score,
+            exact_identifier_match=exact_identifier_match,
         )
     return tuple(selected), tuple(
         decision for decision in decisions if decision is not None
@@ -2716,6 +2764,18 @@ def _candidate_has_materializable_content(candidate: RetrievalCandidate) -> bool
     return bool(candidate.source.get("content") or candidate.source.get("snippet"))
 
 
+def _candidate_matches_exact_query_identifier(
+    candidate: RetrievalCandidate,
+    question: str,
+) -> bool:
+    """Conserva la precision de identidad dentro de la familia estructurada."""
+    identifiers = _query_identifiers(question)
+    if not identifiers:
+        return False
+    symbol_name = candidate.metadata.symbol_name or ""
+    return bool(identifiers & _identifier_tokens(symbol_name))
+
+
 def _candidate_selection_decision(
     candidate: RetrievalCandidate,
     *,
@@ -2724,6 +2784,7 @@ def _candidate_selection_decision(
     family: str | None = None,
     family_rank: int | None = None,
     relative_score: float | None = None,
+    exact_identifier_match: bool | None = None,
 ) -> dict[str, object]:
     decision: dict[str, object] = {
         "chunk_id": candidate.chunk_id,
@@ -2738,6 +2799,7 @@ def _candidate_selection_decision(
                 "selection_family": family,
                 "selection_family_rank": family_rank,
                 "selection_relative_score": relative_score,
+                "selection_exact_identifier_match": exact_identifier_match,
             }
         )
     return decision
@@ -3326,6 +3388,24 @@ def _important_tokens(text: str) -> set[str]:
             continue
         tokens.update(variants)
     return tokens
+
+
+def _query_identifiers(text: str) -> set[str]:
+    """Extrae identificadores compuestos pedidos literalmente por el usuario."""
+    if "." in text and not re.search(r"\s", text.strip()):
+        # Una identidad cualificada completa se resuelve por igualdad arriba;
+        # sus segmentos no deben promover a todos los simbolos del contenedor.
+        return set()
+    return {
+        token
+        for token in _identifier_tokens(text)
+        if "_" in token and any(character.isalpha() for character in token)
+    }
+
+
+def _identifier_tokens(text: str) -> set[str]:
+    """Tokeniza identidades sin descomponer sus componentes por underscore."""
+    return set(re.findall(r"[a-z0-9_]+", _normalize_text(text)))
 
 
 def _concept_token_variants(token: str) -> set[str]:

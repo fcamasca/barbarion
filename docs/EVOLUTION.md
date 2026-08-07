@@ -254,6 +254,31 @@ del dominio.
 
 ------------------------------------------------------------------------
 
+## H3.1 -- Optimización de contexto RAG
+
+Estado: especificada para revisión; implementación no iniciada.
+
+Pregunta que responde:
+
+**¿Cómo entregar al LLM evidencia suficiente y trazable usando un contexto
+medible, sin redundancia innecesaria ni dependencia de un proveedor?**
+
+Parte de una observación real de H1.2: una consulta reportó `10,198` tokens de
+entrada Anthropic frente a `6,190` estimados localmente. H3.1 no modifica H1.2
+ni asume que ese consumo sea incorrecto. Primero establece una baseline
+reproducible y descompone instrucciones, pregunta, metadata, evidencia y formato;
+después evalúa presupuesto del input completo, selección conservadora y overlap.
+
+La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
+`--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no
+pueden contener información de sistemas privados.
+
+Spec:
+
+[`../specs/H3.1-RAGContextOptimization/`](../specs/H3.1-RAGContextOptimization/).
+
+------------------------------------------------------------------------
+
 ## H4.2 -- Patrones técnicos
 
 Detectar:

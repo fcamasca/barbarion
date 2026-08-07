@@ -14,6 +14,7 @@ Las specs convierten cada hito del roadmap en trabajo pequeño, revisable y veri
 | [H5-SpecMode](H5-SpecMode/) | Generación guiada de specs Markdown | Completado |
 | [H1.1-LocalModelManagement](H1.1-LocalModelManagement/) | Gestión y evaluación reproducible de modelos Ollama locales | Completado; comparación real pendiente |
 | [H1.2-RemoteInference](H1.2-RemoteInference/) | Generación remota opcional mediante Anthropic sin cambiar el conocimiento local | Completado y aceptado técnica y funcionalmente |
+| [H3.1-RAGContextOptimization](H3.1-RAGContextOptimization/) | Medición y optimización provider-agnostic del contexto RAG | Especificado para revisión; implementación no iniciada |
 
 ## Estructura de una spec activa
 

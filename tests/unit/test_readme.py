@@ -26,13 +26,15 @@ def test_readme_has_the_expected_entry_point_structure() -> None:
     assert positions == sorted(positions)
     assert f"Versión actual: `{__version__}`" in readme
     assert "MVP completado: `5/5` hitos" in readme
-    assert "Suite de aceptación del MVP: `502 passed, 2 skipped`" in readme
-    assert "Smoke tests instalados: `10 passed`" in readme
+    assert "Suite de aceptación vigente: `856 passed, 3 skipped`" in readme
+    assert "Smoke tests instalados: `11 passed`" in readme
     assert "Integración continua: GitHub Actions" in readme
     assert readme.index("specs/H5-SpecMode/acceptance.md") < readme.index(
         "Evoluciones posteriores al MVP:"
     )
-    assert "Implementación técnica y documentación completadas; aceptación pendiente" in readme
+    assert "H1.2 Inferencia Remota con Anthropic" in readme
+    assert "Completada y aceptada técnica y funcionalmente" in readme
+    assert "specs/H1.2-RemoteInference/acceptance.md" in readme
 
 
 def test_quick_start_remains_ollama_first_and_links_anthropic_setup() -> None:

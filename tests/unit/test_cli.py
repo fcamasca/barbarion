@@ -1336,10 +1336,9 @@ def test_ask_debug_with_invalid_citations_writes_diagnostics_to_stderr(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "=== QUERY ===" in captured.err
-    assert "=== LLM RESPONSE ===" in captured.err
-    assert "=== VALIDATION ===" in captured.err
-    assert "result: FAIL" in captured.err
+    assert "=== QUERY ===" not in captured.err
+    assert "=== LLM RESPONSE ===" not in captured.err
+    assert "=== VALIDATION ===" not in captured.err
     assert "final_result: REJECTED" in captured.err
     assert "=== QUERY ===" not in captured.out
     assert "Validación: FAIL" in captured.out
@@ -1365,10 +1364,10 @@ def test_ask_debug_with_failed_repair_reports_reason(
     captured = capsys.readouterr()
 
     assert exit_code == 1
-    assert "=== REPAIR ATTEMPT ===" in captured.err
-    assert "=== REPAIR RESPONSE ===" in captured.err
+    assert "=== REPAIR ATTEMPT ===" not in captured.err
+    assert "=== REPAIR RESPONSE ===" not in captured.err
     assert "repair: FAIL" in captured.err
-    assert "la respuesta no incluyo citas validas" in captured.err
+    assert "la respuesta final no incluyo citas validas" in captured.err
 
 
 def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
@@ -1398,12 +1397,12 @@ def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
     assert "=== H3.1 OBSERVABILITY ===" in captured.err
     assert "selection_policy=optimized_v1" in captured.err
     assert "estimator_id=chars4_v1" in captured.err
-    assert "candidate_decision chunk_id=chunk-safe" in captured.err
+    assert "candidate_decision" not in captured.err
     assert "input_budget_configured_tokens_est_local=9000" in captured.err
     assert "generation_tokens_est_local=10" in captured.err
     assert "repair_outcome triggered=False attempted=False" in captured.err
     assert "result=not_needed causes=[]" in captured.err
-    assert "[F1] score=0.800" in captured.err
+    assert "[F1] score=0.800" not in captured.err
     assert "validation: PASS" in captured.err
     assert "final_result: ACCEPTED" in captured.err
 
@@ -1427,7 +1426,7 @@ def test_ask_debug_with_successful_repair_reports_acceptance(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "Respuesta reparada [F1]" in captured.err
+    assert "Respuesta reparada [F1]" not in captured.err
     assert "repair_outcome triggered=True attempted=True succeeded=True" in captured.err
     assert "result=succeeded causes=[no_valid_citations]" in captured.err
     assert "repair: PASS" in captured.err
@@ -1457,7 +1456,8 @@ def test_ask_debug_keeps_json_stdout_clean(
     assert exit_code == 0
     assert payload["debug"] == {}
     assert "=== QUERY ===" not in captured.out
-    assert "=== QUERY ===" in captured.err
+    assert "=== MODEL ===" in captured.err
+    assert "=== QUERY ===" not in captured.err
 
 
 def test_ask_no_llm_debug_reports_not_executed(
@@ -1477,7 +1477,7 @@ def test_ask_no_llm_debug_reports_not_executed(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "=== LLM RESPONSE ===\nno ejecutada" in captured.err
+    assert "=== LLM RESPONSE ===" not in captured.err
     assert "repair: NOT_EXECUTED" in captured.err
     assert "modo --no-llm" in captured.err
 
@@ -1606,10 +1606,10 @@ def test_ask_debug_truncates_and_masks_sensitive_values(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "secret=********" in captured.err
-    assert "token=********" in captured.err
-    assert "api_key=********" in captured.err
-    assert "[TRUNCATED]" in captured.err
+    assert "secret=********" not in captured.err
+    assert "token=********" not in captured.err
+    assert "api_key=********" not in captured.err
+    assert "[TRUNCATED]" not in captured.err
     assert "secret=visible" not in captured.err
     assert "token=visible" not in captured.err
     assert "api_key=visible" not in captured.err

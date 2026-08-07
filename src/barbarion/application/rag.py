@@ -2519,10 +2519,15 @@ class AskService:
             )
         target = resolve_inference_target(self.settings)
         operation_id = uuid.uuid4().hex
-        authorization = self.privacy_preflight.authorize(
+        preflight_outcome = self.privacy_preflight.authorize_with_diagnostics(
             operation_id=operation_id,
             target=target,
         )
+        authorization = preflight_outcome.authorization
+        if debug:
+            base_debug_payload["privacy_preflight"] = (
+                preflight_outcome.diagnostics.as_safe_dict()
+            )
         prompt = self.prompt_builder.build(question=question, context=context)
         prompt_composition = self.prompt_builder.compose(
             question=question,

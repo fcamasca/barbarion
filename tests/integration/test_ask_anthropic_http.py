@@ -292,10 +292,13 @@ def test_unicode_survives_ask_end_to_end_in_all_formats_and_debug(
     assert len(prompts) == 1
     assert question in prompts[0]
     assert context_text in prompts[0]
-    assert question in captured.err
-    assert context_text in captured.err
-    assert answer in captured.err
-    assert "result: PASS" in captured.err
+    assert question not in captured.err
+    assert context_text not in captured.err
+    assert answer not in captured.err
+    assert "validation: PASS" in captured.err
+    assert "=== PRIVACY PREFLIGHT ===" in captured.err
+    assert "decision=pass" in captured.err
+    assert "account_verifier=unavailable" in captured.err
     assert "Input tokens : 10,198" in captured.err
     assert "Output tokens: 612" in captured.err
     assert "Total tokens : 10,810" in captured.err

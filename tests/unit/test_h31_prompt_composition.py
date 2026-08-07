@@ -169,7 +169,8 @@ def test_cli_renders_component_sizes_without_content(capsys) -> None:  # noqa: A
     assert "prompt_estimator_id=chars4_v1" in rendered
     assert "prompt_utf8_bytes=" in rendered
     assert "prompt_component kind=instructions" in rendered
-    assert "prompt_component kind=source_content source_id=F1" in rendered
+    assert "prompt_component kind=source_content" in rendered
+    assert "source_id=F1" not in rendered
     assert "¿Dónde" not in rendered
     assert "Evidencia alfa" not in rendered
 

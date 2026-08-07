@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T09
-completadas; T10-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T10
+completadas; T11-T13 pendientes.
 
 ## 2. Tareas
 
@@ -205,7 +205,7 @@ fallan antes de logs y `generate()`.
 
 ### H3.2-T10 - Exponer CLI, debug y observabilidad segura
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** explicar decisiones sin contenido ni secretos.  
 **Archivos/componentes esperados:** render CLI text/JSON/debug, logging, config
 show, errores/codigos.  
@@ -214,6 +214,14 @@ mensajes de cache/registry/verifier; aplicar redaccion/canarios.
 **Pruebas:** H3.2-TP-048..053, INT-009.  
 **Dependencias:** T08, T09.  
 **Checkpoint:** scanner no encuentra pregunta, chunks, paths ni credenciales.
+
+**Evidencia:** diagnostico seguro y evento estructurado en
+`src/barbarion/application/privacy.py`, render BLOCK/debug en
+`src/barbarion/cli.py`, saneamiento del debug historico y pruebas TP-048..053 en
+`tests/unit/test_h32_privacy_observability.py`. BLOCK muestra estados y mensaje
+accionable; debug limita la salida a target/policy publicos, reason codes,
+procedencia, timestamps, cache y verifier. No imprime query, paths, chunk IDs o
+contenido, prompt, respuestas, claims, credenciales ni payload del registry.
 
 ### H3.2-T11 - Ejecutar seguridad y regresion completa
 

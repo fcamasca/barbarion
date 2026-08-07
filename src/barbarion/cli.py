@@ -1411,11 +1411,13 @@ def _run_ask(args: argparse.Namespace) -> int:
             no_llm=args.no_llm,
             debug=args.debug,
         )
-    except (PrivacyPreflightBlockedError, InvalidPrivacyAuthorizationError):
-        print(
-            "Privacy preflight bloqueo la inferencia remota; no se envio ningun prompt.",
-            file=sys.stderr,
-        )
+    except PrivacyPreflightBlockedError as error:
+        _render_privacy_preflight_block(error, debug=args.debug)
+        return 1
+    except InvalidPrivacyAuthorizationError:
+        print("Privacy preflight: ERROR", file=sys.stderr)
+        print("Autorizacion de inferencia invalida.", file=sys.stderr)
+        print("No se envio contexto al proveedor remoto.", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         _render_anthropic_usage(service)
@@ -1458,6 +1460,78 @@ def _run_ask(args: argparse.Namespace) -> int:
     )
     _render_anthropic_usage(service)
     return 0 if result.citations_valid else 1
+
+
+def _render_privacy_preflight_block(
+    error: PrivacyPreflightBlockedError,
+    *,
+    debug: bool,
+) -> None:
+    safe = error.diagnostics.as_safe_dict()
+    constraints = safe["constraints"]
+    assert isinstance(constraints, Mapping)
+    print("Privacy preflight: BLOCKED", file=sys.stderr)
+    print("", file=sys.stderr)
+    for key, label in (
+        ("no_training", "no_training"),
+        ("retention", "retention"),
+        ("data_location", "location"),
+    ):
+        detail = constraints[key]
+        assert isinstance(detail, Mapping)
+        print(f"{label:<12}: {str(detail['state']).upper()}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("No se envio contexto al proveedor remoto.", file=sys.stderr)
+    if debug:
+        print("", file=sys.stderr)
+        _render_privacy_preflight_debug(safe)
+
+
+def _render_privacy_preflight_debug(value: object) -> None:
+    if not isinstance(value, Mapping):
+        return
+    print("=== PRIVACY PREFLIGHT ===", file=sys.stderr)
+    for key in (
+        "decision",
+        "execution",
+        "provider",
+        "platform",
+        "offering",
+        "model",
+        "cache_status",
+        "account_verifier",
+        "source_id",
+        "source_version",
+    ):
+        print(f"{key}={value.get(key)}", file=sys.stderr)
+    policy = value.get("policy")
+    if isinstance(policy, Mapping):
+        print(f"policy_profile={policy.get('profile')}", file=sys.stderr)
+        print(f"policy_allowed_regions={policy.get('allowed_regions')}", file=sys.stderr)
+    constraints = value.get("constraints")
+    if not isinstance(constraints, Mapping):
+        return
+    for name in ("no_training", "retention", "data_location"):
+        detail = constraints.get(name)
+        if not isinstance(detail, Mapping):
+            continue
+        print(f"{name}={str(detail.get('state')).upper()}", file=sys.stderr)
+        print(f"{name}_reason={detail.get('reason_code')}", file=sys.stderr)
+        evidence = detail.get("evidence")
+        if not isinstance(evidence, (tuple, list)):
+            continue
+        for index, item in enumerate(evidence, start=1):
+            if not isinstance(item, Mapping):
+                continue
+            print(
+                f"{name}_evidence_{index} "
+                f"source_kind={item.get('source_kind')} "
+                f"source_id={item.get('source_id')} "
+                f"scope={item.get('scope')} "
+                f"verified_at={item.get('verified_at')} "
+                f"expires_at={item.get('expires_at')}",
+                file=sys.stderr,
+            )
 
 
 def _run_embeddings(args: argparse.Namespace) -> int:
@@ -2015,6 +2089,7 @@ def _build_privacy_preflight(settings: Settings) -> PrivacyPreflightService:
         policy=PrivacyPolicy(),
         policy_source=privacy_cache.source,
         account_verifier=UnavailableAccountPrivacyVerifier(),
+        cache_status=privacy_cache.status.value,
     )
 
 
@@ -2128,10 +2203,6 @@ def _render_ask_diagnostics(
         mode: Modo de retrieval solicitado por CLI.
     """
     debug = dict(result.debug)
-    print("=== QUERY ===", file=sys.stderr)
-    print(_mask_secrets(result.question), file=sys.stderr)
-    print("", file=sys.stderr)
-
     print("=== MODEL ===", file=sys.stderr)
     print(f"llm_provider={settings.llm.provider}", file=sys.stderr)
     print(f"llm_model={settings.llm.model}", file=sys.stderr)
@@ -2152,13 +2223,6 @@ def _render_ask_diagnostics(
         file=sys.stderr,
     )
     print("", file=sys.stderr)
-    for source in result.context.sources:
-        print(
-            f"[{source.source_id}] score={source.candidate.combined_score:.3f}",
-            file=sys.stderr,
-        )
-    print("", file=sys.stderr)
-
     print("=== CONTEXT STATS ===", file=sys.stderr)
     print(f"retrieved_chunks={len(result.context.sources)}", file=sys.stderr)
     print(f"prompt_chars={debug.get('prompt_chars', 0)}", file=sys.stderr)
@@ -2176,36 +2240,7 @@ def _render_ask_diagnostics(
     print("", file=sys.stderr)
 
     _render_h31_observability(debug.get("observability"))
-
-    print("=== CHUNKS ===", file=sys.stderr)
-    for source in result.context.sources:
-        _render_ask_debug_chunk(source)
-    if not result.context.sources:
-        print("no recuperados", file=sys.stderr)
-        print("", file=sys.stderr)
-
-    print("=== PROMPT ===", file=sys.stderr)
-    _render_debug_prompt(debug.get("prompt"))
-    print("", file=sys.stderr)
-
-    print("=== LLM RESPONSE ===", file=sys.stderr)
-    _render_debug_text(debug.get("llm_response"), max_chars=4000)
-    print("", file=sys.stderr)
-
-    print("=== VALIDATION ===", file=sys.stderr)
-    _render_validation_debug(debug.get("validation"))
-    print("", file=sys.stderr)
-
-    print("=== REPAIR ATTEMPT ===", file=sys.stderr)
-    _render_debug_text(debug.get("repair_prompt"), max_chars=4000)
-    print("", file=sys.stderr)
-
-    print("=== REPAIR RESPONSE ===", file=sys.stderr)
-    _render_debug_text(debug.get("repair_response"), max_chars=4000)
-    print("", file=sys.stderr)
-
-    print("=== REPAIR VALIDATION ===", file=sys.stderr)
-    _render_validation_debug(debug.get("repair_validation"))
+    _render_privacy_preflight_debug(debug.get("privacy_preflight"))
     print("", file=sys.stderr)
 
     _render_ask_debug_summary(result, debug)
@@ -2223,10 +2258,9 @@ def _render_prompt_composition_metrics(value: object) -> None:
     for component in components:
         if not isinstance(component, Mapping):
             continue
-        source_id = component.get("source_id") or "-"
         print(
             "prompt_component "
-            f"kind={component.get('kind')} source_id={source_id} "
+            f"kind={component.get('kind')} "
             f"chars={component.get('chars')} "
             f"utf8_bytes={component.get('utf8_bytes')} "
             f"tokens_est_local={component.get('tokens_est_local')}",
@@ -2299,8 +2333,6 @@ def _render_h31_observability(value: object) -> None:
             f"{_format_debug_list(repair_outcome.get('trigger_categories'))}",
             file=sys.stderr,
         )
-    _render_decision_metrics("candidate", value.get("candidate_selection"))
-    _render_decision_metrics("context", value.get("context_decisions"))
     redundancy = value.get("redundancy")
     if isinstance(redundancy, Mapping):
         for key in (
@@ -2317,9 +2349,7 @@ def _render_h31_observability(value: object) -> None:
         print(
             "citation_coverage "
             f"selected={citation.get('selected_source_count')} "
-            f"cited={citation.get('cited_source_count')} "
-            "uncited_ids="
-            f"{_format_debug_list(citation.get('uncited_selected_source_ids'))}",
+            f"cited={citation.get('cited_source_count')}",
             file=sys.stderr,
         )
     provider_usage = value.get("provider_usage")
@@ -2337,120 +2367,6 @@ def _render_h31_observability(value: object) -> None:
                 file=sys.stderr,
             )
     print("", file=sys.stderr)
-
-
-def _render_decision_metrics(prefix: str, value: object) -> None:
-    if not isinstance(value, (list, tuple)):
-        return
-    for decision in value:
-        if not isinstance(decision, Mapping):
-            continue
-        family = decision.get("selection_family")
-        relative_score = decision.get("selection_relative_score")
-        exact_identifier_match = decision.get(
-            "selection_exact_identifier_match"
-        )
-        family_trace = (
-            f" family={family} relative_score={relative_score}"
-            f" exact_identifier_match={exact_identifier_match}"
-            if family is not None
-            else ""
-        )
-        print(
-            f"{prefix}_decision chunk_id={decision.get('chunk_id')} "
-            f"action={decision.get('action')} "
-            f"reasons={_format_debug_list(decision.get('reasons'))} "
-            f"score={decision.get('combined_score')}"
-            f"{family_trace}",
-            file=sys.stderr,
-        )
-
-
-def _render_ask_debug_chunk(source) -> None:
-    """Muestra una fuente recuperada con snippet truncado.
-
-    Args:
-        source: Fuente de contexto seleccionada para `ask`.
-    """
-    candidate = source.candidate
-    print(f"[{source.source_id}]", file=sys.stderr)
-    print(f"archivo={candidate.source.get('relative_path')}", file=sys.stderr)
-    print(f"lineas={_source_line_range(source)}", file=sys.stderr)
-    print(f"score={candidate.combined_score:.3f}", file=sys.stderr)
-    print(f"chunk_id={candidate.chunk_id}", file=sys.stderr)
-    print("", file=sys.stderr)
-    print(_truncate_debug_text(_mask_secrets(source.content), 500), file=sys.stderr)
-    print("", file=sys.stderr)
-
-
-def _render_debug_prompt(value: object) -> None:
-    """Muestra inicio y final de un prompt sin imprimirlo completo si es largo."""
-    if not isinstance(value, str) or not value:
-        print("no ejecutada", file=sys.stderr)
-        return
-    text = _mask_secrets(value)
-    if len(text) <= 4000:
-        print("----- BEGIN -----", file=sys.stderr)
-        print(text, file=sys.stderr)
-        print("----- END BEGIN -----", file=sys.stderr)
-        return
-    print("----- BEGIN -----", file=sys.stderr)
-    print(text[:2000], file=sys.stderr)
-    print("----- END BEGIN -----", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("[TRUNCATED]", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("----- FINAL -----", file=sys.stderr)
-    print(text[-2000:], file=sys.stderr)
-    print("----- END FINAL -----", file=sys.stderr)
-
-
-def _render_debug_text(value: object, *, max_chars: int) -> None:
-    """Muestra texto de debug truncado y enmascarado.
-
-    Args:
-        value: Valor a mostrar si es texto.
-        max_chars: Longitud maxima a imprimir.
-    """
-    if not isinstance(value, str) or not value:
-        print("no ejecutada", file=sys.stderr)
-        return
-    print(_truncate_debug_text(_mask_secrets(value), max_chars), file=sys.stderr)
-
-
-def _render_validation_debug(value: object) -> None:
-    """Muestra el resultado estructurado de una validacion de citas."""
-    if not isinstance(value, Mapping):
-        print("expected_citations: []", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("found_citations: []", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("valid_citations: []", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("missing_citations: []", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("invalid_citations: []", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("result: NOT_EXECUTED", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("reason:", file=sys.stderr)
-        print("no ejecutada", file=sys.stderr)
-        return
-    for key in (
-        "expected_citations",
-        "found_citations",
-        "valid_citations",
-        "missing_citations",
-        "invalid_citations",
-        "unsupported_claims",
-        "contradiction_claims",
-    ):
-        print(f"{key}: {_format_debug_list(value.get(key))}", file=sys.stderr)
-        print("", file=sys.stderr)
-    print(f"result: {value.get('result')}", file=sys.stderr)
-    print("", file=sys.stderr)
-    print("reason:", file=sys.stderr)
-    print(_mask_secrets(str(value.get("reason") or "")), file=sys.stderr)
 
 
 def _render_ask_debug_summary(result: AnswerResult, debug: Mapping[str, object]) -> None:
@@ -2501,9 +2417,6 @@ def _ask_debug_reason(
         if repair_value == "PASS":
             return "la respuesta original fallo la validacion y la reparacion fue aceptada"
         return "la respuesta del LLM incluyo citas validas"
-    validation = debug.get("repair_validation") or debug.get("validation")
-    if isinstance(validation, Mapping) and validation.get("reason"):
-        return _mask_secrets(str(validation["reason"]))
     return "la respuesta final no incluyo citas validas"
 
 
@@ -2513,26 +2426,12 @@ def _format_debug_list(value: object) -> str:
     return "[" + ", ".join(str(item) for item in value) + "]"
 
 
-def _truncate_debug_text(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars].rstrip() + "\n[TRUNCATED]"
-
-
 def _mask_secrets(text: str) -> str:
     return re.sub(
         r"(?i)\b(password|token|api_key|secret|authorization)\s*=\s*([^\s;,&]+)",
         lambda match: f"{match.group(1)}=********",
         text,
     )
-
-
-def _source_line_range(source) -> str:
-    start = source.candidate.source.get("start_line")
-    end = source.candidate.source.get("end_line")
-    if start is None or end is None:
-        return "n/a"
-    return f"{start}-{end}" if start != end else str(start)
 
 
 def _search_response_json(response: SearchResponse) -> dict[str, object]:

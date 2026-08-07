@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import logging
 from urllib.parse import urlsplit
 
 from barbarion.config import Settings
@@ -32,6 +33,7 @@ TRAINING_CONFIRMED = "training_confirmed"
 TRAINING_OPT_OUT_AVAILABLE = "opt_out_available"
 ZERO_DATA_RETENTION = "zdr"
 ZERO_DATA_RETENTION_AVAILABLE = "zdr_available"
+_LOGGER = logging.getLogger("barbarion")
 
 
 class InferenceTargetResolutionError(ValueError):
@@ -69,13 +71,69 @@ class InMemoryAccountPrivacyVerifier:
 class PrivacyPreflightBlockedError(RuntimeError):
     """Decision segura que impide construir o enviar el prompt generativo."""
 
-    def __init__(self, result: PrivacyPreflightResult) -> None:
-        self.result = result
+    def __init__(self, diagnostics: PrivacyPreflightDiagnostics) -> None:
+        self.diagnostics = diagnostics
+        self.result = diagnostics.result
         super().__init__("Privacy preflight bloqueo la inferencia remota.")
 
 
 class InvalidPrivacyAuthorizationError(RuntimeError):
     """La autorizacion no corresponde a la invocacion generativa efectiva."""
+
+
+@dataclass(frozen=True, slots=True)
+class PrivacyPreflightDiagnostics:
+    """Vista operacional segura, sin contenido ni payloads externos."""
+
+    result: PrivacyPreflightResult
+    cache_status: str
+    account_verifier_status: str
+    source_id: str | None = None
+    source_version: str | None = None
+
+    def as_safe_dict(self) -> dict[str, object]:
+        target = self.result.target
+        return {
+            "decision": self.result.decision.value,
+            "execution": target.execution.value,
+            "provider": target.provider,
+            "platform": target.platform,
+            "offering": target.offering,
+            "model": target.model,
+            "policy": {
+                "profile": self.result.policy.profile.value,
+                "allowed_regions": self.result.policy.allowed_regions,
+            },
+            "cache_status": self.cache_status,
+            "account_verifier": self.account_verifier_status,
+            "source_id": self.source_id,
+            "source_version": self.source_version,
+            "constraints": {
+                evaluation.constraint.value: {
+                    "state": evaluation.state.value,
+                    "reason_code": evaluation.reason_code,
+                    "evidence": tuple(
+                        {
+                            "source_kind": item.source_kind,
+                            "source_id": item.source_id,
+                            "scope": item.scope,
+                            "verified_at": item.verified_at.isoformat(),
+                            "expires_at": item.expires_at.isoformat(),
+                        }
+                        for item in evaluation.evidence
+                    ),
+                }
+                for evaluation in self.result.evaluations
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PrivacyPreflightOutcome:
+    """Autorizacion y diagnostico producidos por una sola evaluacion."""
+
+    authorization: PrivacyAuthorization
+    diagnostics: PrivacyPreflightDiagnostics
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +143,7 @@ class PrivacyPreflightService:
     policy: PrivacyPolicy
     policy_source: PrivacyPolicySource | None
     account_verifier: AccountPrivacyVerifier
+    cache_status: str = "unknown"
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def authorize(
@@ -93,6 +152,17 @@ class PrivacyPreflightService:
         operation_id: str,
         target: InferenceTarget,
     ) -> PrivacyAuthorization:
+        return self.authorize_with_diagnostics(
+            operation_id=operation_id,
+            target=target,
+        ).authorization
+
+    def authorize_with_diagnostics(
+        self,
+        *,
+        operation_id: str,
+        target: InferenceTarget,
+    ) -> PrivacyPreflightOutcome:
         evaluated_at = self.clock()
         if target.execution is InferenceExecution.LOCAL:
             result = PrivacyPreflightResult(
@@ -108,16 +178,24 @@ class PrivacyPreflightService:
                     for constraint in PrivacyConstraint
                 ),
             )
-            return PrivacyAuthorization.issue(
+            return _authorized_outcome(
                 operation_id=operation_id,
                 result=result,
+                cache_status="not_consulted",
+                account_status="not_consulted",
             )
 
         evidence: tuple[PrivacyEvidence, ...] = ()
+        source_id = None
+        source_version = None
+        account_status = "not_consulted"
         if target.execution is InferenceExecution.REMOTE:
             if self.policy_source is not None:
                 try:
-                    evidence = self.policy_source.lookup(target).evidence
+                    source_result = self.policy_source.lookup(target)
+                    evidence = source_result.evidence
+                    source_id = source_result.source_id
+                    source_version = source_result.source_version
                 except Exception:
                     evidence = ()
             try:
@@ -127,6 +205,7 @@ class PrivacyPreflightService:
                     status=AccountVerificationStatus.ERROR,
                     reason_code="account_verifier_error",
                 )
+            account_status = account.status.value
             evidence = (*evidence, *account.evidence)
 
         evaluations = (
@@ -144,12 +223,71 @@ class PrivacyPreflightService:
             evaluated_at=evaluated_at,
             evaluations=evaluations,
         )
+        diagnostics = PrivacyPreflightDiagnostics(
+            result=result,
+            cache_status=(
+                self.cache_status
+                if target.execution is InferenceExecution.REMOTE
+                else "not_consulted"
+            ),
+            account_verifier_status=account_status,
+            source_id=source_id,
+            source_version=source_version,
+        )
+        _log_privacy_preflight(diagnostics)
         if result.decision is PrivacyPreflightDecision.BLOCK:
-            raise PrivacyPreflightBlockedError(result)
-        return PrivacyAuthorization.issue(
+            raise PrivacyPreflightBlockedError(diagnostics)
+        return PrivacyPreflightOutcome(
+            authorization=PrivacyAuthorization.issue(
+                operation_id=operation_id,
+                result=result,
+            ),
+            diagnostics=diagnostics,
+        )
+
+
+def _authorized_outcome(
+    *,
+    operation_id: str,
+    result: PrivacyPreflightResult,
+    cache_status: str,
+    account_status: str,
+) -> PrivacyPreflightOutcome:
+    diagnostics = PrivacyPreflightDiagnostics(
+        result=result,
+        cache_status=cache_status,
+        account_verifier_status=account_status,
+    )
+    _log_privacy_preflight(diagnostics)
+    return PrivacyPreflightOutcome(
+        authorization=PrivacyAuthorization.issue(
             operation_id=operation_id,
             result=result,
-        )
+        ),
+        diagnostics=diagnostics,
+    )
+
+
+def _log_privacy_preflight(diagnostics: PrivacyPreflightDiagnostics) -> None:
+    safe = diagnostics.as_safe_dict()
+    constraints = safe["constraints"]
+    assert isinstance(constraints, dict)
+    _LOGGER.info(
+        "privacy_preflight decision=%s execution=%s provider=%s platform=%s "
+        "no_training=%s retention=%s data_location=%s cache_status=%s "
+        "account_verifier=%s source_id=%s source_version=%s",
+        safe["decision"],
+        safe["execution"],
+        safe["provider"],
+        safe["platform"],
+        constraints["no_training"]["state"],
+        constraints["retention"]["state"],
+        constraints["data_location"]["state"],
+        safe["cache_status"],
+        safe["account_verifier"],
+        safe["source_id"] or "none",
+        safe["source_version"] or "none",
+    )
 
 
 def resolve_inference_target(settings: Settings) -> InferenceTarget:

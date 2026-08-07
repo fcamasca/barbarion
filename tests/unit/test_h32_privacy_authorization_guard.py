@@ -57,6 +57,10 @@ class CountingPreflight:
         self.calls += 1
         return self.delegate.authorize(**kwargs)
 
+    def authorize_with_diagnostics(self, **kwargs):  # noqa: ANN003, ANN201
+        self.calls += 1
+        return self.delegate.authorize_with_diagnostics(**kwargs)
+
 
 class ForgedAuthorization:
     def __init__(self, legitimate: PrivacyAuthorization) -> None:

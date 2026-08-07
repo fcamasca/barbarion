@@ -52,5 +52,5 @@ def test_h32_int006_remote_without_local_evidence_blocks_before_prompt(
     assert exit_code == 1
     assert provider.prompts == []
     assert prompt_built is False
-    assert "no se envio ningun prompt" in captured.err
+    assert "No se envio contexto al proveedor remoto." in captured.err
     assert "Traceback" not in captured.err

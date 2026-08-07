@@ -199,7 +199,7 @@ def test_canary_request_is_minimal_and_sensitive_material_is_not_persisted(
     captured = capsys.readouterr()
 
     assert RESPONSE_CANARY in captured.out
-    assert PROMPT_CANARY in captured.err
+    assert PROMPT_CANARY not in captured.err
     assert CANARY_KEY not in captured.out + captured.err
     assert len(opener.requests) == 1
     request, timeout = opener.requests[0]

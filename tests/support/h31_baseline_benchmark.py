@@ -49,6 +49,12 @@ def run_baseline(dataset: dict[str, Any]) -> dict[str, Any]:
     repaired = tuple(case for case in cases if case["repair"] is not None)
     component_totals = _aggregate_components(generated, stage="generation")
     repair_component_totals = _aggregate_components(repaired, stage="repair")
+    generation_tokens = sum(
+        case["generation"]["tokens_est_local"] for case in generated
+    )
+    redundancy_tokens = sum(
+        case["diagnostics"]["overlap_tokens_est_local"] for case in cases
+    )
     return {
         "benchmark_id": "h31-t03-baseline-v1",
         "dataset_id": dataset["dataset_id"],
@@ -77,15 +83,29 @@ def run_baseline(dataset: dict[str, Any]) -> dict[str, Any]:
                 1 for case in cases if case["result_status"] == "insufficient"
             ),
             "exact_duplicate_pairs": sum(
-                case["diagnostics"]["exact_duplicate_pairs"] for case in cases
+                case["diagnostics"]["exact_duplicate_count"] for case in cases
+            ),
+            "exact_duplicate_prompt_tokens_est_local": sum(
+                case["diagnostics"]["exact_duplicate_prompt_tokens_est_local"]
+                for case in cases
+            ),
+            "exact_duplicate_avoided_content_tokens_est_local": sum(
+                case["diagnostics"][
+                    "exact_duplicate_avoided_content_tokens_est_local"
+                ]
+                for case in cases
             ),
             "overlap_pairs": sum(
                 len(case["diagnostics"]["overlap_pairs"]) for case in cases
             ),
             "overlap_chars": sum(
-                pair["chars"]
-                for case in cases
-                for pair in case["diagnostics"]["overlap_pairs"]
+                case["diagnostics"]["overlap_chars"] for case in cases
+            ),
+            "overlap_tokens_est_local": redundancy_tokens,
+            "redundancy_prompt_tokens_est_local": redundancy_tokens,
+            "redundancy_share_of_generation_prompt": round(
+                redundancy_tokens / generation_tokens if generation_tokens else 0.0,
+                6,
             ),
             "generation_prompt_chars_total": sum(
                 case["generation"]["chars"] for case in generated
@@ -93,9 +113,7 @@ def run_baseline(dataset: dict[str, Any]) -> dict[str, Any]:
             "generation_prompt_utf8_bytes_total": sum(
                 case["generation"]["utf8_bytes"] for case in generated
             ),
-            "generation_prompt_tokens_est_local_total": sum(
-                case["generation"]["tokens_est_local"] for case in generated
-            ),
+            "generation_prompt_tokens_est_local_total": generation_tokens,
             "repair_prompt_count": len(repaired),
             "repair_prompt_chars_total": sum(
                 case["repair"]["chars"] for case in repaired
@@ -143,6 +161,7 @@ def _run_case(case: dict[str, Any], *, top_k: int) -> dict[str, Any]:
     citation_precision = 1.0
     citation_recall = 1.0 if not expected_ids else 0.0
     result_status = "insufficient" if not context.sources else "completed"
+    answer = ""
 
     if context.sources:
         builder = PromptBuilder()
@@ -185,6 +204,22 @@ def _run_case(case: dict[str, Any], *, top_k: int) -> dict[str, Any]:
         elif not validation.valid:
             result_status = "error"
 
+    cited_source_ids = set(re.findall(r"\[(F\d+)\]", answer))
+    source_id_by_chunk = {
+        source.candidate.chunk_id: source.source_id for source in context.sources
+    }
+    evidence_decisions = []
+    for decision in context.debug["evidence_decisions"]:
+        row = dict(decision)
+        source_id = source_id_by_chunk.get(str(row["chunk_id"]))
+        row["citation_status"] = (
+            "not_selected"
+            if source_id is None
+            else "cited"
+            if source_id in cited_source_ids
+            else "not_cited"
+        )
+        evidence_decisions.append(row)
     return {
         "id": case["id"],
         "category": case["category"],
@@ -210,7 +245,8 @@ def _run_case(case: dict[str, Any], *, top_k: int) -> dict[str, Any]:
         },
         "generation": generation,
         "repair": repair,
-        "diagnostics": _redundancy_diagnostics(case["sources"]),
+        "evidence_decisions": evidence_decisions,
+        "diagnostics": _plain_value(context.debug["redundancy_report"]),
     }
 
 
@@ -291,36 +327,12 @@ def _citation_metrics(
     return round(precision, 6), round(recall, 6)
 
 
-def _redundancy_diagnostics(sources: list[dict[str, Any]]) -> dict[str, Any]:
-    exact_pairs = 0
-    overlaps: list[dict[str, Any]] = []
-    for index, left in enumerate(sources):
-        for right in sources[index + 1 :]:
-            if left["content"] == right["content"]:
-                exact_pairs += 1
-            if left["document_id"] != right["document_id"]:
-                continue
-            chars = _suffix_prefix_overlap(left["content"], right["content"])
-            if chars:
-                overlaps.append(
-                    {
-                        "left": left["chunk_id"],
-                        "right": right["chunk_id"],
-                        "chars": chars,
-                    }
-                )
-    return {
-        "exact_duplicate_pairs": exact_pairs,
-        "overlap_pairs": overlaps,
-    }
-
-
-def _suffix_prefix_overlap(left: str, right: str) -> int:
-    maximum = min(len(left), len(right))
-    for size in range(maximum, 3, -1):
-        if left[-size:] == right[:size]:
-            return size
-    return 0
+def _plain_value(value: Any) -> Any:
+    if isinstance(value, dict) or hasattr(value, "items"):
+        return {key: _plain_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_plain_value(item) for item in value]
+    return value
 
 
 def _fact_coverage(facts: tuple[dict[str, Any], ...], context: str) -> float:
@@ -378,6 +390,122 @@ def write_reports(result: dict[str, Any], output_dir: Path = DEFAULT_OUTPUT) -> 
         encoding="utf-8",
     )
     md_path.write_text(_render_markdown(result), encoding="utf-8")
+    t04_result = _t04_report(result)
+    (output_dir / "t04-redundancy-report.json").write_text(
+        json.dumps(t04_result, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "t04-redundancy-report.md").write_text(
+        _render_t04_markdown(t04_result), encoding="utf-8"
+    )
+
+
+def _t04_report(result: dict[str, Any]) -> dict[str, Any]:
+    metrics = result["metrics"]
+    return {
+        "report_id": "h31-t04-redundancy-report-v1",
+        "dataset_id": result["dataset_id"],
+        "policy": result["policy"],
+        "mode": "report_only",
+        "behavior_changed": False,
+        "generation_prompt_tokens_est_local_total": metrics[
+            "generation_prompt_tokens_est_local_total"
+        ],
+        "exact_duplicate_count": metrics["exact_duplicate_pairs"],
+        "exact_duplicate_prompt_tokens_est_local": metrics[
+            "exact_duplicate_prompt_tokens_est_local"
+        ],
+        "exact_duplicate_avoided_content_tokens_est_local": metrics[
+            "exact_duplicate_avoided_content_tokens_est_local"
+        ],
+        "overlap_pair_count": metrics["overlap_pairs"],
+        "overlap_chars": metrics["overlap_chars"],
+        "overlap_tokens_est_local": metrics["overlap_tokens_est_local"],
+        "redundancy_prompt_tokens_est_local": metrics[
+            "redundancy_prompt_tokens_est_local"
+        ],
+        "redundancy_share_of_generation_prompt": metrics[
+            "redundancy_share_of_generation_prompt"
+        ],
+        "coverage_gap_case_count": sum(
+            1 for case in result["cases"] if case["fact_coverage"] < 1.0
+        ),
+        "decisions_by_action": _decision_counts(result["cases"]),
+        "selected_not_cited_count": sum(
+            1
+            for case in result["cases"]
+            for decision in case["evidence_decisions"]
+            if decision["citation_status"] == "not_cited"
+        ),
+        "cases": [
+            {
+                "id": case["id"],
+                "decisions": case["evidence_decisions"],
+                "redundancy": case["diagnostics"],
+                "fact_coverage": case["fact_coverage"],
+                "result_status": case["result_status"],
+            }
+            for case in result["cases"]
+        ],
+        "assessment": "marginal",
+        "decision": {
+            "t07_focus": "supported-by-coverage-gap",
+            "t08_trim_overlap": "candidate-for-deferral",
+            "reason": (
+                "Measured overlap explains less than one percent of generation "
+                "prompt tokens; exact duplicates are already omitted by baseline_v1."
+            ),
+        },
+    }
+
+
+def _decision_counts(cases: tuple[dict[str, Any], ...]) -> dict[str, int]:
+    counts = {"selected": 0, "truncated": 0, "omitted": 0}
+    for case in cases:
+        for decision in case["evidence_decisions"]:
+            counts[decision["action"]] += 1
+    return counts
+
+
+def _render_t04_markdown(report: dict[str, Any]) -> str:
+    share_percent = report["redundancy_share_of_generation_prompt"] * 100
+    return "\n".join(
+        [
+            "# H3.1-T04 - Diagnostico report-only de redundancia",
+            "",
+            "## Resultado",
+            "",
+            "La duplicacion y el overlap son marginales en esta baseline. La politica",
+            "efectiva permanece `baseline_v1`; no se elimina ni recorta evidencia.",
+            "",
+            "| Medicion | Valor |",
+            "|---|---:|",
+            f"| Prompt generation | `{report['generation_prompt_tokens_est_local_total']}` tokens est. |",
+            f"| Duplicados exactos detectados | `{report['exact_duplicate_count']}` |",
+            f"| Duplicados exactos enviados | `{report['exact_duplicate_prompt_tokens_est_local']}` tokens est. |",
+            f"| Contenido duplicado ya evitado | `{report['exact_duplicate_avoided_content_tokens_est_local']}` tokens est. |",
+            f"| Pares con overlap | `{report['overlap_pair_count']}` |",
+            f"| Overlap enviado | `{report['overlap_chars']}` chars / `{report['overlap_tokens_est_local']}` tokens est. |",
+            f"| Fraccion explicada del prompt | `{share_percent:.3f}%` |",
+            f"| Casos con perdida de cobertura | `{report['coverage_gap_case_count']}` |",
+            f"| Fuentes seleccionadas no citadas | `{report['selected_not_cited_count']}` |",
+            "",
+            "## Interpretacion",
+            "",
+            "El duplicado exacto no desperdicia prompt: la deduplicacion vigente ya lo",
+            "omite. El unico overlap demostrado explica menos de 1% del total medido.",
+            "En cambio, existe un caso con perdida total de cobertura porque la fuente",
+            "necesaria queda en posicion seis. Los datos respaldan concentrar T07 en",
+            "seleccion y considerar T08 diferible, sujeto a la decision formal posterior.",
+            "",
+            "## Garantia report-only",
+            "",
+            "Cada candidato registra `selected`, `truncated` u `omitted`, razones y",
+            "contribucion estimada. El diagnostico no cambia fuentes, orden, contexto,",
+            "presupuesto, prompt ni respuesta.",
+            "",
+        ]
+    )
 
 
 def _render_markdown(result: dict[str, Any]) -> str:

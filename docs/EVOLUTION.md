@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T03 completadas.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T04 completadas.
 
 Pregunta que responde:
 
@@ -276,6 +276,12 @@ Sus resultados reproducibles están en
 [`../reports/h31/t03-baseline.md`](../reports/h31/t03-baseline.md); las decisiones
 T04-T08 permanecen sujetas a revisión de esos datos y no tienen objetivo de
 reducción prefijado.
+
+T04 confirmó que duplicación y overlap son marginales en el dataset vigente:
+el duplicado exacto ya era omitido y el overlap enviado representa `7` tokens
+estimados (`0.277%` del prompt de generación). El diagnóstico permanece
+`report_only`; la evidencia favorece concentrar T07 en cobertura y permite
+evaluar el diferimiento de T08.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

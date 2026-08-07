@@ -1565,6 +1565,17 @@ class ContextBuilder:
         )
         debug_payload = {}
         if debug:
+            evidence_decisions = _evidence_decisions(
+                candidates,
+                sources=tuple(sources),
+                omitted=omitted,
+                dedupe_min_hash_prefix=self.dedupe_min_hash_prefix,
+            )
+            redundancy = _context_redundancy_report(
+                candidates,
+                sources=tuple(sources),
+                dedupe_min_hash_prefix=self.dedupe_min_hash_prefix,
+            )
             debug_payload = {
                 "input_candidates": len(candidates),
                 "after_threshold": len(thresholded),
@@ -1576,6 +1587,9 @@ class ContextBuilder:
                 "truncated_sources": sum(
                     1 for source in sources if source.content_truncated
                 ),
+                "selection_policy": "baseline_v1",
+                "evidence_decisions": evidence_decisions,
+                "redundancy_report": redundancy,
             }
         return ContextBuildResult(
             sources=tuple(sources),
@@ -1735,6 +1749,138 @@ class PromptBuilder:
             context=context,
             answer=answer,
         ).rendered_prompt
+
+
+def _evidence_decisions(
+    candidates,
+    *,
+    sources: tuple[ContextSource, ...],
+    omitted: tuple[dict[str, object], ...],
+    dedupe_min_hash_prefix: int,
+) -> tuple[dict[str, object], ...]:
+    """Explica la politica vigente sin modificar seleccion ni orden."""
+    selected = {id(source.candidate): source for source in sources}
+    omitted_by_chunk = {str(item["chunk_id"]): str(item["reason"]) for item in omitted}
+    duplicate_kinds = _duplicate_kinds(
+        candidates, dedupe_min_hash_prefix=dedupe_min_hash_prefix
+    )
+    decisions = []
+    for index, candidate in enumerate(candidates):
+        source = selected.get(id(candidate))
+        if source is not None:
+            action = "truncated" if source.content_truncated else "selected"
+            reasons = ("max_chunk_tokens",) if source.content_truncated else ("selected",)
+            contribution = estimate_tokens(_render_source_context(source))
+        else:
+            action = "omitted"
+            reason = omitted_by_chunk.get(candidate.chunk_id, "not_selected")
+            if reason == "duplicate":
+                reason = duplicate_kinds[index] or "duplicate_content"
+            reasons = (reason,)
+            contribution = 0
+        decisions.append(
+            {
+                "chunk_id": candidate.chunk_id,
+                "action": action,
+                "reasons": reasons,
+                "combined_score": candidate.combined_score,
+                "contribution_tokens_est_local": contribution,
+            }
+        )
+    return tuple(decisions)
+
+
+def _duplicate_kinds(
+    candidates,
+    *,
+    dedupe_min_hash_prefix: int,
+) -> tuple[str | None, ...]:
+    seen_chunks: set[str] = set()
+    seen_hashes: set[str] = set()
+    kinds: list[str | None] = []
+    for candidate in candidates:
+        hash_prefix = candidate.content_sha256[:dedupe_min_hash_prefix]
+        if candidate.chunk_id in seen_chunks:
+            kinds.append("duplicate_chunk_id")
+        elif hash_prefix in seen_hashes:
+            kinds.append("duplicate_content")
+        else:
+            kinds.append(None)
+        seen_chunks.add(candidate.chunk_id)
+        seen_hashes.add(hash_prefix)
+    return tuple(kinds)
+
+
+def _context_redundancy_report(
+    candidates,
+    *,
+    sources: tuple[ContextSource, ...],
+    dedupe_min_hash_prefix: int,
+) -> dict[str, object]:
+    """Mide redundancia exacta y overlap; nunca cambia el contexto efectivo."""
+    duplicate_kinds = _duplicate_kinds(
+        candidates, dedupe_min_hash_prefix=dedupe_min_hash_prefix
+    )
+    selected_candidates = {id(source.candidate) for source in sources}
+    overlap_pairs: list[dict[str, object]] = []
+    for index, left in enumerate(sources):
+        for right in sources[index + 1 :]:
+            if left.candidate.source.get("document_id") != right.candidate.source.get(
+                "document_id"
+            ):
+                continue
+            overlap_chars = _suffix_prefix_overlap_chars(left.content, right.content)
+            if overlap_chars:
+                overlap_text = right.content[:overlap_chars]
+                overlap_pairs.append(
+                    {
+                        "left_chunk_id": left.candidate.chunk_id,
+                        "right_chunk_id": right.candidate.chunk_id,
+                        "overlap_chars": overlap_chars,
+                        "overlap_utf8_bytes": len(overlap_text.encode("utf-8")),
+                        "overlap_tokens_est_local": estimate_tokens(overlap_text),
+                        "effect": "report_only",
+                    }
+                )
+    exact_candidates = tuple(
+        {
+            "chunk_id": candidate.chunk_id,
+            "kind": kind,
+            "included_in_context": id(candidate) in selected_candidates,
+            "content_chars": len(
+                str(candidate.source.get("content") or candidate.source.get("snippet") or "")
+            ),
+            "content_tokens_est_local": estimate_tokens(
+                str(candidate.source.get("content") or candidate.source.get("snippet") or "")
+            ),
+        }
+        for candidate, kind in zip(candidates, duplicate_kinds, strict=True)
+        if kind is not None
+    )
+    return {
+        "mode": "report_only",
+        "exact_duplicate_candidates": exact_candidates,
+        "exact_duplicate_count": len(exact_candidates),
+        "exact_duplicate_prompt_tokens_est_local": 0,
+        "exact_duplicate_avoided_content_tokens_est_local": sum(
+            int(item["content_tokens_est_local"]) for item in exact_candidates
+        ),
+        "overlap_pairs": tuple(overlap_pairs),
+        "overlap_chars": sum(int(pair["overlap_chars"]) for pair in overlap_pairs),
+        "overlap_utf8_bytes": sum(
+            int(pair["overlap_utf8_bytes"]) for pair in overlap_pairs
+        ),
+        "overlap_tokens_est_local": sum(
+            int(pair["overlap_tokens_est_local"]) for pair in overlap_pairs
+        ),
+    }
+
+
+def _suffix_prefix_overlap_chars(left: str, right: str) -> int:
+    for size in range(min(len(left), len(right)), 3, -1):
+        if left[-size:] == right[:size]:
+            return size
+    return 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -2191,6 +2337,9 @@ class AskService:
         if debug:
             debug_payload["citation_repair_attempted"] = repair_attempted
             debug_payload["citation_repair_valid"] = repair_valid
+            debug_payload["citation_coverage"] = _citation_coverage_debug(
+                answer, context
+            )
             if not repair_attempted:
                 debug_payload["repair_prompt"] = None
                 debug_payload["repair_prompt_composition"] = None
@@ -2331,6 +2480,28 @@ def _context_prompt_components(
 
 def _render_source_context(source: ContextSource) -> str:
     return _render_source_metadata(source) + source.content
+
+
+def _citation_coverage_debug(
+    answer: str,
+    context: ContextBuildResult,
+) -> dict[str, object]:
+    """Lista IDs citados/no citados sin persistir contenido de evidencia."""
+    selected = tuple(source.source_id for source in context.sources)
+    cited = tuple(
+        source_id
+        for source_id in selected
+        if re.search(rf"\[{re.escape(source_id)}\]", answer)
+    )
+    cited_set = set(cited)
+    return {
+        "selected_source_count": len(selected),
+        "cited_source_count": len(cited),
+        "cited_source_ids": cited,
+        "uncited_selected_source_ids": tuple(
+            source_id for source_id in selected if source_id not in cited_set
+        ),
+    }
 
 
 def _render_source_metadata(source: ContextSource) -> str:

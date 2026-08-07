@@ -20,8 +20,13 @@ El dataset y todas sus fuentes son sinteticos y publicables.
 | `citation_valid_rate` | `1.0` |
 | `insufficient_case_count` | `2` |
 | `exact_duplicate_pairs` | `1` |
+| `exact_duplicate_prompt_tokens_est_local` | `0` |
+| `exact_duplicate_avoided_content_tokens_est_local` | `17` |
 | `overlap_pairs` | `1` |
 | `overlap_chars` | `27` |
+| `overlap_tokens_est_local` | `7` |
+| `redundancy_prompt_tokens_est_local` | `7` |
+| `redundancy_share_of_generation_prompt` | `0.002774` |
 | `generation_prompt_chars_total` | `10077` |
 | `generation_prompt_utf8_bytes_total` | `10117` |
 | `generation_prompt_tokens_est_local_total` | `2523` |

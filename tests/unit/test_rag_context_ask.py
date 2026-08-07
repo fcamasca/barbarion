@@ -413,6 +413,8 @@ def test_anthropic_labels_local_prompt_estimate_without_claiming_actual_usage(
     assert " prompt_tokens_est=" not in log_text
     assert "prompt_tokens_est_local" in result.debug
     assert "prompt_tokens_est" not in result.debug
+    assert result.debug["citation_coverage"]["cited_source_ids"] == ("F1",)
+    assert result.debug["citation_coverage"]["uncited_selected_source_ids"] == ()
 
 
 def test_ask_logs_timeout_during_initial_generation(

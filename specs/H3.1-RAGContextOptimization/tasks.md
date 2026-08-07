@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T03
-completadas; H3.1-T04 a H3.1-T12 pendientes.
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T04
+completadas; H3.1-T05 a H3.1-T12 pendientes.
 
 ## 2. Tareas
 
@@ -77,7 +77,7 @@ sin objetivo de reduccion prefijado.
 
 ### H3.1-T04 - Instrumentar decisiones y redundancia en report-only
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** explicar seleccion, omision, duplicacion y overlap sin reducir aun.  
 **Descripcion:** registrar `EvidenceDecision`, duplicados exactos y overlap por
 rango/contenido sobre candidatos acotados. La redundancia lexical entre
@@ -89,6 +89,13 @@ efectiva.
 **Requisitos:** REQ-005, REQ-006; NFR-003.  
 **Checkpoint:** tests exactos, overlap, documentos distintos, contradicciones y
 complejidad acotada.
+
+**Evidencia:** diagnostico efimero `report_only` por candidato y reporte
+`reports/h31/t04-redundancy-report.json`/`.md`. El duplicado exacto detectado ya
+es omitido por `baseline_v1` y aporta `0` tokens al prompt; el unico overlap
+demostrado aporta `7` tokens estimados, `0.277%` del prompt de generacion del
+benchmark. El resultado respalda priorizar T07 y deja T08 como candidato a
+diferimiento, sin cambiar aun seleccion, orden, contexto ni presupuesto.
 
 ### H3.1-T05 - Definir configuracion y migracion del presupuesto de input
 

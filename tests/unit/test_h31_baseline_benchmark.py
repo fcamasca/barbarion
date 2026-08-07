@@ -79,6 +79,11 @@ def test_baseline_measures_prompt_components_redundancy_and_repair() -> None:
     assert metrics["repair_prompt_count"] == 1
     assert metrics["repair_prompt_tokens_est_local_total"] == 154
     assert cases["citation-repair"]["repair"] is not None
+    literal_decisions = cases["literal-single"]["evidence_decisions"]
+    assert {decision["citation_status"] for decision in literal_decisions} == {
+        "cited",
+        "not_cited",
+    }
     assert all(
         case["generation"] is None
         or (
@@ -93,7 +98,12 @@ def test_committed_reports_are_exactly_reproducible(tmp_path: Path) -> None:
     result = run_baseline(load_dataset(ROOT / DEFAULT_DATASET))
     write_reports(result, tmp_path)
 
-    for name in ("t03-baseline.json", "t03-baseline.md"):
+    for name in (
+        "t03-baseline.json",
+        "t03-baseline.md",
+        "t04-redundancy-report.json",
+        "t04-redundancy-report.md",
+    ):
         assert (tmp_path / name).read_bytes() == (REPORT_DIR / name).read_bytes()
 
 

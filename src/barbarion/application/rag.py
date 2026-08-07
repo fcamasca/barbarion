@@ -8,11 +8,17 @@ import logging
 import math
 import re
 import time
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from barbarion.config import Settings
+from barbarion.application.privacy import (
+    PrivacyPreflightService,
+    resolve_inference_target,
+)
+from barbarion.domain.privacy import PrivacyAuthorization
 from barbarion.domain.progress import (
     CancellationTokenPort,
     ProgressReporterPort,
@@ -2182,9 +2188,16 @@ class AskService:
     citation_validator: CitationValidator
     llm_provider: LlmProviderPort
     settings: Settings
+    privacy_preflight: PrivacyPreflightService
     structured_retriever: DataDrivenEvidenceRetriever | None = None
 
-    def _generate_with_observability(self, prompt: str, *, stage: str) -> str:
+    def _generate_with_observability(
+        self,
+        prompt: str,
+        *,
+        stage: str,
+        authorization: PrivacyAuthorization,
+    ) -> str:
         """Genera una respuesta registrando métricas sin contenido sensible.
 
         Args:
@@ -2197,6 +2210,8 @@ class AskService:
         Raises:
             Exception: Conserva sin cambios cualquier error del proveedor.
         """
+        if not isinstance(authorization, PrivacyAuthorization):
+            raise ValueError("PrivacyAuthorization es obligatoria para generar.")
         timeout_seconds = self.settings.llm.timeout_seconds
         prompt_chars = len(prompt)
         prompt_tokens_est = estimate_tokens(prompt)
@@ -2488,6 +2503,11 @@ class AskService:
                 no_llm=True,
                 debug=base_debug_payload if debug else {},
             )
+        target = resolve_inference_target(self.settings)
+        authorization = self.privacy_preflight.authorize(
+            operation_id=uuid.uuid4().hex,
+            target=target,
+        )
         prompt = self.prompt_builder.build(question=question, context=context)
         prompt_composition = self.prompt_builder.compose(
             question=question,
@@ -2510,6 +2530,7 @@ class AskService:
             answer = self._generate_with_observability(
                 prompt,
                 stage="generation",
+                authorization=authorization,
             )
         except (Exception, KeyboardInterrupt):
             self._record_failed_llm_query(
@@ -2608,6 +2629,7 @@ class AskService:
                     repaired_answer = self._generate_with_observability(
                         repair_prompt,
                         stage="repair",
+                        authorization=authorization,
                     )
                 except (Exception, KeyboardInterrupt):
                     self._record_failed_llm_query(

@@ -15,6 +15,11 @@ from barbarion.application.rag import (
     ContextBuilder,
     PromptBuilder,
 )
+from barbarion.application.privacy import (
+    PrivacyPreflightService,
+    UnavailableAccountPrivacyVerifier,
+)
+from barbarion.domain.privacy import PrivacyPolicy
 from barbarion.domain.rag import RagQueryStatus, RetrievalMode
 from tests.unit.test_rag_search_service import service_for
 
@@ -37,6 +42,11 @@ class RecordingLlm:
 
 def _service(tmp_path, provider: RecordingLlm) -> AskService:
     search = service_for(tmp_path)
+    settings = replace(
+        search.settings,
+        llm=replace(search.settings.llm, execution="local"),
+        rag=replace(search.settings.rag, input_token_budget_est=4500),
+    )
     return AskService(
         search_service=search,
         context_builder=ContextBuilder(
@@ -48,9 +58,11 @@ def _service(tmp_path, provider: RecordingLlm) -> AskService:
         prompt_builder=PromptBuilder(),
         citation_validator=CitationValidator(),
         llm_provider=provider,
-        settings=replace(
-            search.settings,
-            rag=replace(search.settings.rag, input_token_budget_est=4500),
+        settings=settings,
+        privacy_preflight=PrivacyPreflightService(
+            policy=PrivacyPolicy(),
+            policy_source=None,
+            account_verifier=UnavailableAccountPrivacyVerifier(),
         ),
     )
 

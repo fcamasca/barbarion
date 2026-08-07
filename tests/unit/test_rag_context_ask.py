@@ -16,6 +16,11 @@ from barbarion.application.rag import (
     _build_context_for_input_budget,
     _build_repair_context_for_input_budget,
 )
+from barbarion.application.privacy import (
+    PrivacyPreflightService,
+    UnavailableAccountPrivacyVerifier,
+)
+from barbarion.domain.privacy import PrivacyPolicy
 from barbarion.domain.rag import (
     CitationValidation,
     LlmProviderError,
@@ -516,6 +521,10 @@ def ask_service(
 ) -> tuple[AskService, FakeLlm]:
     search_service = service_for(tmp_path)
     fake_llm = FakeLlm(answer)
+    settings = replace(
+        search_service.settings,
+        llm=replace(search_service.settings.llm, execution="local"),
+    )
     service = AskService(
         search_service=search_service,
         context_builder=ContextBuilder(
@@ -527,7 +536,12 @@ def ask_service(
         prompt_builder=PromptBuilder(),
         citation_validator=CitationValidator(),
         llm_provider=fake_llm,
-        settings=search_service.settings,
+        settings=settings,
+        privacy_preflight=PrivacyPreflightService(
+            policy=PrivacyPolicy(),
+            policy_source=None,
+            account_verifier=UnavailableAccountPrivacyVerifier(),
+        ),
     )
     return service, fake_llm
 
@@ -1006,6 +1020,11 @@ def test_ask_does_not_read_anthropic_key_before_generation(
         citation_validator=CitationValidator(),
         llm_provider=provider,
         settings=search_service.settings,
+        privacy_preflight=PrivacyPreflightService(
+            policy=PrivacyPolicy(),
+            policy_source=None,
+            account_verifier=UnavailableAccountPrivacyVerifier(),
+        ),
     )
 
     result = service.ask(

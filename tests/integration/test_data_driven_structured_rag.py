@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,9 +21,14 @@ from barbarion.application.rag import (
     PromptBuilder,
     SearchService,
 )
+from barbarion.application.privacy import (
+    PrivacyPreflightService,
+    UnavailableAccountPrivacyVerifier,
+)
 from barbarion.config import Settings, load_settings
 from barbarion.database import initialize_database
 from barbarion.domain.rag import RetrievalFilter, RetrievalMode
+from barbarion.domain.privacy import PrivacyPolicy
 from barbarion.infrastructure.embeddings import DeterministicFakeEmbeddingProvider
 from barbarion.infrastructure.embeddings import OllamaEmbeddingProvider
 from barbarion.infrastructure.sqlite import (
@@ -715,6 +721,10 @@ def _ask_service(
     Returns:
         Servicio listo para las pruebas de respuesta.
     """
+    local_settings = replace(
+        settings,
+        llm=replace(settings.llm, execution="local"),
+    )
     return AskService(
         search_service=search_service,
         context_builder=ContextBuilder(
@@ -726,7 +736,12 @@ def _ask_service(
         prompt_builder=PromptBuilder(),
         citation_validator=CitationValidator(),
         llm_provider=llm,
-        settings=settings,
+        settings=local_settings,
+        privacy_preflight=PrivacyPreflightService(
+            policy=PrivacyPolicy(),
+            policy_source=None,
+            account_verifier=UnavailableAccountPrivacyVerifier(),
+        ),
         structured_retriever=_structured_retriever(
             settings,
             search_service.repository,

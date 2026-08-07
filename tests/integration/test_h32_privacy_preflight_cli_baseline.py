@@ -7,6 +7,7 @@ import pytest
 from barbarion import cli
 from tests.integration.test_h3_rag_cli import prepare
 from tests.unit.test_h32_privacy_preflight_baseline import RecordingLlm
+from tests.support.privacy import passing_privacy_preflight
 
 
 def test_h32_int001_cli_generation_and_repair_use_configured_provider(
@@ -16,6 +17,10 @@ def test_h32_int001_cli_generation_and_repair_use_configured_provider(
 ) -> None:
     """El ask CLI cruza la frontera solo para generation y repair."""
     config, _db_path = prepare(tmp_path)
+    config.write_text(
+        config.read_text(encoding="utf-8") + '\n[llm]\nexecution = "local"\n',
+        encoding="utf-8",
+    )
     assert cli.main(["--config", str(config), "ingest"]) == 0
     capsys.readouterr()
 
@@ -24,6 +29,11 @@ def test_h32_int001_cli_generation_and_repair_use_configured_provider(
         "order_total se asigna al valor sintetico 10 [F1].",
     )
     monkeypatch.setattr(cli, "_build_llm_provider", lambda settings: provider)
+    monkeypatch.setattr(
+        cli,
+        "_build_privacy_preflight",
+        lambda settings: passing_privacy_preflight(),
+    )
 
     exit_code = cli.main(
         [

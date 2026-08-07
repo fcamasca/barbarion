@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T06
-completadas; T07-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T08
+completadas; T09-T13 pendientes.
 
 ## 2. Tareas
 
@@ -139,7 +139,7 @@ No decide PASS/BLOCK, no implementa cliente HTTP ni modifica `AskService`.
 
 ### H3.2-T07 - Reservar contrato minimo de verificacion de cuenta
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** mantener separada la configuracion efectiva sin anticipar IO.  
 **Archivos/componentes esperados:** protocolo minimo `AccountPrivacyVerifier`,
 resultado `unavailable` y fake contractual sin credenciales ni red.  
@@ -154,9 +154,17 @@ incluye API de provider, credenciales, HTTP ni deteccion de configuracion real.
 **Checkpoint:** `ZDR available` sin garantia incondicional sigue UNKNOWN; el diff
 de T07 no contiene clientes HTTP, resolvers de secretos ni adaptadores de cuenta.
 
+**Evidencia:** contrato y estados en `src/barbarion/domain/privacy.py`,
+implementaciones `UnavailableAccountPrivacyVerifier` e
+`InMemoryAccountPrivacyVerifier` en `src/barbarion/application/privacy.py`,
+pruebas TP-033..037 en `tests/unit/test_h32_account_privacy_verifier.py` y
+reporte `reports/h32/t07-account-verifier-contract.md`. Produccion retorna
+siempre `unavailable`; no se agregaron HTTP, credenciales, configuracion,
+deteccion de cuenta ni logica de proveedor.
+
 ### H3.2-T08 - Integrar el gate en AskService
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** bloquear antes del primer egress generativo.  
 **Archivos/componentes esperados:** composicion de `PrivacyPreflightService`,
 `AskService`, errores de dominio/aplicacion, tests con spies.  
@@ -165,6 +173,16 @@ producir autorizacion por operation ID y requerirla en el wrapper comun.
 **Pruebas:** H3.2-TP-038..043, INT-004..007.  
 **Dependencias:** T03, T04, T06, T07.  
 **Checkpoint:** BLOCK implica exactamente cero llamadas a `generate()`.
+
+**Evidencia:** `PrivacyPreflightService` en
+`src/barbarion/application/privacy.py`, gate y autorizacion obligatoria en
+`src/barbarion/application/rag.py`, composicion desde cache local en
+`src/barbarion/cli.py`, matriz TP-038..043 en
+`tests/unit/test_h32_privacy_preflight_ask.py`, integracion segura en
+`tests/integration/test_h32_privacy_preflight_gate.py` y reporte
+`reports/h32/t08-ask-gate.md`. BLOCK ocurre antes de `PromptBuilder.build`, logs
+LLM y `generate()`; los returns `--no-llm` e insuficiencia permanecen antes del
+preflight.
 
 ### H3.2-T09 - Blindar repair y cambios de identidad
 

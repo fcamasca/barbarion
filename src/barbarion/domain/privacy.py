@@ -49,6 +49,15 @@ class PrivacyProfile(StrEnum):
     STRICT = "strict"
 
 
+class AccountVerificationStatus(StrEnum):
+    """Disponibilidad del contrato futuro de observacion de cuenta."""
+
+    VERIFIED = "verified"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
+    ERROR = "error"
+
+
 @dataclass(frozen=True, slots=True)
 class InferenceTarget:
     """Identidad publica e inmutable del destino generativo."""
@@ -178,6 +187,54 @@ class PrivacyPolicySource(Protocol):
 
     def lookup(self, target: InferenceTarget) -> PrivacyPolicySourceResult:
         """Obtiene evidencia ya normalizada, sin recibir contenido de usuario."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class AccountPrivacyVerificationResult:
+    """Observaciones estructuradas; nunca una decision de politica."""
+
+    status: AccountVerificationStatus
+    evidence: tuple[PrivacyEvidence, ...] = ()
+    reason_code: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_instance(self.status, AccountVerificationStatus, "status")
+        object.__setattr__(self, "evidence", tuple(self.evidence))
+        if any(not isinstance(item, PrivacyEvidence) for item in self.evidence):
+            raise ValueError("evidence solo admite PrivacyEvidence.")
+        if any(item.scope != "account" for item in self.evidence):
+            raise ValueError("La evidencia del verifier debe usar scope=account.")
+        if any(item.source_kind != "account_verifier" for item in self.evidence):
+            raise ValueError(
+                "La evidencia del verifier debe usar source_kind=account_verifier."
+            )
+        if self.status in {
+            AccountVerificationStatus.UNAVAILABLE,
+            AccountVerificationStatus.ERROR,
+        } and self.evidence:
+            raise ValueError("unavailable/error no pueden exponer evidencia.")
+        if self.status in {
+            AccountVerificationStatus.VERIFIED,
+            AccountVerificationStatus.PARTIAL,
+        } and not self.evidence:
+            raise ValueError("verified/partial requieren evidencia.")
+        if self.status is AccountVerificationStatus.ERROR:
+            object.__setattr__(
+                self,
+                "reason_code",
+                _normalize_required(self.reason_code, "reason_code"),
+            )
+        elif self.reason_code is not None:
+            object.__setattr__(self, "reason_code", _normalize_optional(self.reason_code))
+
+
+@runtime_checkable
+class AccountPrivacyVerifier(Protocol):
+    """Puerto futuro que solo puede observar identidad publica de cuenta."""
+
+    def verify(self, target: InferenceTarget) -> AccountPrivacyVerificationResult:
+        """Devuelve observaciones, indisponibilidad o error tipado."""
         ...
 
 

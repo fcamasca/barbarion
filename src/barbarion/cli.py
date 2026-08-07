@@ -47,6 +47,11 @@ from barbarion.application.model_benchmark_reporting import (
     write_model_benchmark_report,
 )
 from barbarion.application.model_benchmark_scoring import aggregate_model_benchmark
+from barbarion.application.privacy import (
+    PrivacyPreflightBlockedError,
+    PrivacyPreflightService,
+    UnavailableAccountPrivacyVerifier,
+)
 from barbarion.application.rag import (
     AskService,
     CitationValidator,
@@ -88,6 +93,7 @@ from barbarion.domain.models import IngestionMode
 from barbarion.domain.models import IngestionOutcome
 from barbarion.domain.models import IngestionRunStatus
 from barbarion.domain.models import Confidence
+from barbarion.domain.privacy import PrivacyPolicy
 from barbarion.domain.local_models import LocalModelProviderError
 from barbarion.domain.local_models import LocalModelErrorCode, PullProgress
 from barbarion.domain.model_benchmark import (
@@ -141,6 +147,7 @@ from barbarion.infrastructure.parsers import (
     TextParser,
 )
 from barbarion.infrastructure.parsers.registry import ParserRegistry
+from barbarion.infrastructure.privacy_cache import PrivacySnapshotCache
 from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
@@ -1403,6 +1410,12 @@ def _run_ask(args: argparse.Namespace) -> int:
             no_llm=args.no_llm,
             debug=args.debug,
         )
+    except PrivacyPreflightBlockedError:
+        print(
+            "Privacy preflight bloqueo la inferencia remota; no se envio ningun prompt.",
+            file=sys.stderr,
+        )
+        return 1
     except KeyboardInterrupt:
         _render_anthropic_usage(service)
         print("Operacion interrumpida por el usuario.", file=sys.stderr)
@@ -1983,11 +1996,24 @@ def _build_ask_service(settings: Settings) -> AskService:
         citation_validator=CitationValidator(),
         llm_provider=_build_llm_provider(settings),
         settings=settings,
+        privacy_preflight=_build_privacy_preflight(settings),
         structured_retriever=DataDrivenEvidenceRetriever(
             repository=SQLiteReverseEngineeringRepository(settings.database_path),
             rag_repository=search_service.repository,
             domain=settings.domain,
         ),
+    )
+
+
+def _build_privacy_preflight(settings: Settings) -> PrivacyPreflightService:
+    """Compone el gate exclusivamente desde evidencia local vigente."""
+    privacy_cache = PrivacySnapshotCache(settings.data_dir).read(
+        now=datetime.now(timezone.utc)
+    )
+    return PrivacyPreflightService(
+        policy=PrivacyPolicy(),
+        policy_source=privacy_cache.source,
+        account_verifier=UnavailableAccountPrivacyVerifier(),
     )
 
 

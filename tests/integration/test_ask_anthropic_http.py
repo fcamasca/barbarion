@@ -18,6 +18,16 @@ from barbarion.infrastructure.anthropic import (
     AnthropicLlmProvider,
 )
 from tests.unit.test_rag_index_service import seed_chunks
+from tests.support.privacy import passing_privacy_preflight
+
+
+@pytest.fixture(autouse=True)
+def _authorized_privacy_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "_build_privacy_preflight",
+        lambda settings: passing_privacy_preflight(),
+    )
 
 
 class FakeResponse:

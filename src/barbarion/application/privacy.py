@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 from barbarion.config import Settings
 from barbarion.domain.privacy import (
+    AccountPrivacyVerificationResult,
+    AccountPrivacyVerifier,
+    AccountVerificationStatus,
     ConstraintEvaluation,
     EvaluationState,
     InferenceExecution,
     InferenceTarget,
     PrivacyConstraint,
     PrivacyEvidence,
+    PrivacyAuthorization,
     PrivacyPolicy,
+    PrivacyPolicySource,
+    PrivacyPreflightDecision,
     PrivacyPreflightResult,
 )
 
@@ -28,6 +36,116 @@ ZERO_DATA_RETENTION_AVAILABLE = "zdr_available"
 
 class InferenceTargetResolutionError(ValueError):
     """La declaracion del operador contradice el transporte demostrado."""
+
+
+class UnavailableAccountPrivacyVerifier:
+    """Implementacion productiva v1: contrato presente, observacion ausente."""
+
+    def verify(self, target: InferenceTarget) -> AccountPrivacyVerificationResult:
+        if not isinstance(target, InferenceTarget):
+            raise ValueError("target debe ser InferenceTarget.")
+        return AccountPrivacyVerificationResult(
+            status=AccountVerificationStatus.UNAVAILABLE,
+            reason_code="account_verifier_unavailable",
+        )
+
+
+class InMemoryAccountPrivacyVerifier:
+    """Fake contractual sin IO para demostrar extensibilidad futura."""
+
+    def __init__(self, result: AccountPrivacyVerificationResult) -> None:
+        if not isinstance(result, AccountPrivacyVerificationResult):
+            raise ValueError("result debe ser AccountPrivacyVerificationResult.")
+        self._result = result
+        self.observed_targets: list[InferenceTarget] = []
+
+    def verify(self, target: InferenceTarget) -> AccountPrivacyVerificationResult:
+        if not isinstance(target, InferenceTarget):
+            raise ValueError("target debe ser InferenceTarget.")
+        self.observed_targets.append(target)
+        return self._result
+
+
+class PrivacyPreflightBlockedError(RuntimeError):
+    """Decision segura que impide construir o enviar el prompt generativo."""
+
+    def __init__(self, result: PrivacyPreflightResult) -> None:
+        self.result = result
+        super().__init__("Privacy preflight bloqueo la inferencia remota.")
+
+
+@dataclass(frozen=True, slots=True)
+class PrivacyPreflightService:
+    """Combina evidencia local y evaluadores puros para emitir autorizacion."""
+
+    policy: PrivacyPolicy
+    policy_source: PrivacyPolicySource | None
+    account_verifier: AccountPrivacyVerifier
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)
+
+    def authorize(
+        self,
+        *,
+        operation_id: str,
+        target: InferenceTarget,
+    ) -> PrivacyAuthorization:
+        evaluated_at = self.clock()
+        if target.execution is InferenceExecution.LOCAL:
+            result = PrivacyPreflightResult(
+                target=target,
+                policy=self.policy,
+                evaluated_at=evaluated_at,
+                evaluations=tuple(
+                    ConstraintEvaluation(
+                        constraint=constraint,
+                        state=EvaluationState.NOT_APPLICABLE,
+                        reason_code="local_inference",
+                    )
+                    for constraint in PrivacyConstraint
+                ),
+            )
+            return PrivacyAuthorization.issue(
+                operation_id=operation_id,
+                result=result,
+            )
+
+        evidence: tuple[PrivacyEvidence, ...] = ()
+        if target.execution is InferenceExecution.REMOTE:
+            if self.policy_source is not None:
+                try:
+                    evidence = self.policy_source.lookup(target).evidence
+                except Exception:
+                    evidence = ()
+            try:
+                account = self.account_verifier.verify(target)
+            except Exception:
+                account = AccountPrivacyVerificationResult(
+                    status=AccountVerificationStatus.ERROR,
+                    reason_code="account_verifier_error",
+                )
+            evidence = (*evidence, *account.evidence)
+
+        evaluations = (
+            evaluate_no_training(evidence, evaluated_at=evaluated_at),
+            evaluate_retention(evidence, evaluated_at=evaluated_at),
+            evaluate_data_location(
+                evidence,
+                policy=self.policy,
+                evaluated_at=evaluated_at,
+            ),
+        )
+        result = PrivacyPreflightResult(
+            target=target,
+            policy=self.policy,
+            evaluated_at=evaluated_at,
+            evaluations=evaluations,
+        )
+        if result.decision is PrivacyPreflightDecision.BLOCK:
+            raise PrivacyPreflightBlockedError(result)
+        return PrivacyAuthorization.issue(
+            operation_id=operation_id,
+            result=result,
+        )
 
 
 def resolve_inference_target(settings: Settings) -> InferenceTarget:
@@ -105,6 +223,7 @@ def evaluate_no_training(
         evaluated_at=evaluated_at,
     )
     values = {item.value for item in applicable}
+    observed_values = {item.value for item in observed}
     guaranteed = tuple(
         item for item in applicable if item.value == NO_TRAINING_GUARANTEED
     )
@@ -135,7 +254,7 @@ def evaluate_no_training(
         )
     reason = (
         "training_opt_out_only"
-        if TRAINING_OPT_OUT_AVAILABLE in values
+        if TRAINING_OPT_OUT_AVAILABLE in observed_values
         else "no_training_unknown"
     )
     return _evaluation(
@@ -169,6 +288,7 @@ def evaluate_retention(
         if type(item.value) is int and item.value > 0
     )
     values = {item.value for item in applicable}
+    observed_values = {item.value for item in observed}
 
     if zero and positive:
         return _evaluation(
@@ -198,7 +318,7 @@ def evaluate_retention(
         )
     reason = (
         "zdr_available_not_effective"
-        if ZERO_DATA_RETENTION_AVAILABLE in values
+        if ZERO_DATA_RETENTION_AVAILABLE in observed_values
         else "retention_unknown"
     )
     return _evaluation(

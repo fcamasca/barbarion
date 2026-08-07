@@ -27,6 +27,7 @@ La documentación pública no debe contener nombres de sistemas internos, objeto
 - `DECISIONS.md` registra por qué se eligieron y cómo se reemplazan.
 - `CLI.md` documenta la operación vigente de la línea de comandos.
 - `H31-RAG-CONTEXT.md` explica las políticas RAG, sus métricas y límites de privacidad.
+- [`../specs/H3.1-RAGContextOptimization/acceptance.md`](../specs/H3.1-RAGContextOptimization/acceptance.md) registra la aceptación H3.1 y mantiene `optimized_v1` como candidata opt-in.
 - Cada carpeta de `specs/` define el trabajo aprobado para un hito.
 - [`../specs/H5-SpecMode/acceptance.md`](../specs/H5-SpecMode/acceptance.md) registra la validación técnica H5 y mantiene explícita la revisión humana pendiente.
 - [`../specs/H1.1-LocalModelManagement/acceptance.md`](../specs/H1.1-LocalModelManagement/acceptance.md) registra la aceptación técnica H1.1 y la comparación real entre modelos que continúa pendiente.

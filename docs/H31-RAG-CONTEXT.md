@@ -122,8 +122,11 @@ Para leerlos, separa tres familias de datos:
 La comparación T07 recuperó la fuente relevante en posición seis y elevó la
 cobertura agregada de fuentes/hechos y el recall de citas de `0.888889` a
 `1.0`, sin regresión de retrieval ni validez de citas. T10 calificó por ello a
-`optimized_v1` como candidata a default. Promoverla requiere una decisión
-posterior explícita; H3.1 mantiene `baseline_v1` como default.
+`optimized_v1` como candidata a default. T12 acepta H3.1, pero conserva una
+decisión de despliegue conservadora: `baseline_v1` permanece como default y
+`optimized_v1` sigue opt-in hasta validar corpus adicionales. La evidencia
+final está en
+[`../specs/H3.1-RAGContextOptimization/acceptance.md`](../specs/H3.1-RAGContextOptimization/acceptance.md).
 
 ## Privacidad y límites
 

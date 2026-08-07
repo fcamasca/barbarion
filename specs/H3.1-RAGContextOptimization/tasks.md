@@ -251,7 +251,7 @@ opcionales ausentes en esa runtime y no reemplazan la evidencia T10
 
 ### H3.1-T12 - Aceptacion tecnica y funcional
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** cerrar H3.1 solo con evidencia reproducible.  
 **Descripcion:** ejecutar suite, smoke instalado, benchmark baseline/optimized,
 scanner de privacidad y validaciones opt-in autorizadas. Crear por primera vez
@@ -261,6 +261,12 @@ No inventar uso real si un proveedor no fue ejecutado.
 **Resultado esperado:** ACCEPTED, REJECTED o aceptacion condicionada explicita.  
 **Requisitos:** todos.  
 **Checkpoint:** `acceptance.md` respaldado por artefactos reproducibles.
+
+**Resultado T12:** `ACCEPTED` el 2026-08-07. Suite instalada
+`924 passed, 3 skipped`, smoke `11 passed`, benchmark reproducible `7 passed` y
+scanner de privacidad sin coincidencias. `baseline_v1` permanece como default;
+`optimized_v1` sigue opt-in y su promocion queda diferida hasta validar mas
+corpus. Evidencia completa en [`acceptance.md`](acceptance.md).
 
 **Puerta correctiva previa:** una ejecucion real posterior a T11 detecto
 candidatos vectoriales sin chunk vigente. Antes de T12 se corrigio el consumo

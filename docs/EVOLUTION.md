@@ -324,6 +324,13 @@ La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no
 pueden contener información de sistemas privados.
 
+T12 acepta H3.1 con suite instalada `924 passed, 3 skipped`, smoke `11 passed`,
+benchmark reproducible y scanner de privacidad limpio. Las validaciones reales
+se registran solo como hallazgos agregados, sin contenido del corpus. La
+aceptación no promueve la candidata: `baseline_v1` sigue como default y
+`optimized_v1` permanece opt-in hasta validar corpus adicionales. Evidencia:
+[`../specs/H3.1-RAGContextOptimization/acceptance.md`](../specs/H3.1-RAGContextOptimization/acceptance.md).
+
 Spec:
 
 [`../specs/H3.1-RAGContextOptimization/`](../specs/H3.1-RAGContextOptimization/).

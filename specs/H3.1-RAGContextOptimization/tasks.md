@@ -12,8 +12,9 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T07
-completadas; H3.1-T08 a H3.1-T12 pendientes.
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T08
+completadas; H3.1-T09 a H3.1-T12 pendientes. T08 fue completada mediante una
+decision explicita de diferimiento basada en la baseline.
 
 ## 2. Tareas
 
@@ -165,7 +166,7 @@ citas. No incorpora diversidad semantica, cobertura inteligente ni reranker.
 
 ### H3.1-T08 - Reducir overlap demostrable
 
-**Estado:** pendiente.  
+**Estado:** completada — `trim_overlap_v1` diferido.
 **Objetivo:** evitar repetir contenido sin eliminar hechos.  
 **Descripcion:** decidir con evidencia de T03/T04 si se activa `trim_overlap_v1`.
 Si se activa, recortar solo segmentos contiguos demostrables, conservar rangos
@@ -176,6 +177,13 @@ y documentar la decision.
 **Requisitos:** REQ-005, REQ-006, REQ-008, REQ-010.  
 **Checkpoint:** tests de overlap real, similitud accidental, codigo repetitivo,
 documentos distintos y citas por rango.
+
+**Decision:** no implementar trim de overlap en H3.1. T04 midio solo `27`
+caracteres/`7` tokens estimados de overlap (`0.277%` del prompt), mientras T07
+demostro una mejora funcional material corrigiendo seleccion. Se conserva el
+diagnostico `report_only` y se reevaluara solo ante evidencia reproducible de
+impacto material, sin fijar un umbral arbitrario. Evidencia:
+`reports/h31/t08-overlap-decision.md`.
 
 ### H3.1-T09 - Extender observabilidad, CLI y reportes
 

@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T07 completadas.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T08 completadas.
 
 Pregunta que responde:
 
@@ -295,6 +295,12 @@ pérdida de la fuente relevante en posición seis y la recupera por score global
 la cobertura de fuentes/hechos y el recall de citas suben `0.111111`, sin
 regresión en retrieval ni validez de citas. No se agregó reranker, diversidad
 semántica ni inferencia de hechos.
+
+T08 se cierra con una decisión explícita de diferimiento: no se implementa
+`trim_overlap_v1` en H3.1. Los `7` tokens estimados de overlap (`0.277%`) no
+justifican manipular contenido y rangos. El diagnóstico `report_only` permanece
+disponible y la decisión solo se reevaluará ante nueva evidencia reproducible y
+material.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

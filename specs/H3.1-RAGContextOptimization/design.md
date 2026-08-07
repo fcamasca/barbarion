@@ -319,13 +319,17 @@ del corpus sintetico, nunca ejecuciones sobre sistemas privados.
 | Romper H4/H5 | pruebas de consumidores de ContextBuilder |
 | Perseguir 10,198 como target | puertas basadas en baseline y calidad, no numero fijo |
 
-## 12. Decisiones pendientes para la implementacion
+## 12. Decisiones de implementacion
 
-No bloquean el spec, pero T01/T02 deben resolverlas con datos:
+Resueltas con evidencia de T01-T08:
 
-- nombre/default final del presupuesto de input y politica de migracion;
-- estimador local inicial: conservar `chars/4` como baseline o adoptar uno
-  mejor calibrado sin dependencia pesada;
-- umbral de overlap lexical y si `trim_overlap_v1` entra al primer release;
+- `input_token_budget_est` es opcional, sin default numerico, y su migracion
+  rechaza la declaracion simultanea con `context_token_budget`;
+- el estimador local inicial es `chars4_v1`, siempre etiquetado como estimacion;
+- `trim_overlap_v1` queda diferido: T04 midio solo `0.277%` del prompt y T08
+  conserva deteccion `report_only` sin fijar un umbral lexical arbitrario;
+
+Pendientes para las tareas restantes:
+
 - persistir resumen extendido en SQLite o mantenerlo solo en reportes;
 - conjunto exacto de puertas numericas derivado de la baseline.

@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 completada; T02-T13
-pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 y H3.2-T02
+completadas; T03-T13 pendientes.
 
 ## 2. Tareas
 
@@ -39,7 +39,7 @@ modifico ningun archivo bajo `src/`.
 
 ### H3.2-T02 - Modelar identidad, estados y politica
 
-**Estado:** pendiente.  
+**Estado:** completada.  
 **Objetivo:** crear contratos puros sin IO.  
 **Archivos/componentes esperados:** `domain/privacy.py`, unit tests de modelos.  
 **Descripcion:** implementar `InferenceTarget`, restricciones, estados,
@@ -47,6 +47,12 @@ evidencia, policy strict, resultado y autorizacion con invariantes inmutables.
 **Pruebas:** H3.2-TP-003..006.  
 **Dependencias:** T01.  
 **Checkpoint:** `CONDITIONAL` no existe; remoto no acepta `NOT_APPLICABLE`.
+
+**Evidencia:** `src/barbarion/domain/privacy.py`,
+`tests/unit/test_h32_privacy_domain.py` y `reports/h32/t02-domain.md`. El dominio
+puro modela target, constraints, evidencia, policy, resultado y autorizacion sin
+configuracion ni IO. La regresion focal aprobo 168 pruebas. No se modificaron
+`config.py`, `AskService`, CLI, registry, cache ni adaptadores.
 
 ### H3.2-T03 - Resolver configuracion efectiva local/remota
 

@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T05
-completadas; T06-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T06
+completadas; T07-T13 pendientes.
 
 ## 2. Tareas
 
@@ -119,7 +119,7 @@ efectiva. El adaptador no interpreta texto libre ni realiza red, cache o refresh
 
 ### H3.2-T06 - Implementar cache atomica y refresh explicito
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** permitir evaluacion offline con vigencia segura.  
 **Archivos/componentes esperados:** cache bajo `data_dir/privacy`, adaptador de
 refresh, comando/servicio de refresh, tests de reloj y filesystem temporal.  
@@ -129,6 +129,13 @@ separado del comando refresh.
 **Pruebas:** H3.2-TP-025..032, INT-003.  
 **Dependencias:** T05.  
 **Checkpoint:** `ask` nunca refresca; cache expirada o refresh fallido nunca produce PASS.
+
+**Evidencia:** cache local y servicio de refresh explicito en
+`src/barbarion/infrastructure/privacy_cache.py`, pruebas TP-025..032 en
+`tests/unit/test_h32_privacy_cache.py` y reporte
+`reports/h32/t06-privacy-cache.md`. T06 entrega un `PrivacyPolicySource` solo
+para snapshots `valid`; `missing`, `expired` e `invalid` no exponen evidencia.
+No decide PASS/BLOCK, no implementa cliente HTTP ni modifica `AskService`.
 
 ### H3.2-T07 - Reservar contrato minimo de verificacion de cuenta
 

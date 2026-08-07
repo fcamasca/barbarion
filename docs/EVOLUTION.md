@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T04 completadas.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T05 completadas.
 
 Pregunta que responde:
 
@@ -282,6 +282,11 @@ el duplicado exacto ya era omitido y el overlap enviado representa `7` tokens
 estimados (`0.277%` del prompt de generación). El diagnóstico permanece
 `report_only`; la evidencia favorece concentrar T07 en cobertura y permite
 evaluar el diferimiento de T08.
+
+T05 congela `rag.input_token_budget_est` como contrato opcional, sin default
+numérico y sin activarlo todavía. Las configuraciones legadas conservan
+`context_token_budget` y declarar ambas claves explícitamente se rechaza por
+ambigüedad. La aplicación efectiva corresponde a T06.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

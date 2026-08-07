@@ -49,7 +49,10 @@ vector_weight = 0.70
 keyword_weight = 0.30
 
 [rag]
+# Contrato legado activo en baseline_v1. No declarar junto con
+# input_token_budget_est; el presupuesto del input completo se define tras medir.
 context_token_budget = 6000
+# input_token_budget_est = <definir a partir de una baseline reproducible>
 max_chunk_tokens = 1200
 dedupe_min_hash_prefix = 16
 include_snippets = true

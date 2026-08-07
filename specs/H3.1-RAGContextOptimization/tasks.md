@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T04
-completadas; H3.1-T05 a H3.1-T12 pendientes.
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T05
+completadas; H3.1-T06 a H3.1-T12 pendientes.
 
 ## 2. Tareas
 
@@ -99,7 +99,7 @@ diferimiento, sin cambiar aun seleccion, orden, contexto ni presupuesto.
 
 ### H3.1-T05 - Definir configuracion y migracion del presupuesto de input
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** congelar el contrato provider-agnostic a partir de baseline.  
 **Descripcion:** decidir nombre/default, rango, precedencia y compatibilidad con
 `context_token_budget`; actualizar config show y ejemplo. Rechazar combinaciones
@@ -109,6 +109,13 @@ ambiguas. No activar aun la seleccion optimizada.
 explicita y validada.  
 **Requisitos:** REQ-007, REQ-014.  
 **Checkpoint:** unit tests de defaults, limites, claves desconocidas y migracion.
+
+**Evidencia:** contrato documentado en
+`reports/h31/t05-input-budget-contract.md`. `rag.input_token_budget_est` es
+opcional, sin default numerico, con rango `501..200000`; `config show` distingue
+el valor no configurado. Las configuraciones legadas conservan
+`context_token_budget=6000` y `baseline_v1`; declarar ambas claves explicitamente
+falla por ambiguedad. T05 no aplica el nuevo presupuesto ni cambia el pipeline.
 
 ### H3.1-T06 - Aplicar presupuesto al input completo
 

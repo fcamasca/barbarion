@@ -220,6 +220,12 @@ barbarion config show
 
 Usalo para verificar rutas, modelos y parametros antes de ejecutar ingesta o RAG. No modifica SQLite, no requiere embeddings y no requiere LLM. Codigos de salida: `0` si la configuracion es valida, `2` si hay error de configuracion.
 
+Para H3.1, `config show` presenta `rag.input_token_budget_est`. La clave es
+opcional, no tiene un default numerico y en T05 todavia no limita el prompt.
+Las configuraciones existentes siguen usando `rag.context_token_budget` con la
+politica `baseline_v1`. No declares ambas claves en el mismo archivo: representan
+contratos alternativos y la combinacion se rechaza como ambigua.
+
 ### models
 
 Proposito: descubrir, instalar, validar, seleccionar y comparar modelos

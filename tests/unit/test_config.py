@@ -187,6 +187,30 @@ def test_explicit_file_has_highest_precedence(tmp_path: Path) -> None:
     assert settings.config_source == explicit_file
 
 
+def test_input_budget_contract_is_optional_and_does_not_replace_legacy_default(
+    tmp_path: Path,
+) -> None:
+    source = write_config(
+        tmp_path / "input-budget.toml",
+        "[rag]\ninput_token_budget_est = 9000\n",
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.rag.input_token_budget_est == 9000
+    assert settings.rag.context_token_budget == 6000
+
+
+def test_input_and_context_budgets_cannot_be_declared_together(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "ambiguous-budget.toml",
+        "[rag]\ncontext_token_budget = 6000\ninput_token_budget_est = 9000\n",
+    )
+
+    with pytest.raises(ConfigError, match="no pueden declararse juntas"):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
 @pytest.mark.parametrize(
     ("config_path", "environ", "origin"),
     [
@@ -579,6 +603,8 @@ def test_anthropic_api_key_cannot_be_stored_in_llm_config(
         ("[retrieval]\nsimilarity_threshold = 2\n", "retrieval.similarity_threshold"),
         ("[retrieval]\nvector_weight = 0\nkeyword_weight = 0\n", "suma"),
         ("[rag]\ncontext_token_budget = 500\n", "rag.context_token_budget"),
+        ("[rag]\ninput_token_budget_est = 500\n", "rag.input_token_budget_est"),
+        ("[rag]\ninput_token_budget_est = 200001\n", "rag.input_token_budget_est"),
         ("[rag]\ndedupe_min_hash_prefix = 7\n", "rag.dedupe_min_hash_prefix"),
         ("[rag]\ninclude_snippets = 1\n", "rag.include_snippets"),
         ("[llm]\nprovider = \"other\"\n", "llm.provider"),
@@ -831,6 +857,7 @@ def test_example_configuration_is_valid(tmp_path: Path) -> None:
     assert settings.embeddings.model == "nomic-embed-text"
     assert settings.retrieval.mode == "hybrid"
     assert settings.rag.context_token_budget == 6000
+    assert settings.rag.input_token_budget_est is None
     assert settings.llm.provider == "ollama"
     assert settings.data_driven.enabled is False
     assert settings.data_driven.file_patterns == ("config/**/*.sql",)

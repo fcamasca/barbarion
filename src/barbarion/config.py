@@ -90,6 +90,7 @@ _DEFAULT_RETRIEVAL: dict[str, object] = {
 }
 _DEFAULT_RAG: dict[str, object] = {
     "context_token_budget": 6000,
+    "input_token_budget_est": None,
     "max_chunk_tokens": 1200,
     "dedupe_min_hash_prefix": 16,
     "include_snippets": True,
@@ -238,6 +239,7 @@ class RagSettings:
     max_chunk_tokens: int
     dedupe_min_hash_prefix: int
     include_snippets: bool
+    input_token_budget_est: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -475,6 +477,12 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("retrieval.vector_weight", str(settings.retrieval.vector_weight)),
         ("retrieval.keyword_weight", str(settings.retrieval.keyword_weight)),
         ("rag.context_token_budget", str(settings.rag.context_token_budget)),
+        (
+            "rag.input_token_budget_est",
+            "no configurado"
+            if settings.rag.input_token_budget_est is None
+            else str(settings.rag.input_token_budget_est),
+        ),
         ("rag.max_chunk_tokens", str(settings.rag.max_chunk_tokens)),
         ("rag.dedupe_min_hash_prefix", str(settings.rag.dedupe_min_hash_prefix)),
         ("rag.include_snippets", str(settings.rag.include_snippets).lower()),
@@ -857,6 +865,15 @@ def _build_retrieval_settings(value: object) -> RetrievalSettings:
 def _build_rag_settings(value: object) -> RagSettings:
     """Construye la configuracion del context builder RAG."""
     values = _merge_section(value, "rag", _DEFAULT_RAG, _ALLOWED_RAG_KEYS)
+    raw_section = value if isinstance(value, dict) else {}
+    if "context_token_budget" in raw_section and "input_token_budget_est" in raw_section:
+        raise ConfigError(
+            "Las claves 'rag.context_token_budget' y "
+            "'rag.input_token_budget_est' no pueden declararse juntas. "
+            "Use context_token_budget para baseline_v1 o input_token_budget_est "
+            "para el contrato de input completo H3.1."
+        )
+    input_token_budget_est = values["input_token_budget_est"]
     return RagSettings(
         context_token_budget=_validate_int_range(
             values["context_token_budget"],
@@ -879,6 +896,16 @@ def _build_rag_settings(value: object) -> RagSettings:
         include_snippets=_validate_bool(
             values["include_snippets"],
             "rag.include_snippets",
+        ),
+        input_token_budget_est=(
+            None
+            if input_token_budget_est is None
+            else _validate_int_range(
+                input_token_budget_est,
+                "rag.input_token_budget_est",
+                minimum=501,
+                maximum=200_000,
+            )
         ),
     )
 

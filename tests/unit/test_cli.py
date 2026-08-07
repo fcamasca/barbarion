@@ -239,6 +239,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "retrieval.vector_weight",
         "retrieval.keyword_weight",
         "rag.context_token_budget",
+        "rag.input_token_budget_est",
         "rag.max_chunk_tokens",
         "rag.dedupe_min_hash_prefix",
         "rag.include_snippets",
@@ -265,9 +266,24 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
     assert "vector_store.provider = sqlite_vec" in lines
     assert "retrieval.mode = hybrid" in lines
     assert "rag.context_token_budget = 6000" in lines
+    assert "rag.input_token_budget_est = no configurado" in lines
     assert "llm.max_output_tokens = no configurado" in lines
     assert "data_driven.enabled = false" in lines
     assert list(tmp_path.iterdir()) == [source]
+
+
+def test_config_show_reports_configured_input_budget_contract(tmp_path: Path) -> None:
+    source = tmp_path / "input-budget.toml"
+    source.write_text(
+        "[rag]\ninput_token_budget_est = 9000\n",
+        encoding="utf-8",
+    )
+
+    result = run_cli("--config", str(source), "config", "show", cwd=tmp_path)
+
+    assert result.returncode == 0
+    assert "rag.input_token_budget_est = 9000" in result.stdout.splitlines()
+    assert "rag.context_token_budget = 6000" in result.stdout.splitlines()
 
 
 def test_config_show_reports_anthropic_limit_without_exposing_key(

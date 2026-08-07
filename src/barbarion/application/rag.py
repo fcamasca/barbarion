@@ -1748,19 +1748,23 @@ class PromptBuilder:
             Componentes ordenados y reconciliables con el prompt enviado.
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
+        factual_rule, block_rule, inference_rule = _grounding_rules()
+        compact_rule, list_rule, limits_rule = _response_contract_rules()
         components = (
             PromptComponent(
                 "instructions",
                 "Responde en espanol usando solo la evidencia provista.\n"
-                "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
+                f"{factual_rule}"
                 "Usa solo estos IDs de fuente existentes: "
                 f"{source_ids}.\n"
-                "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
+                f"{block_rule}"
                 "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n"
                 "Si la evidencia no responde directamente la pregunta, responde "
                 "\"Evidencia insuficiente\".\n"
-                "No infieras, no completes con conocimiento general y no inventes "
-                "conclusiones.\n"
+                f"{inference_rule}"
+                f"{compact_rule}"
+                f"{list_rule}"
+                f"{limits_rule}"
                 "Cuando declares evidencia insuficiente, indica que evidencia falto "
                 "y cita las fuentes que demuestran el limite.\n\n",
             ),
@@ -1772,8 +1776,6 @@ class PromptBuilder:
                 "## Conclusion\n"
                 "... [F1]\n\n"
                 "## Evidencia\n"
-                "- ... [F1]\n\n"
-                "## Supuestos y limites\n"
                 "- ... [F1]\n",
             ),
         )
@@ -1789,8 +1791,9 @@ class PromptBuilder:
         question: str,
         context: ContextBuildResult,
         answer: str,
+        validation: CitationValidation | None = None,
     ) -> PromptComposition:
-        """Compone la reparacion sin agregar contenido ni cambiar sus bytes.
+        """Compone un repair conservador orientado por categorias seguras.
 
         Args:
             question: Pregunta original del usuario.
@@ -1801,12 +1804,27 @@ class PromptBuilder:
             Componentes ordenados del prompt de reparacion.
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
+        factual_rule, block_rule, inference_rule = _grounding_rules()
+        compact_rule, list_rule, limits_rule = _response_contract_rules()
+        failure_summary = _validation_failure_summary(validation)
+        failure_diagnostic = _render_repair_failure_diagnostic(failure_summary)
         components = (
             PromptComponent(
                 "instructions",
                 "Reescribe la respuesta en espanol usando solo la evidencia provista.\n"
-                "Incluye citas inline validas como [F1].\n"
+                f"{factual_rule}"
+                f"{block_rule}"
                 f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
+                f"{inference_rule}"
+                f"{compact_rule}"
+                f"{list_rule}"
+                f"{limits_rule}"
+                "Corrige unicamente los problemas de soporte y citacion de la "
+                "respuesta anterior.\n"
+                "No agregues hechos, interpretaciones ni conclusiones nuevas. "
+                "Conserva solo contenido respaldado y elimina lo que no "
+                "pueda corregirse con estas mismas fuentes.\n"
+                f"{failure_diagnostic}"
                 "Si el contexto no responde la pregunta, responde "
                 "\"Evidencia insuficiente\" y cita la evidencia disponible.\n"
                 "No generes codigo ni completes codigo; solo corrige la respuesta textual.\n\n",
@@ -1827,13 +1845,80 @@ class PromptBuilder:
         question: str,
         context: ContextBuildResult,
         answer: str,
+        validation: CitationValidation | None = None,
     ) -> str:
         """Renderiza el prompt de reparacion conservando el contrato publico."""
         return self.compose_repair(
             question=question,
             context=context,
             answer=answer,
+            validation=validation,
         ).rendered_prompt
+
+
+def _grounding_rules() -> tuple[str, str, str]:
+    """Devuelve las reglas literales compartidas por generation y repair."""
+    return (
+        "Toda afirmacion factual debe citar una fuente inline como [F1].\n",
+        "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n",
+        "No infieras, no completes con conocimiento general y no inventes "
+        "conclusiones.\n",
+    )
+
+
+def _response_contract_rules() -> tuple[str, str, str]:
+    """Devuelve reglas de estilo compartidas sin clasificar la consulta."""
+    return (
+        "Responde de forma compacta y directa, sin conclusiones generales, "
+        "recapitulaciones ni comentarios accesorios.\n",
+        "Para listas factuales, empieza directamente con bullets citados; no "
+        "agregues una frase introductoria que resuma o anuncie la lista.\n",
+        "La seccion 'Supuestos y limites' es opcional: incluyela solo para "
+        "supuestos o limites explicitamente demostrados por las fuentes, con "
+        "una cita inline en cada bullet; si no existen, omite la seccion.\n",
+    )
+
+
+def _validation_failure_summary(
+    validation: CitationValidation | None,
+) -> dict[str, object]:
+    """Resume causas de rechazo sin incluir claims ni contenido sensible."""
+    if validation is None:
+        return {
+            "categories": ("validation_failed",),
+            "counts": {"validation_failed": 1},
+        }
+    categories: list[str] = []
+    counts: dict[str, int] = {}
+    if validation.missing_source_ids:
+        categories.append("missing_source_ids")
+        counts["missing_source_ids"] = len(validation.missing_source_ids)
+    if not validation.cited_source_ids:
+        categories.append("no_valid_citations")
+        counts["no_valid_citations"] = 1
+    if validation.unsupported_claims:
+        categories.append("unsupported_claims")
+        counts["unsupported_claims"] = len(validation.unsupported_claims)
+    if validation.contradiction_claims:
+        categories.append("contradiction_claims")
+        counts["contradiction_claims"] = len(validation.contradiction_claims)
+    if not categories:
+        categories.append("validation_failed")
+        counts["validation_failed"] = 1
+    return {"categories": tuple(categories), "counts": counts}
+
+
+def _render_repair_failure_diagnostic(summary: Mapping[str, object]) -> str:
+    """Renderiza solo categorias y conteos seguros para orientar el repair."""
+    categories = summary.get("categories")
+    counts = summary.get("counts")
+    if not isinstance(categories, tuple) or not isinstance(counts, Mapping):
+        return "Diagnostico del validador:\n- validation_failed: 1\n"
+    lines = "".join(
+        f"- {category}: {int(counts.get(category) or 0)}\n"
+        for category in categories
+    )
+    return "Diagnostico del validador (categorias y conteos):\n" + lines
 
 
 def _evidence_decisions(
@@ -2353,6 +2438,15 @@ class AskService:
                 policy=self.settings.rag.context_selection_policy,
                 candidate_selection=candidate_selection_debug,
                 input_budget=input_budget_debug,
+                repair_input_budget=None,
+                repair_outcome={
+                    "triggered": False,
+                    "trigger_categories": (),
+                    "trigger_counts": {},
+                    "attempted": False,
+                    "succeeded": None,
+                    "result": "not_applicable",
+                },
                 generation=None,
                 repair=None,
                 citation_coverage=None,
@@ -2431,6 +2525,19 @@ class AskService:
             question=question,
         )
         self._log_citation_validation(validation, stage="generation")
+        failure_summary = (
+            _validation_failure_summary(validation)
+            if not validation.valid
+            else {"categories": (), "counts": {}}
+        )
+        repair_outcome: dict[str, object] = {
+            "triggered": not validation.valid,
+            "trigger_categories": failure_summary["categories"],
+            "trigger_counts": failure_summary["counts"],
+            "attempted": False,
+            "succeeded": None,
+            "result": "pending" if not validation.valid else "not_needed",
+        }
         if debug:
             debug_payload["llm_response"] = answer
             debug_payload["validation"] = _citation_validation_debug(
@@ -2441,22 +2548,45 @@ class AskService:
         repair_attempted = False
         repair_valid = None
         if not validation.valid:
-            repair_prompt = self.prompt_builder.repair(
-                question=question,
-                context=context,
-                answer=answer,
-            )
-            repair_composition = self.prompt_builder.compose_repair(
-                question=question,
-                context=context,
-                answer=answer,
-            )
+            repair_context = context
+            repair_budget_debug = None
+            if input_budget is not None:
+                (
+                    repair_context,
+                    repair_composition,
+                    repair_budget_debug,
+                ) = _build_repair_context_for_input_budget(
+                    prompt_builder=self.prompt_builder,
+                    generation_context=context,
+                    question=question,
+                    rejected_answer=answer,
+                    validation=validation,
+                    input_token_budget_est=input_budget,
+                )
+                repair_prompt = repair_composition.rendered_prompt
+            else:
+                repair_prompt = self.prompt_builder.repair(
+                    question=question,
+                    context=repair_context,
+                    answer=answer,
+                    validation=validation,
+                )
+                repair_composition = self.prompt_builder.compose_repair(
+                    question=question,
+                    context=repair_context,
+                    answer=answer,
+                    validation=validation,
+                )
             _require_reconciled_prompt(repair_prompt, repair_composition)
             repair_fits_budget = (
-                input_budget is None
-                or repair_composition.tokens_est_local <= input_budget
+                repair_context is not None
+                and (
+                    input_budget is None
+                    or repair_composition.tokens_est_local <= input_budget
+                )
             )
             if not repair_fits_budget:
+                repair_outcome["result"] = "skipped_budget"
                 answer = _invalid_citations_answer(
                     validation,
                     context,
@@ -2469,8 +2599,11 @@ class AskService:
                     debug_payload["repair_prompt_composition"] = (
                         repair_composition.metrics()
                     )
+                    debug_payload["repair_input_budget"] = repair_budget_debug
             else:
+                context = repair_context
                 repair_attempted = True
+                repair_outcome["attempted"] = True
                 try:
                     repaired_answer = self._generate_with_observability(
                         repair_prompt,
@@ -2486,11 +2619,15 @@ class AskService:
                     raise
                 validation = self.citation_validator.validate(
                     repaired_answer,
-                    context,
+                    repair_context,
                     question=question,
                 )
                 self._log_citation_validation(validation, stage="repair")
                 repair_valid = validation.valid
+                repair_outcome["succeeded"] = repair_valid
+                repair_outcome["result"] = (
+                    "succeeded" if repair_valid else "failed_validation"
+                )
                 if debug:
                     debug_payload["repair_prompt"] = repair_prompt
                     debug_payload["repair_prompt_composition"] = (
@@ -2499,9 +2636,10 @@ class AskService:
                     debug_payload["repair_response"] = repaired_answer
                     debug_payload["repair_validation"] = _citation_validation_debug(
                         answer=repaired_answer,
-                        context=context,
+                        context=repair_context,
                         validation=validation,
                     )
+                    debug_payload["repair_input_budget"] = repair_budget_debug
                 if validation.valid:
                     answer = repaired_answer
                 else:
@@ -2511,9 +2649,20 @@ class AskService:
                         repair_attempted=True,
                     )
         llm_ms = _duration_ms(llm_started)
+        _LOGGER.info(
+            "ask_citation_repair triggered=%s attempted=%s result=%s causes=%s",
+            repair_outcome["triggered"],
+            repair_outcome["attempted"],
+            repair_outcome["result"],
+            ",".join(
+                str(item) for item in repair_outcome["trigger_categories"]
+            )
+            or "none",
+        )
         if debug:
             debug_payload["citation_repair_attempted"] = repair_attempted
             debug_payload["citation_repair_valid"] = repair_valid
+            debug_payload["repair_outcome"] = repair_outcome
             debug_payload["citation_coverage"] = _citation_coverage_debug(
                 answer, context
             )
@@ -2522,11 +2671,14 @@ class AskService:
                 debug_payload.setdefault("repair_prompt_composition", None)
                 debug_payload["repair_response"] = None
                 debug_payload["repair_validation"] = None
+                debug_payload.setdefault("repair_input_budget", None)
             debug_payload["observability"] = _ask_observability_summary(
                 context=context,
                 policy=self.settings.rag.context_selection_policy,
                 candidate_selection=candidate_selection_debug,
                 input_budget=input_budget_debug,
+                repair_input_budget=debug_payload.get("repair_input_budget"),
+                repair_outcome=repair_outcome,
                 generation=debug_payload.get("prompt_composition"),
                 repair=debug_payload.get("repair_prompt_composition"),
                 citation_coverage=debug_payload.get("citation_coverage"),
@@ -2618,6 +2770,165 @@ def _build_context_for_input_budget(
             else "insufficient_evidence"
         ),
     }
+
+
+def _build_repair_context_for_input_budget(
+    *,
+    prompt_builder: PromptBuilder,
+    generation_context: ContextBuildResult,
+    question: str,
+    rejected_answer: str,
+    validation: CitationValidation,
+    input_token_budget_est: int,
+) -> tuple[ContextBuildResult | None, PromptComposition, dict[str, object]]:
+    """Redistribuye el presupuesto de repair sin cambiar fuentes ni IDs."""
+    source_ids = tuple(source.source_id for source in generation_context.sources)
+    original_evidence_tokens = sum(
+        estimate_tokens(source.content) for source in generation_context.sources
+    )
+    target_evidence_tokens = original_evidence_tokens
+    attempted_context = generation_context
+    composition = prompt_builder.compose_repair(
+        question=question,
+        context=attempted_context,
+        answer=rejected_answer,
+        validation=validation,
+    )
+    initial_prompt_tokens = composition.tokens_est_local
+
+    while composition.tokens_est_local > input_token_budget_est:
+        overage = composition.tokens_est_local - input_token_budget_est
+        target_evidence_tokens -= max(1, overage)
+        fitted_sources = _fit_same_sources_to_content_budget(
+            generation_context.sources,
+            target_evidence_tokens,
+        )
+        if fitted_sources is None:
+            return None, composition, {
+                "configured_tokens_est_local": input_token_budget_est,
+                "estimator_id": TOKEN_ESTIMATOR_ID,
+                "initial_prompt_tokens_est_local": initial_prompt_tokens,
+                "final_prompt_tokens_est_local": composition.tokens_est_local,
+                "original_evidence_tokens_est_local": original_evidence_tokens,
+                "final_evidence_tokens_est_local": sum(
+                    estimate_tokens(source.content)
+                    for source in attempted_context.sources
+                ),
+                "trimmed_evidence_tokens_est_local": max(
+                    0,
+                    original_evidence_tokens
+                    - sum(
+                        estimate_tokens(source.content)
+                        for source in attempted_context.sources
+                    ),
+                ),
+                "source_ids": source_ids,
+                "same_sources": True,
+                "result": "insufficient_evidence_budget",
+            }
+        attempted_context = _context_with_sources(
+            generation_context,
+            fitted_sources,
+        )
+        composition = prompt_builder.compose_repair(
+            question=question,
+            context=attempted_context,
+            answer=rejected_answer,
+            validation=validation,
+        )
+
+    evidence_is_sufficient = _context_answers_question(
+        question,
+        attempted_context,
+    )
+    final_evidence_tokens = sum(
+        estimate_tokens(source.content) for source in attempted_context.sources
+    )
+    debug = {
+        "configured_tokens_est_local": input_token_budget_est,
+        "estimator_id": TOKEN_ESTIMATOR_ID,
+        "initial_prompt_tokens_est_local": initial_prompt_tokens,
+        "final_prompt_tokens_est_local": composition.tokens_est_local,
+        "original_evidence_tokens_est_local": original_evidence_tokens,
+        "final_evidence_tokens_est_local": final_evidence_tokens,
+        "trimmed_evidence_tokens_est_local": (
+            original_evidence_tokens - final_evidence_tokens
+        ),
+        "source_ids": source_ids,
+        "same_sources": True,
+        "result": "fits" if evidence_is_sufficient else "insufficient_evidence",
+    }
+    if not evidence_is_sufficient:
+        return None, composition, debug
+    return attempted_context, composition, debug
+
+
+def _fit_same_sources_to_content_budget(
+    sources: tuple[ContextSource, ...],
+    token_budget: int,
+) -> tuple[ContextSource, ...] | None:
+    """Trunca contenido proporcionalmente conservando todas las fuentes."""
+    if not sources or token_budget < len(sources):
+        return None
+    weights = [max(1, estimate_tokens(source.content)) for source in sources]
+    allocations = [1] * len(sources)
+    remaining = token_budget - len(sources)
+    if remaining > 0:
+        capacities = [max(0, weight - 1) for weight in weights]
+        total_capacity = sum(capacities)
+        if total_capacity > 0:
+            raw = [remaining * capacity / total_capacity for capacity in capacities]
+            extras = [
+                min(capacity, int(value))
+                for capacity, value in zip(capacities, raw)
+            ]
+            for index, extra in enumerate(extras):
+                allocations[index] += extra
+            leftover = remaining - sum(extras)
+            order = sorted(
+                range(len(sources)),
+                key=lambda index: (-(raw[index] - int(raw[index])), index),
+            )
+            for index in order:
+                if leftover <= 0:
+                    break
+                if allocations[index] < weights[index]:
+                    allocations[index] += 1
+                    leftover -= 1
+    fitted: list[ContextSource] = []
+    for source, allocation in zip(sources, allocations):
+        content = _truncate_to_tokens(source.content, allocation)
+        if not content:
+            return None
+        fitted.append(
+            replace(
+                source,
+                content=content,
+                token_estimate=estimate_tokens(content),
+                content_truncated=(
+                    source.content_truncated or content != source.content
+                ),
+            )
+        )
+    return tuple(fitted)
+
+
+def _context_with_sources(
+    original: ContextBuildResult,
+    sources: tuple[ContextSource, ...],
+) -> ContextBuildResult:
+    """Reconcilia un contexto reducido conservando identidad y trazabilidad."""
+    rendered = _render_context(list(sources))
+    return ContextBuildResult(
+        sources=sources,
+        omitted=original.omitted,
+        rendered_context=rendered,
+        token_estimate=sum(
+            estimate_tokens(_render_source_context(source)) for source in sources
+        ),
+        metrics=original.metrics,
+        debug=dict(original.debug),
+    )
 
 
 def _select_ask_candidates_relevance_first(
@@ -3104,6 +3415,8 @@ def _ask_observability_summary(
     policy: str,
     candidate_selection: object,
     input_budget: object,
+    repair_input_budget: object,
+    repair_outcome: object,
     generation: object,
     repair: object,
     citation_coverage: object,
@@ -3119,6 +3432,8 @@ def _ask_observability_summary(
         "context_decisions": context_debug.get("evidence_decisions", ()),
         "redundancy": context_debug.get("redundancy_report"),
         "input_budget": input_budget,
+        "repair_input_budget": repair_input_budget,
+        "repair_outcome": repair_outcome,
         "generation": generation,
         "repair": repair,
         "citation_coverage": citation_coverage,
@@ -3280,7 +3595,7 @@ def _unsupported_claims(
     source_contents = {
         source.source_id: source.content for source in context.sources
     }
-    unsupported: list[str] = []
+    unsupported: list[str] = list(_uncited_factual_blocks(answer))
     for claim, source_ids in _cited_claims(answer):
         if _is_insufficient_evidence_answer(claim):
             continue
@@ -3301,6 +3616,48 @@ def _unsupported_claims(
         ):
             unsupported.append(_compact_claim(claim))
     return tuple(unsupported)
+
+
+def _uncited_factual_blocks(answer: str) -> tuple[str, ...]:
+    """Detecta parrafos y bullets factuales sin cita inline.
+
+    Los encabezados Markdown, lineas vacias y bloques de codigo no son
+    parrafos/bullets del contrato de respuesta y se excluyen deliberadamente.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    in_fence = False
+
+    def flush() -> None:
+        if current:
+            blocks.append(" ".join(current).strip())
+            current.clear()
+
+    for raw_line in answer.splitlines():
+        line = raw_line.strip()
+        if line.startswith("```"):
+            flush()
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if not line or re.match(r"^#{1,6}\s+", line):
+            flush()
+            continue
+        is_list_item = bool(re.match(r"^(?:[-*+]\s+|\d+[.)]\s+)", line))
+        if is_list_item:
+            flush()
+            current.append(line)
+            continue
+        current.append(line)
+    flush()
+
+    return tuple(
+        _compact_claim(block)
+        for block in blocks
+        if _important_tokens(_strip_citations(block))
+        and not re.search(r"\[F\d+\]", block)
+    )
 
 
 def _contradiction_claims(

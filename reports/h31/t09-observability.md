@@ -4,8 +4,12 @@ Schema: `h31_observability_v1`. Estimador: `chars4_v1`.
 
 | Politica | Generation tokens est. | Repair tokens est. | Seleccion | Hechos | Citas |
 |---|---:|---:|---:|---:|---:|
-| `baseline_v1` | 2523 | 154 | 0.888889 | 0.888889 | 0.888889 |
-| `optimized_v1` | 2515 | 154 | 1.0 | 1.0 | 1.0 |
+| `baseline_v1` | 3437 | 388 | 0.888889 | 0.888889 | 0.888889 |
+| `optimized_v1` | 3430 | 388 | 1.0 | 1.0 | 1.0 |
+
+## Repair
+
+El benchmark sintetico provoca un fallo `no_valid_citations` por politica. Ambos repairs se intentan y terminan en `succeeded`; el contrato productivo tambien distingue `not_needed`, `skipped_budget` y `failed_validation` sin exponer claims.
 
 ## Uso real
 

@@ -333,6 +333,13 @@ aceptación no promueve la candidata: `baseline_v1` sigue como default y
 `optimized_v1` permanece opt-in hasta validar corpus adicionales. Evidencia:
 [`../specs/H3.1-RAGContextOptimization/acceptance.md`](../specs/H3.1-RAGContextOptimization/acceptance.md).
 
+Después de la aceptación, el contrato de respuesta se acota para reducir
+repairs inducidos por formato: `Supuestos y limites` es opcional, las respuestas
+deben ser compactas y repair no agrega hechos. El diagnóstico de repair usa solo
+categorías/conteos seguros y `repair_outcome` permite medir causa e impacto. No
+se cambia retrieval, presupuesto, `CitationValidator` ni se clasifica el tipo de
+consulta.
+
 Spec:
 
 [`../specs/H3.1-RAGContextOptimization/`](../specs/H3.1-RAGContextOptimization/).

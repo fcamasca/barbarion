@@ -77,9 +77,9 @@ def test_baseline_measures_prompt_components_redundancy_and_repair() -> None:
     assert metrics["overlap_chars"] == 27
     assert result["generation_components"]["source_metadata"]["tokens_est_local"] > 0
     assert result["generation_components"]["source_content"]["tokens_est_local"] > 0
-    assert metrics["generation_prompt_tokens_est_local_total"] == 2523
+    assert metrics["generation_prompt_tokens_est_local_total"] == 3437
     assert metrics["repair_prompt_count"] == 1
-    assert metrics["repair_prompt_tokens_est_local_total"] == 154
+    assert metrics["repair_prompt_tokens_est_local_total"] == 388
     assert cases["citation-repair"]["repair"] is not None
     literal_decisions = cases["literal-single"]["evidence_decisions"]
     assert {decision["citation_status"] for decision in literal_decisions} == {
@@ -102,6 +102,17 @@ def test_committed_reports_are_exactly_reproducible(tmp_path: Path) -> None:
     optimized = run_optimized(dataset)
     write_reports(result, tmp_path)
     write_t07_comparison(result, optimized, tmp_path)
+
+    observability = json.loads(
+        (tmp_path / "t09-observability.json").read_text(encoding="utf-8")
+    )
+    assert observability["policies"]["baseline_v1"]["repair_outcome"] == {
+        "triggered": 1,
+        "attempted": 1,
+        "succeeded": 1,
+        "failed": 0,
+        "trigger_categories": {"no_valid_citations": 1},
+    }
 
     for name in (
         "t03-baseline.json",

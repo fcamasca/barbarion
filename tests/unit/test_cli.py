@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -1067,7 +1068,7 @@ def test_ask_no_llm_markdown_invokes_service(
     assert "lineas=10-12" in captured.out
 
 
-def test_ask_configures_info_events_for_console_and_file_without_duplicates(
+def test_ask_hides_info_events_without_debug_but_keeps_them_in_log_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1083,6 +1084,53 @@ def test_ask_configures_info_events_for_console_and_file_without_duplicates(
     )
 
     exit_code = cli.main(["--config", str(source), "ask", "Donde esta?"])
+    captured = capsys.readouterr()
+    log_content = (tmp_path / "logs" / LOG_FILENAME).read_text(encoding="utf-8")
+
+    assert exit_code == 0
+    for event in (
+        "ask_llm_started",
+        "ask_llm_finished",
+        "ask_citation_validation",
+    ):
+        assert event not in captured.err
+        assert log_content.count(event) == 1
+    response_separator = "──────────────────── RESPUESTA ────────────────────"
+    sources_separator = "──────────────────── FUENTES ──────────────────────"
+    assert captured.out.startswith("Barbarion Ask\n")
+    assert "Modelo: llama3.1:8b\n" in captured.out
+    assert "Validación: PASS\n" in captured.out
+    assert re.search(r"Tiempo: \d+\.\d{2}s\n", captured.out)
+    assert response_separator in captured.out
+    assert sources_separator in captured.out
+    assert captured.out.index(response_separator) < captured.out.index(
+        "## Conclusion"
+    )
+    assert captured.out.index("## Conclusion") < captured.out.index(
+        sources_separator
+    )
+
+
+def test_ask_debug_keeps_info_events_on_console_and_in_log_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "logs").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    monkeypatch.setattr(
+        cli,
+        "_build_ask_service",
+        lambda settings: LoggingAskService(
+            debug_payload=_ask_debug_payload(valid=True),
+        ),
+    )
+
+    exit_code = cli.main(
+        ["--config", str(source), "ask", "Donde esta?", "--debug"]
+    )
     captured = capsys.readouterr()
     log_content = (tmp_path / "logs" / LOG_FILENAME).read_text(encoding="utf-8")
 
@@ -1158,6 +1206,24 @@ def _ask_debug_payload(
                 "tokens_est_local": 10,
             },
             "repair": None,
+            "repair_outcome": {
+                "triggered": repair_attempted,
+                "trigger_categories": (
+                    ("no_valid_citations",) if repair_attempted else ()
+                ),
+                "trigger_counts": (
+                    {"no_valid_citations": 1} if repair_attempted else {}
+                ),
+                "attempted": repair_attempted,
+                "succeeded": repair_valid,
+                "result": (
+                    "succeeded"
+                    if repair_valid
+                    else "failed_validation"
+                    if repair_attempted
+                    else "not_needed"
+                ),
+            },
             "citation_coverage": {
                 "selected_source_count": 1,
                 "cited_source_count": 1 if valid else 0,
@@ -1274,6 +1340,7 @@ def test_ask_debug_with_invalid_citations_writes_diagnostics_to_stderr(
     assert "result: FAIL" in captured.err
     assert "final_result: REJECTED" in captured.err
     assert "=== QUERY ===" not in captured.out
+    assert "Validación: FAIL" in captured.out
 
 
 def test_ask_debug_with_failed_repair_reports_reason(
@@ -1332,6 +1399,8 @@ def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
     assert "candidate_decision chunk_id=chunk-safe" in captured.err
     assert "input_budget_configured_tokens_est_local=9000" in captured.err
     assert "generation_tokens_est_local=10" in captured.err
+    assert "repair_outcome triggered=False attempted=False" in captured.err
+    assert "result=not_needed causes=[]" in captured.err
     assert "[F1] score=0.800" in captured.err
     assert "validation: PASS" in captured.err
     assert "final_result: ACCEPTED" in captured.err
@@ -1357,6 +1426,8 @@ def test_ask_debug_with_successful_repair_reports_acceptance(
 
     assert exit_code == 0
     assert "Respuesta reparada [F1]" in captured.err
+    assert "repair_outcome triggered=True attempted=True succeeded=True" in captured.err
+    assert "result=succeeded causes=[no_valid_citations]" in captured.err
     assert "repair: PASS" in captured.err
     assert "final_result: ACCEPTED" in captured.err
 

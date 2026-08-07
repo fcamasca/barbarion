@@ -38,6 +38,20 @@ configurarlo, Barbarion valida por separado los prompts completos de generation
 y repair. Si no cabe evidencia suficiente, termina de forma segura sin llamar
 al LLM.
 
+Generation y repair comparten el mismo límite, pero distribuyen su presupuesto
+independientemente. Repair vuelve a calcular su overhead incluyendo la respuesta
+rechazada y reduce, cuando hace falta, el contenido de las mismas fuentes usadas
+en generation. Conserva sus IDs, candidatos, orden y trazabilidad; no ejecuta un
+nuevo retrieval. Si el prompt reconciliado todavía no cabe o el contexto
+reducido deja de responder la pregunta, repair queda `NOT_EXECUTED` y la salida
+se rechaza de forma segura.
+
+Las reglas de grounding no se mantienen en strings independientes: generation
+y repair reutilizan literalmente el mismo contrato de cita para toda afirmación
+factual, cita por cada párrafo/bullet y prohibición de inferir o inventar
+conclusiones. Repair añade únicamente que debe corregir los problemas de soporte
+y citación de la respuesta anterior.
+
 La configuración legacy permanece intacta mientras la clave nueva no se
 declare. `context_token_budget` e `input_token_budget_est` son contratos
 alternativos y no pueden declararse juntos.
@@ -150,3 +164,33 @@ fuente” y describir una ausencia comprobable en ese texto. Si el concepto est�
 presente literalmente o mediante un patrón sintáctico conocido, el claim
 negativo falla. Esta excepción no desactiva la detección de contradicciones ni
 autoriza inferencias semánticas abiertas.
+
+La existencia de una cita válida en cualquier punto de la respuesta no basta:
+cada párrafo o bullet factual debe contener al menos una cita inline `[F<n>]`.
+Los encabezados Markdown, líneas vacías y bloques de código no se consideran
+claims independientes. Un bloque factual sin cita se trata como no soportado y
+sigue el mismo flujo de repair y rechazo seguro; las citas inexistentes, las
+contradicciones y el soporte del contenido continúan validándose por separado.
+
+## Respuestas compactas y repair conservador
+
+Generation y repair comparten un contrato de salida compacto: conclusión
+directa, evidencia citada y ningún cierre general, recapitulación o comentario
+accesorio. Las listas factuales empiezan directamente con bullets citados, sin
+una frase introductoria que las resuma o anuncie. `Supuestos y limites` deja de
+ser obligatoria; solo se incluye cuando
+las fuentes demuestran explícitamente un supuesto o límite y cada bullet puede
+citarlo. Si no hay uno demostrable, la sección se omite sin afirmar que no
+existen otros límites.
+
+Cuando el validador rechaza generation, repair recibe exclusivamente categorías
+y conteos seguros (`missing_source_ids`, `no_valid_citations`,
+`unsupported_claims`, `contradiction_claims`). No recibe el texto de los claims
+como diagnóstico y tiene prohibido agregar hechos, interpretaciones o
+conclusiones nuevas: conserva lo respaldado, corrige citas y elimina aquello que
+no pueda sostener con las mismas fuentes.
+
+La observabilidad agrega `repair_outcome` con causa, intento y resultado
+(`not_needed`, `skipped_budget`, `succeeded`, `failed_validation`). Esta mejora
+no cambia retrieval, `input_token_budget_est`, `CitationValidator` ni introduce
+clasificación por tipo de consulta.

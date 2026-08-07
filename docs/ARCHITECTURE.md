@@ -426,7 +426,9 @@ No se requiere una plataforma de métricas, trazas distribuidas ni telemetría r
 H3.1 agrega `h31_observability_v1` como resumen efimero y seguro para comparar
 politicas RAG. Contiene composicion y estimacion local por solicitud, presupuesto,
 decisiones de candidatos, redundancia y cobertura de citas; generation y repair
-permanecen separadas. No contiene pregunta, prompt, respuesta ni contenido de
+permanecen separadas. `repair_outcome` agrega causas por categoría, intento y
+éxito sin copiar claims; el repair recibe el mismo diagnóstico seguro y no puede
+agregar hechos. No contiene pregunta, prompt, respuesta ni contenido de
 fuentes. Los contadores reales opcionales se etiquetan `provider_*_tokens` y
 nunca se derivan de `chars4_v1`. La CLI los presenta en stderr; SQLite conserva
 su esquema vigente y los reportes versionados usan solo agregados sinteticos.

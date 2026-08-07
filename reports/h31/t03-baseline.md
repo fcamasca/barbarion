@@ -26,32 +26,32 @@ El dataset y todas sus fuentes son sinteticos y publicables.
 | `overlap_chars` | `27` |
 | `overlap_tokens_est_local` | `7` |
 | `redundancy_prompt_tokens_est_local` | `7` |
-| `redundancy_share_of_generation_prompt` | `0.002774` |
-| `generation_prompt_chars_total` | `10077` |
-| `generation_prompt_utf8_bytes_total` | `10117` |
-| `generation_prompt_tokens_est_local_total` | `2523` |
+| `redundancy_share_of_generation_prompt` | `0.002037` |
+| `generation_prompt_chars_total` | `13731` |
+| `generation_prompt_utf8_bytes_total` | `13771` |
+| `generation_prompt_tokens_est_local_total` | `3437` |
 | `repair_prompt_count` | `1` |
-| `repair_prompt_chars_total` | `615` |
-| `repair_prompt_utf8_bytes_total` | `617` |
-| `repair_prompt_tokens_est_local_total` | `154` |
+| `repair_prompt_chars_total` | `1550` |
+| `repair_prompt_utf8_bytes_total` | `1552` |
+| `repair_prompt_tokens_est_local_total` | `388` |
 
 ## Composicion de generation
 
 | Componente | Chars | UTF-8 bytes | Tokens est. local |
 |---|---:|---:|---:|
-| `instructions` | 5448 | 5448 | 1364 |
-| `output_format` | 918 | 918 | 234 |
+| `instructions` | 9417 | 9417 | 2359 |
+| `output_format` | 603 | 603 | 153 |
 | `question` | 467 | 489 | 118 |
 | `source_content` | 1163 | 1181 | 299 |
 | `source_metadata` | 2081 | 2081 | 539 |
 
-Metadata de fuentes: `539` tokens (`21.4%` del prompt de generacion). Evidencia: `299` tokens (`11.9%`).
+Metadata de fuentes: `539` tokens (`15.7%` del prompt de generacion). Evidencia: `299` tokens (`8.7%`).
 
 ## Composicion de repair
 
 | Componente | Chars | UTF-8 bytes | Tokens est. local |
 |---|---:|---:|---:|
-| `instructions` | 337 | 337 | 85 |
+| `instructions` | 1272 | 1272 | 318 |
 | `output_format` | 20 | 20 | 5 |
 | `question` | 52 | 54 | 13 |
 | `rejected_answer` | 51 | 51 | 13 |

@@ -165,3 +165,51 @@ decision de despliegue permanece deliberadamente conservadora:
 - default: `baseline_v1`;
 - candidata opt-in: `optimized_v1`;
 - promocion a default: diferida.
+
+## Addendum post-H3.1: cobertura de citas por bloque
+
+Una validación posterior detectó que el validador comprobaba la existencia y el
+soporte de las citas presentes, pero no exigía la cita inline prometida por el
+prompt en cada párrafo o bullet factual. La corrección clasifica esos bloques
+sin cita como claims no soportados, conserva la detección de citas inexistentes,
+contradicciones e invenciones, y mantiene el repair y su presupuesto seguro.
+Encabezados, líneas vacías y bloques de código quedan fuera de esta regla.
+
+## Addendum post-H3.1: presupuesto independiente de repair
+
+El validador estricto hizo visible que generation podía ocupar todo el
+presupuesto y dejar a repair sin espacio para agregar la respuesta rechazada.
+La corrección recalcula repair desde cero y trunca proporcionalmente solo el
+contenido de las mismas fuentes, conservando IDs, candidatos y trazabilidad. No
+hay nuevo retrieval ni aumento del presupuesto configurado. Si aun así no cabe
+evidencia suficiente, repair permanece sin ejecutar y el resultado se rechaza.
+
+El posible falso negativo de soporte factual observado en otra afirmación se
+mantiene separado de este cambio y no se usa para relajar el validador.
+
+## Addendum post-H3.1: contrato compartido de grounding
+
+Una ejecución real confirmó que el repair presupuestado se ejecutaba, pero su
+prompt había divergido de generation y no exigía una cita por cada párrafo o
+bullet factual. Ambos prompts reutilizan ahora las mismas reglas literales de
+citas y no inferencia. Repair agrega solo la instrucción de corregir los
+problemas de soporte y citación de la respuesta rechazada. El prompt de
+generation quedó caracterizado en ese punto; la caracterización y métricas de
+repair se actualizaron de forma explícita.
+
+## Addendum post-H3.1: salida compacta y repair dirigido
+
+La sección `Supuestos y limites` pasa a ser opcional y solo puede aparecer con
+límites o supuestos demostrados y citados. Generation y repair comparten además
+la instrucción de responder de forma compacta, sin conclusiones generales ni
+comentarios accesorios. Las listas factuales empiezan directamente con bullets
+citados, sin una frase introductoria que las resuma o anuncie. Este ajuste
+cambia deliberadamente la caracterización
+de ambos prompts sin alterar retrieval ni el presupuesto configurado.
+
+Repair recibe las categorías y conteos seguros del fallo de generation, nunca
+el texto de los claims, y tiene prohibido agregar hechos, interpretaciones o
+conclusiones nuevas. La observabilidad expone `repair_outcome` para
+distinguir causa, intento y resultado. `CitationValidator`, la política de
+selección y el valor privado de `4500` permanecen intactos; tampoco se introduce
+clasificación por tipo de consulta.

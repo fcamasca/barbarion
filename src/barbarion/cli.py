@@ -1383,8 +1383,15 @@ def _run_ask(args: argparse.Namespace) -> int:
         print("No hay base SQLite de Barbarion. Ejecuta ingesta e indexacion.", file=sys.stderr)
         return 1
     initialize_database(settings.database_path)
-    configure_logging(settings)
+    configured_log_level = getattr(logging, settings.log_level)
+    console_log_level = (
+        min(configured_log_level, logging.INFO)
+        if args.debug
+        else max(configured_log_level, logging.WARNING)
+    )
+    configure_logging(settings, console_level=console_log_level)
     service = _build_ask_service(settings)
+    ask_started = time.monotonic()
     try:
         result = service.ask(
             args.question,
@@ -1421,6 +1428,7 @@ def _run_ask(args: argparse.Namespace) -> int:
         )
         return 1
     output_result = result
+    elapsed_seconds = time.monotonic() - ask_started
     if args.debug:
         _render_ask_diagnostics(
             result,
@@ -1428,7 +1436,12 @@ def _run_ask(args: argparse.Namespace) -> int:
             mode=RetrievalMode(args.mode),
         )
         output_result = replace(result, debug={})
-    _render_answer_result(output_result, args.format)
+    _render_answer_result(
+        output_result,
+        args.format,
+        model=settings.llm.model,
+        elapsed_seconds=elapsed_seconds,
+    )
     _render_anthropic_usage(service)
     return 0 if result.citations_valid else 1
 
@@ -2018,7 +2031,13 @@ def _render_search_response(response: SearchResponse, output_format: str) -> Non
         print(_candidate_text(candidate))
 
 
-def _render_answer_result(result: AnswerResult, output_format: str) -> None:
+def _render_answer_result(
+    result: AnswerResult,
+    output_format: str,
+    *,
+    model: str,
+    elapsed_seconds: float,
+) -> None:
     if output_format == "json":
         print(json.dumps(_answer_result_json(result), ensure_ascii=False, indent=2))
         return
@@ -2030,8 +2049,17 @@ def _render_answer_result(result: AnswerResult, output_format: str) -> None:
             print(_source_markdown(source))
         return
     _render_answer_debug(result, markdown=False)
+    print("Barbarion Ask")
+    print(f"Modelo: {model}")
+    print(f"Validación: {'PASS' if result.citations_valid else 'FAIL'}")
+    print(f"Tiempo: {elapsed_seconds:.2f}s")
+    print()
+    print("──────────────────── RESPUESTA ────────────────────")
+    print()
     print(result.answer)
-    print("\nFuentes:")
+    print()
+    print("──────────────────── FUENTES ──────────────────────")
+    print()
     for source in result.context.sources:
         print(_source_text(source))
 
@@ -2216,6 +2244,34 @@ def _render_h31_observability(value: object) -> None:
             "result",
         ):
             print(f"input_budget_{key}={budget.get(key)}", file=sys.stderr)
+    repair_budget = value.get("repair_input_budget")
+    if isinstance(repair_budget, Mapping):
+        for key in (
+            "configured_tokens_est_local",
+            "initial_prompt_tokens_est_local",
+            "final_prompt_tokens_est_local",
+            "original_evidence_tokens_est_local",
+            "final_evidence_tokens_est_local",
+            "trimmed_evidence_tokens_est_local",
+            "same_sources",
+            "result",
+        ):
+            print(
+                f"repair_input_budget_{key}={repair_budget.get(key)}",
+                file=sys.stderr,
+            )
+    repair_outcome = value.get("repair_outcome")
+    if isinstance(repair_outcome, Mapping):
+        print(
+            "repair_outcome "
+            f"triggered={repair_outcome.get('triggered')} "
+            f"attempted={repair_outcome.get('attempted')} "
+            f"succeeded={repair_outcome.get('succeeded')} "
+            f"result={repair_outcome.get('result')} "
+            "causes="
+            f"{_format_debug_list(repair_outcome.get('trigger_categories'))}",
+            file=sys.stderr,
+        )
     _render_decision_metrics("candidate", value.get("candidate_selection"))
     _render_decision_metrics("context", value.get("context_decisions"))
     redundancy = value.get("redundancy")

@@ -366,7 +366,7 @@ Cambiar proveedor, modelo, dimension, distancia o normalizacion de embeddings pr
 
 Barbarion no envia corpus a servicios cloud. Los prompts completos no se almacenan por defecto. `rag_queries` guarda hash de la consulta, modo, filtros, conteos y latencias. En RAG, `--debug` puede mostrar scores, filtros, fuentes y snippets; debe usarse con la misma cautela que cualquier salida que pueda incluir fragmentos de codigo.
 
-Con `--debug`, ask escribe en stderr un diagnostico del flujo RAG: consulta, modelos usados, retrieval, chunks, prompt truncado, respuesta del LLM, validacion de citas, reparacion y resumen final. stdout conserva la salida normal, por lo que JSON y Markdown siguen siendo parseables.
+Con `--debug`, ask escribe en stderr un diagnostico del flujo RAG: consulta, modelos usados, retrieval, chunks, prompt truncado, respuesta del LLM, validacion de citas, reparacion y resumen final. También muestra en consola los eventos técnicos `INFO`. Sin `--debug`, esos eventos permanecen en `barbarion.log` pero no se mezclan con la respuesta; `WARNING` y `ERROR` siguen visibles. stdout conserva la salida normal, por lo que JSON y Markdown siguen siendo parseables.
 
 Además del diagnóstico de `--debug`, el log operativo registra las fronteras de
 generación sin copiar contenido sensible:
@@ -376,12 +376,28 @@ generación sin copiar contenido sensible:
 - `ask_llm_finished`: etapa, duración, resultado (`completed`, `timeout` o
   `error`) y longitud de respuesta cuando existe;
 - `ask_citation_validation`: etapa, resultado `PASS`/`FAIL`, categorías de
-  rechazo y conteos de citas o claims.
+  rechazo y conteos de citas o claims;
+- `ask_citation_repair`: si el repair fue activado/intentado, resultado y
+  categorías agregadas que lo causaron.
 
 Las categorías incluyen `missing_source_ids`, `no_valid_citations`,
-`unsupported_claims` y `contradiction_claims`. Estos eventos no registran el
+`unsupported_claims` y `contradiction_claims`. `unsupported_claims` también
+incluye párrafos o bullets factuales sin cita inline, aunque otras citas de la
+respuesta sean válidas. Estos eventos no registran el
 prompt, el contexto, la respuesta completa, el texto de los claims ni contenido
 de razonamiento interno devuelto por un modelo.
+
+Cuando una respuesta requiere repair y existe `input_token_budget_est`, el
+debug expone `repair_input_budget_*`: tamaño inicial/final, evidencia
+original/final, tokens recortados, confirmación `same_sources` y resultado. Son
+métricas agregadas; no incluyen contenido. Repair no realiza una segunda
+búsqueda ni cambia IDs de fuente.
+
+El resumen `repair_outcome` hace comparable la causa y eficacia del repair sin
+exponer texto: `not_needed`, `skipped_budget`, `succeeded` o
+`failed_validation`, junto con `trigger_categories`, `attempted` y
+`succeeded`. El prompt de repair recibe esas mismas categorías y conteos, pero
+nunca el texto de los claims rechazados.
 
 Errores operativos frecuentes:
 
@@ -492,6 +508,12 @@ barbarion ask TEXTO [--mode semantic|keyword|hybrid] [--top-k N] [--candidate-k 
 ```
 
 Argumentos principales: comparte los argumentos de `search` y agrega `--no-llm`, que muestra contexto y fuentes sin invocar LLM.
+
+En `--format text`, la salida comienza con `Barbarion Ask` y resume modelo,
+validación (`PASS`/`FAIL`) y tiempo total de ejecución. Después, la respuesta y
+las fuentes se delimitan visualmente con los separadores `RESPUESTA` y
+`FUENTES`. Los formatos JSON y Markdown conservan su estructura vigente y los
+diagnósticos técnicos continúan en stderr.
 
 Ejemplos:
 

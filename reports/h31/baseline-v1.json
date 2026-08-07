@@ -62,10 +62,10 @@
   },
   "prompt_characterization": {
     "question": "Que evidencia existe?",
-    "generation_chars": 942,
-    "repair_chars": 640,
-    "generation_sha256": "8275ed041cc3d8de6001056d9bbdf9b55bcdec08faf33fdd33ee908dd18d15a9",
-    "repair_sha256": "d0fcae51103419dd21a987a3ac18d165abf687eed66d3ca6a4e6e4b4c34659c2",
+    "generation_chars": 1348,
+    "repair_chars": 1574,
+    "generation_sha256": "aa759a60e7ffab6bfe4cee8d9a22f52b4bf9fa1fe840e688db4e6dab6a2178e9",
+    "repair_sha256": "5c2f87682e9b8787658ae1c4558f7663accf9d9a0bb6e5ec18373156d9c59e74",
     "repair_resends_question_and_context": true,
     "repair_adds_rejected_answer": true
   },

@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 baseline completada.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T03 completadas.
 
 Pregunta que responde:
 
@@ -268,6 +268,14 @@ entrada Anthropic frente a `6,190` estimados localmente. H3.1 no modifica H1.2
 ni asume que ese consumo sea incorrecto. Primero establece una baseline
 reproducible y descompone instrucciones, pregunta, metadata, evidencia y formato;
 después evalúa presupuesto del input completo, selección conservadora y overlap.
+
+La baseline T03 usa diez casos sintéticos publicables y no activa ninguna
+optimización. Registra composición de `generation` y `repair`, retrieval,
+cobertura de fuentes/hechos, citas, insuficiencia, duplicados exactos y overlap.
+Sus resultados reproducibles están en
+[`../reports/h31/t03-baseline.md`](../reports/h31/t03-baseline.md); las decisiones
+T04-T08 permanecen sujetas a revisión de esos datos y no tienen objetivo de
+reducción prefijado.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

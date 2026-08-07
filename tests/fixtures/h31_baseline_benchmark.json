@@ -1,0 +1,141 @@
+{
+  "dataset_id": "h31-synthetic-baseline-v1",
+  "license": "synthetic-for-barbarion",
+  "description": "Corpus logico sintetico para medir H3.1 sin informacion privada.",
+  "top_k": 5,
+  "cases": [
+    {
+      "id": "literal-single",
+      "category": "literal",
+      "mode": "keyword",
+      "question": "¿Cuál es el color operativo del Componente Alfa?",
+      "sources": [
+        {"chunk_id": "alpha-main", "document_id": 1, "ordinal": 0, "content": "El Componente Alfa usa el color ámbar durante la operación normal."},
+        {"chunk_id": "alpha-distractor", "document_id": 2, "ordinal": 0, "content": "El Componente Alfa dispone de una guía de mantenimiento preventivo."}
+      ],
+      "expected_facts": [
+        {"text": "El Componente Alfa usa el color ámbar", "chunk_id": "alpha-main"}
+      ]
+    },
+    {
+      "id": "semantic-rank-two",
+      "category": "semantic",
+      "mode": "semantic",
+      "question": "¿Cómo conserva su estado la Unidad Beta?",
+      "sources": [
+        {"chunk_id": "beta-distractor", "document_id": 3, "ordinal": 0, "content": "La Unidad Beta expone una interfaz de consulta local."},
+        {"chunk_id": "beta-state", "document_id": 4, "ordinal": 0, "content": "La Unidad Beta conserva su estado mediante un registro persistente."}
+      ],
+      "expected_facts": [
+        {"text": "La Unidad Beta conserva su estado mediante un registro persistente", "chunk_id": "beta-state"}
+      ]
+    },
+    {
+      "id": "hybrid-multi-source",
+      "category": "multi_source",
+      "mode": "hybrid",
+      "question": "¿Cómo inicia y finaliza el Módulo Gamma?",
+      "sources": [
+        {"chunk_id": "gamma-start", "document_id": 5, "ordinal": 0, "content": "El Módulo Gamma inicia validando la entrada recibida."},
+        {"chunk_id": "gamma-distractor", "document_id": 6, "ordinal": 0, "content": "El Módulo Gamma incluye métricas de diagnóstico local."},
+        {"chunk_id": "gamma-end", "document_id": 7, "ordinal": 0, "content": "El Módulo Gamma finaliza publicando un resultado verificable."}
+      ],
+      "expected_facts": [
+        {"text": "El Módulo Gamma inicia validando la entrada recibida", "chunk_id": "gamma-start"},
+        {"text": "El Módulo Gamma finaliza publicando un resultado verificable", "chunk_id": "gamma-end"}
+      ]
+    },
+    {
+      "id": "window-overlap",
+      "category": "overlap",
+      "mode": "hybrid",
+      "question": "¿Cómo opera la Unidad Delta de inicio a fin?",
+      "sources": [
+        {"chunk_id": "delta-window-a", "document_id": 8, "ordinal": 0, "content": "La Unidad Delta inicia en modo seguro y valida la señal compartida."},
+        {"chunk_id": "delta-window-b", "document_id": 8, "ordinal": 1, "content": "valida la señal compartida. La Unidad Delta publica el resultado final."}
+      ],
+      "expected_facts": [
+        {"text": "La Unidad Delta inicia en modo seguro", "chunk_id": "delta-window-a"},
+        {"text": "La Unidad Delta publica el resultado final", "chunk_id": "delta-window-b"}
+      ]
+    },
+    {
+      "id": "exact-duplicate",
+      "category": "duplicate",
+      "mode": "hybrid",
+      "question": "¿Qué intervalo utiliza el Servicio Épsilon?",
+      "sources": [
+        {"chunk_id": "epsilon-original", "document_id": 9, "ordinal": 0, "content": "El Servicio Épsilon utiliza un intervalo fijo de quince unidades."},
+        {"chunk_id": "epsilon-copy", "document_id": 10, "ordinal": 0, "content": "El Servicio Épsilon utiliza un intervalo fijo de quince unidades."}
+      ],
+      "expected_facts": [
+        {"text": "El Servicio Épsilon utiliza un intervalo fijo de quince unidades", "chunk_id": "epsilon-original"}
+      ]
+    },
+    {
+      "id": "relevant-at-six",
+      "category": "retrieval_limit",
+      "mode": "hybrid",
+      "question": "¿Qué forma tiene la Pieza Zeta?",
+      "sources": [
+        {"chunk_id": "zeta-d1", "document_id": 11, "ordinal": 0, "content": "La Pieza Zeta tiene una ficha de inspección vigente."},
+        {"chunk_id": "zeta-d2", "document_id": 12, "ordinal": 0, "content": "La Pieza Zeta usa una etiqueta de inventario local."},
+        {"chunk_id": "zeta-d3", "document_id": 13, "ordinal": 0, "content": "La Pieza Zeta aparece en el catálogo de unidades."},
+        {"chunk_id": "zeta-d4", "document_id": 14, "ordinal": 0, "content": "La Pieza Zeta cuenta con historial de revisiones."},
+        {"chunk_id": "zeta-d5", "document_id": 15, "ordinal": 0, "content": "La Pieza Zeta posee un identificador estable."},
+        {"chunk_id": "zeta-shape", "document_id": 16, "ordinal": 0, "content": "La Pieza Zeta tiene forma triangular."}
+      ],
+      "expected_facts": [
+        {"text": "La Pieza Zeta tiene forma triangular", "chunk_id": "zeta-shape"}
+      ]
+    },
+    {
+      "id": "ambiguous-evidence",
+      "category": "ambiguity",
+      "mode": "hybrid",
+      "question": "¿Qué opción usa el Elemento Eta?",
+      "sources": [
+        {"chunk_id": "eta-a", "document_id": 17, "ordinal": 0, "content": "Una nota indica que el Elemento Eta usa la opción norte."},
+        {"chunk_id": "eta-b", "document_id": 18, "ordinal": 0, "content": "Otra nota indica que el Elemento Eta usa la opción sur."}
+      ],
+      "expected_facts": [
+        {"text": "el Elemento Eta usa la opción norte", "chunk_id": "eta-a"},
+        {"text": "el Elemento Eta usa la opción sur", "chunk_id": "eta-b"}
+      ]
+    },
+    {
+      "id": "insufficient-empty",
+      "category": "insufficient",
+      "mode": "keyword",
+      "question": "¿Cuál es el material de la Unidad Theta?",
+      "sources": [],
+      "expected_facts": []
+    },
+    {
+      "id": "structured-evidence",
+      "category": "structured",
+      "mode": "hybrid",
+      "question": "¿Qué valor declara la Configuración Iota?",
+      "sources": [
+        {"chunk_id": "iota-structured", "document_id": 19, "ordinal": 0, "evidence_kind": "structured_symbol", "content": "La Configuración Iota declara el valor sintético cuarenta y dos."},
+        {"chunk_id": "iota-code", "document_id": 20, "ordinal": 0, "content": "El consumidor local consulta la Configuración Iota por su identificador."}
+      ],
+      "expected_facts": [
+        {"text": "La Configuración Iota declara el valor sintético cuarenta y dos", "chunk_id": "iota-structured"}
+      ]
+    },
+    {
+      "id": "citation-repair",
+      "category": "repair",
+      "mode": "hybrid",
+      "question": "¿Qué estado publica el Componente Kappa?",
+      "force_repair": true,
+      "sources": [
+        {"chunk_id": "kappa-state", "document_id": 21, "ordinal": 0, "content": "El Componente Kappa publica el estado estable."}
+      ],
+      "expected_facts": [
+        {"text": "El Componente Kappa publica el estado estable", "chunk_id": "kappa-state"}
+      ]
+    }
+  ]
+}

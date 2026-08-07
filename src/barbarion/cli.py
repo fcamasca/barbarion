@@ -2116,6 +2116,7 @@ def _render_ask_diagnostics(
             f"prompt_tokens_est={debug['prompt_tokens_est']}",
             file=sys.stderr,
         )
+    _render_prompt_composition_metrics(debug.get("prompt_composition"))
     print("", file=sys.stderr)
 
     print("=== CHUNKS ===", file=sys.stderr)
@@ -2150,6 +2151,29 @@ def _render_ask_diagnostics(
     print("", file=sys.stderr)
 
     _render_ask_debug_summary(result, debug)
+
+
+def _render_prompt_composition_metrics(value: object) -> None:
+    """Muestra tamaños por componente sin revelar su contenido."""
+    if not isinstance(value, Mapping):
+        return
+    print(f"prompt_estimator_id={value.get('estimator_id')}", file=sys.stderr)
+    print(f"prompt_utf8_bytes={value.get('utf8_bytes')}", file=sys.stderr)
+    components = value.get("components")
+    if not isinstance(components, (list, tuple)):
+        return
+    for component in components:
+        if not isinstance(component, Mapping):
+            continue
+        source_id = component.get("source_id") or "-"
+        print(
+            "prompt_component "
+            f"kind={component.get('kind')} source_id={source_id} "
+            f"chars={component.get('chars')} "
+            f"utf8_bytes={component.get('utf8_bytes')} "
+            f"tokens_est_local={component.get('tokens_est_local')}",
+            file=sys.stderr,
+        )
 
 
 def _render_ask_debug_chunk(source) -> None:

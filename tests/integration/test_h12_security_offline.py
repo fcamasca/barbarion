@@ -15,7 +15,11 @@ from threading import Thread
 import pytest
 
 from barbarion import cli
-from barbarion.application.rag import PromptBuilder
+from barbarion.application.rag import (
+    PromptBuilder,
+    PromptComponent,
+    PromptComposition,
+)
 from barbarion.database import initialize_database
 from barbarion.domain.rag import EmbeddingManifest, LlmProviderError
 from barbarion.infrastructure import anthropic
@@ -158,12 +162,18 @@ def test_canary_request_is_minimal_and_sensitive_material_is_not_persisted(
             timeout=timeout_seconds,
         ),
     )
-    original_build = PromptBuilder.build
+    original_compose = PromptBuilder.compose
 
-    def marked_prompt(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
-        return f"{original_build(self, *args, **kwargs)}\n{PROMPT_CANARY}"
+    def marked_compose(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN202
+        composition = original_compose(self, *args, **kwargs)
+        return PromptComposition(
+            components=(
+                *composition.components,
+                PromptComponent("output_format", f"\n{PROMPT_CANARY}"),
+            )
+        )
 
-    monkeypatch.setattr(PromptBuilder, "build", marked_prompt)
+    monkeypatch.setattr(PromptBuilder, "compose", marked_compose)
 
     assert cli.main(
         [

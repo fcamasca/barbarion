@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 completada;
-H3.1-T02 a H3.1-T12 pendientes.
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T03
+completadas; H3.1-T04 a H3.1-T12 pendientes.
 
 ## 2. Tareas
 
@@ -37,7 +37,7 @@ focalizada aprobadas. No se modifico ningun archivo bajo `src/`.
 
 ### H3.1-T02 - Modelar composicion y tamanos del prompt
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** medir componentes reconciliables del input controlado.  
 **Descripcion:** introducir composicion estructurada dentro de `PromptBuilder`,
 metricas de caracteres, bytes UTF-8 y estimacion local versionada por componente.
@@ -48,9 +48,14 @@ recibiendo `str` sin cambio de puerto.
 **Requisitos:** REQ-002, REQ-003, REQ-004; NFR-004, NFR-006.  
 **Checkpoint:** unit tests golden del prompt y reconciliacion ASCII/Unicode/codigo.
 
+**Evidencia:** `reports/h31/t02-prompt-composition.md`; hashes T01 de generacion
+y reparacion sin cambios, reconciliacion exacta de caracteres/bytes UTF-8 y
+regresion por grupos con 861 pruebas aprobadas. No se modificaron retrieval,
+contexto, ranking, seleccion ni presupuesto.
+
 ### H3.1-T03 - Construir benchmark H3.1 y aprobar baseline
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** establecer puertas empiricas antes de optimizar.  
 **Descripcion:** crear corpus y dataset sinteticos con literal, semantic,
 multi-fuente, overlap, duplicados, distractores, ambiguedad, insuficiencia y
@@ -61,6 +66,14 @@ registrar configuracion/version. Escanear privacidad.
 citas, calidad y tamanos; puertas propuestas a partir de resultados.  
 **Requisitos:** REQ-001, REQ-011, REQ-012, REQ-013; NFR-001, NFR-005.  
 **Checkpoint:** comando offline documentado genera reportes deterministas.
+
+**Evidencia:** `tests/fixtures/h31_baseline_benchmark.json`, runner offline
+`tests/support/h31_baseline_benchmark.py` y reportes reproducibles
+`reports/h31/t03-baseline.json`/`.md`. Diez casos sinteticos miden composicion,
+metadata/evidencia, retrieval, fuentes necesarias, cobertura de hechos, citas,
+insuficiencia, duplicado exacto, overlap y reparacion por separado. T03 no
+modifica `src/`, no habilita optimizaciones y deja T04-T08 en revision humana
+sin objetivo de reduccion prefijado.
 
 ### H3.1-T04 - Instrumentar decisiones y redundancia en report-only
 

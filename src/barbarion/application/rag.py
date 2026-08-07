@@ -59,6 +59,115 @@ from barbarion.infrastructure.sqlite import (
 
 _LOGGER = logging.getLogger("barbarion")
 
+TOKEN_ESTIMATOR_ID = "chars4_v1"
+_PROMPT_COMPONENT_KINDS = frozenset(
+    {
+        "instructions",
+        "question",
+        "source_metadata",
+        "source_content",
+        "rejected_answer",
+        "output_format",
+    }
+)
+
+
+def estimate_tokens(text: str) -> int:
+    """Estima tokens localmente con la heuristica historica de H3.
+
+    Esta aproximacion no representa uso real de Ollama o Anthropic. El ID
+    versionado permite interpretar metricas sin introducir un puerto mientras
+    exista una unica estrategia efectiva.
+    """
+    return max(1, (len(text) + 3) // 4)
+
+
+@dataclass(frozen=True, slots=True)
+class PromptComponent:
+    """Fragmento ordenado y medible de un prompt RAG."""
+
+    kind: str
+    text: str
+    source_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in _PROMPT_COMPONENT_KINDS:
+            raise ValueError(f"Tipo de componente de prompt no soportado: {self.kind}.")
+
+    @property
+    def chars(self) -> int:
+        """Cantidad exacta de caracteres Python del fragmento."""
+        return len(self.text)
+
+    @property
+    def utf8_bytes(self) -> int:
+        """Cantidad exacta de bytes UTF-8 del fragmento."""
+        return len(self.text.encode("utf-8"))
+
+    @property
+    def tokens_est_local(self) -> int:
+        """Estimacion local del fragmento, no uso real del proveedor."""
+        return estimate_tokens(self.text)
+
+
+@dataclass(frozen=True, slots=True)
+class PromptComposition:
+    """Composicion estructurada cuyo render es el prompt enviado al LLM."""
+
+    components: tuple[PromptComponent, ...]
+    estimator_id: str = TOKEN_ESTIMATOR_ID
+
+    @property
+    def rendered_prompt(self) -> str:
+        """Concatena los componentes sin insertar ni normalizar caracteres."""
+        return "".join(component.text for component in self.components)
+
+    @property
+    def chars(self) -> int:
+        """Caracteres exactos del prompt renderizado."""
+        return len(self.rendered_prompt)
+
+    @property
+    def utf8_bytes(self) -> int:
+        """Bytes UTF-8 exactos del prompt renderizado."""
+        return len(self.rendered_prompt.encode("utf-8"))
+
+    @property
+    def tokens_est_local(self) -> int:
+        """Estimacion local total aplicada al string finalmente enviado."""
+        return estimate_tokens(self.rendered_prompt)
+
+    def metrics(self) -> dict[str, object]:
+        """Expone tamaños y procedencia sin incluir texto del prompt."""
+        component_chars = sum(component.chars for component in self.components)
+        component_utf8_bytes = sum(
+            component.utf8_bytes for component in self.components
+        )
+        component_tokens = sum(
+            component.tokens_est_local for component in self.components
+        )
+        return {
+            "estimator_id": self.estimator_id,
+            "chars": self.chars,
+            "utf8_bytes": self.utf8_bytes,
+            "tokens_est_local": self.tokens_est_local,
+            "component_chars_total": component_chars,
+            "component_utf8_bytes_total": component_utf8_bytes,
+            "component_tokens_est_local_total": component_tokens,
+            "chars_reconciled": component_chars == self.chars,
+            "utf8_bytes_reconciled": component_utf8_bytes == self.utf8_bytes,
+            "components": tuple(
+                {
+                    "kind": component.kind,
+                    "source_id": component.source_id,
+                    "chars": component.chars,
+                    "utf8_bytes": component.utf8_bytes,
+                    "tokens_est_local": component.tokens_est_local,
+                }
+                for component in self.components
+            ),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class IndexService:
@@ -1408,14 +1517,14 @@ class ContextBuilder:
                     {"chunk_id": candidate.chunk_id, "reason": "missing_content"}
                 )
                 continue
-            original_token_estimate = _estimate_tokens(content)
+            original_token_estimate = estimate_tokens(content)
             source_id = f"F{len(sources) + 1}"
             content = _truncate_to_tokens(content, self.max_chunk_tokens)
             source = ContextSource(
                 source_id=source_id,
                 candidate=candidate,
                 content=content,
-                token_estimate=_estimate_tokens(content),
+                token_estimate=estimate_tokens(content),
                 original_token_estimate=original_token_estimate,
                 content_truncated=original_token_estimate > self.max_chunk_tokens,
             )
@@ -1426,7 +1535,7 @@ class ContextBuilder:
                     {"chunk_id": candidate.chunk_id, "reason": "budget"}
                 )
                 continue
-            token_estimate = _estimate_tokens(_render_source_context(source))
+            token_estimate = estimate_tokens(_render_source_context(source))
             sources.append(source)
             used_tokens += token_estimate
         omitted = tuple(
@@ -1524,40 +1633,94 @@ class ContextBuilder:
 class PromptBuilder:
     """Construye prompts controlados para respuestas citadas en espanol."""
 
-    def build(self, *, question: str, context: ContextBuildResult) -> str:
-        """Construye el prompt inicial de generacion.
+    def compose(
+        self,
+        *,
+        question: str,
+        context: ContextBuildResult,
+    ) -> PromptComposition:
+        """Compone el prompt inicial sin alterar su representacion historica.
 
         Args:
             question: Pregunta original del usuario.
             context: Contexto recuperado con fuentes permitidas.
 
         Returns:
-            Prompt que restringe la respuesta a la evidencia recuperada.
+            Componentes ordenados y reconciliables con el prompt enviado.
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
-        return (
-            "Responde en espanol usando solo la evidencia provista.\n"
-            "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
-            "Usa solo estos IDs de fuente existentes: "
-            f"{source_ids}.\n"
-            "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
-            "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n"
-            "Si la evidencia no responde directamente la pregunta, responde "
-            "\"Evidencia insuficiente\".\n"
-            "No infieras, no completes con conocimiento general y no inventes "
-            "conclusiones.\n"
-            "Cuando declares evidencia insuficiente, indica que evidencia falto "
-            "y cita las fuentes que demuestran el limite.\n\n"
-            f"Pregunta:\n{question}\n\n"
-            f"Contexto:\n{context.rendered_context}\n\n"
-            "Formato requerido:\n"
-            "## Conclusion\n"
-            "... [F1]\n\n"
-            "## Evidencia\n"
-            "- ... [F1]\n\n"
-            "## Supuestos y limites\n"
-            "- ... [F1]\n"
+        components = (
+            PromptComponent(
+                "instructions",
+                "Responde en espanol usando solo la evidencia provista.\n"
+                "Toda afirmacion factual debe citar una fuente inline como [F1].\n"
+                "Usa solo estos IDs de fuente existentes: "
+                f"{source_ids}.\n"
+                "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.\n"
+                "No incluyas una seccion final de fuentes; las citas deben ir en el texto.\n"
+                "Si la evidencia no responde directamente la pregunta, responde "
+                "\"Evidencia insuficiente\".\n"
+                "No infieras, no completes con conocimiento general y no inventes "
+                "conclusiones.\n"
+                "Cuando declares evidencia insuficiente, indica que evidencia falto "
+                "y cita las fuentes que demuestran el limite.\n\n",
+            ),
+            PromptComponent("question", f"Pregunta:\n{question}\n\n"),
+            *_context_prompt_components(context),
+            PromptComponent(
+                "output_format",
+                "Formato requerido:\n"
+                "## Conclusion\n"
+                "... [F1]\n\n"
+                "## Evidencia\n"
+                "- ... [F1]\n\n"
+                "## Supuestos y limites\n"
+                "- ... [F1]\n",
+            ),
         )
+        return PromptComposition(components=components)
+
+    def build(self, *, question: str, context: ContextBuildResult) -> str:
+        """Renderiza el prompt inicial conservando el contrato publico."""
+        return self.compose(question=question, context=context).rendered_prompt
+
+    def compose_repair(
+        self,
+        *,
+        question: str,
+        context: ContextBuildResult,
+        answer: str,
+    ) -> PromptComposition:
+        """Compone la reparacion sin agregar contenido ni cambiar sus bytes.
+
+        Args:
+            question: Pregunta original del usuario.
+            context: Contexto recuperado con las fuentes permitidas.
+            answer: Respuesta candidata rechazada por el validador.
+
+        Returns:
+            Componentes ordenados del prompt de reparacion.
+        """
+        source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
+        components = (
+            PromptComponent(
+                "instructions",
+                "Reescribe la respuesta en espanol usando solo la evidencia provista.\n"
+                "Incluye citas inline validas como [F1].\n"
+                f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
+                "Si el contexto no responde la pregunta, responde "
+                "\"Evidencia insuficiente\" y cita la evidencia disponible.\n"
+                "No generes codigo ni completes codigo; solo corrige la respuesta textual.\n\n",
+            ),
+            PromptComponent("question", f"Pregunta:\n{question}\n\n"),
+            *_context_prompt_components(context),
+            PromptComponent(
+                "rejected_answer",
+                f"Respuesta original:\n{answer}\n\n",
+            ),
+            PromptComponent("output_format", "Respuesta corregida:"),
+        )
+        return PromptComposition(components=components)
 
     def repair(
         self,
@@ -1566,29 +1729,12 @@ class PromptBuilder:
         context: ContextBuildResult,
         answer: str,
     ) -> str:
-        """Construye un prompt para reparar citas sin agregar contenido nuevo.
-
-        Args:
-            question: Pregunta original del usuario.
-            context: Contexto recuperado con las fuentes permitidas.
-            answer: Respuesta candidata rechazada por el validador.
-
-        Returns:
-            Prompt de reescritura con reglas estrictas de citacion inline.
-        """
-        source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
-        return (
-            "Reescribe la respuesta en espanol usando solo la evidencia provista.\n"
-            "Incluye citas inline validas como [F1].\n"
-            f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
-            "Si el contexto no responde la pregunta, responde "
-            "\"Evidencia insuficiente\" y cita la evidencia disponible.\n"
-            "No generes codigo ni completes codigo; solo corrige la respuesta textual.\n\n"
-            f"Pregunta:\n{question}\n\n"
-            f"Contexto:\n{context.rendered_context}\n\n"
-            f"Respuesta original:\n{answer}\n\n"
-            "Respuesta corregida:"
-        )
+        """Renderiza el prompt de reparacion conservando el contrato publico."""
+        return self.compose_repair(
+            question=question,
+            context=context,
+            answer=answer,
+        ).rendered_prompt
 
 
 @dataclass(frozen=True, slots=True)
@@ -1663,6 +1809,17 @@ class CitationValidator:
         )
 
 
+def _require_reconciled_prompt(
+    prompt: str,
+    composition: PromptComposition,
+) -> None:
+    """Impide observar una composicion distinta del string productivo."""
+    if composition.rendered_prompt != prompt:
+        raise ValueError(
+            "La composicion del prompt no coincide con el texto enviado al LLM."
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class AskService:
     """Orquesta busqueda, contexto, prompt, LLM y validacion de `ask`.
@@ -1700,7 +1857,7 @@ class AskService:
         """
         timeout_seconds = self.settings.llm.timeout_seconds
         prompt_chars = len(prompt)
-        prompt_tokens_est = _estimate_tokens(prompt)
+        prompt_tokens_est = estimate_tokens(prompt)
         prompt_tokens_metric = (
             "prompt_tokens_est_local"
             if self.llm_provider.provider == "anthropic"
@@ -1933,6 +2090,11 @@ class AskService:
                 debug=base_debug_payload if debug else {},
             )
         prompt = self.prompt_builder.build(question=question, context=context)
+        prompt_composition = self.prompt_builder.compose(
+            question=question,
+            context=context,
+        )
+        _require_reconciled_prompt(prompt, prompt_composition)
         debug_payload = dict(base_debug_payload)
         if debug:
             debug_payload["prompt"] = prompt
@@ -1942,7 +2104,8 @@ class AskService:
                 if self.llm_provider.provider == "anthropic"
                 else "prompt_tokens_est"
             )
-            debug_payload[prompt_tokens_key] = _estimate_tokens(prompt)
+            debug_payload[prompt_tokens_key] = prompt_composition.tokens_est_local
+            debug_payload["prompt_composition"] = prompt_composition.metrics()
         llm_started = time.monotonic()
         try:
             answer = self._generate_with_observability(
@@ -1979,6 +2142,12 @@ class AskService:
                 context=context,
                 answer=answer,
             )
+            repair_composition = self.prompt_builder.compose_repair(
+                question=question,
+                context=context,
+                answer=answer,
+            )
+            _require_reconciled_prompt(repair_prompt, repair_composition)
             try:
                 repaired_answer = self._generate_with_observability(
                     repair_prompt,
@@ -2001,6 +2170,9 @@ class AskService:
             repair_valid = validation.valid
             if debug:
                 debug_payload["repair_prompt"] = repair_prompt
+                debug_payload["repair_prompt_composition"] = (
+                    repair_composition.metrics()
+                )
                 debug_payload["repair_response"] = repaired_answer
                 debug_payload["repair_validation"] = _citation_validation_debug(
                     answer=repaired_answer,
@@ -2021,6 +2193,7 @@ class AskService:
             debug_payload["citation_repair_valid"] = repair_valid
             if not repair_attempted:
                 debug_payload["repair_prompt"] = None
+                debug_payload["repair_prompt_composition"] = None
                 debug_payload["repair_response"] = None
                 debug_payload["repair_validation"] = None
         self.search_service.repository.update_rag_query_metrics(
@@ -2090,10 +2263,6 @@ def _merge_ask_candidates(
     return tuple(merged)
 
 
-def _estimate_tokens(text: str) -> int:
-    return max(1, (len(text) + 3) // 4)
-
-
 def _truncate_to_tokens(text: str, max_tokens: int) -> str:
     limit = max_tokens * 4
     if len(text) <= limit:
@@ -2107,9 +2276,11 @@ def _fit_source_to_budget(
 ) -> ContextSource | None:
     if remaining_tokens <= 0:
         return None
-    if _estimate_tokens(_render_source_context(source)) <= remaining_tokens:
+    if estimate_tokens(_render_source_context(source)) <= remaining_tokens:
         return source
-    header_tokens = _estimate_tokens(_render_source_context(source).replace(source.content, ""))
+    header_tokens = estimate_tokens(
+        _render_source_context(source).replace(source.content, "")
+    )
     available_content_tokens = remaining_tokens - header_tokens
     if available_content_tokens <= 0:
         return None
@@ -2118,11 +2289,11 @@ def _fit_source_to_budget(
         source_id=source.source_id,
         candidate=source.candidate,
         content=content,
-        token_estimate=_estimate_tokens(content),
+        token_estimate=estimate_tokens(content),
         original_token_estimate=source.original_token_estimate,
         content_truncated=True,
     )
-    if _estimate_tokens(_render_source_context(fitted)) > remaining_tokens:
+    if estimate_tokens(_render_source_context(fitted)) > remaining_tokens:
         return None
     return fitted
 
@@ -2131,7 +2302,39 @@ def _render_context(sources: list[ContextSource]) -> str:
     return "\n\n".join(_render_source_context(source) for source in sources)
 
 
+def _context_prompt_components(
+    context: ContextBuildResult,
+) -> tuple[PromptComponent, ...]:
+    """Descompone el bloque Contexto sin cambiar un solo caracter renderizado."""
+    components: list[PromptComponent] = [
+        PromptComponent("source_metadata", "Contexto:\n"),
+    ]
+    for index, source in enumerate(context.sources):
+        separator = "\n\n" if index else ""
+        components.append(
+            PromptComponent(
+                "source_metadata",
+                separator + _render_source_metadata(source),
+                source_id=source.source_id,
+            )
+        )
+        components.append(
+            PromptComponent(
+                "source_content",
+                source.content,
+                source_id=source.source_id,
+            )
+        )
+    components.append(PromptComponent("source_metadata", "\n\n"))
+    return tuple(components)
+
+
 def _render_source_context(source: ContextSource) -> str:
+    return _render_source_metadata(source) + source.content
+
+
+def _render_source_metadata(source: ContextSource) -> str:
+    """Renderiza exclusivamente metadata y delimitadores de una fuente."""
     candidate = source.candidate
     path = candidate.source.get("relative_path") or "fuente desconocida"
     line_start = candidate.source.get("start_line")
@@ -2160,7 +2363,6 @@ def _render_source_context(source: ContextSource) -> str:
         f"score={candidate.combined_score:.3f}"
         f"{lines}{pages}{symbol_trace}{relation_trace}{evidence_trace}\n"
         f"contenido_truncado={str(source.content_truncated).lower()}\n"
-        f"{source.content}"
     )
 
 
@@ -2195,7 +2397,7 @@ def _ask_debug_payload(
         "context_chars": len(context.rendered_context),
         "context_tokens_est": context.token_estimate,
         "prompt_chars": len(prompt),
-        "prompt_tokens_est": _estimate_tokens(prompt) if prompt else 0,
+        "prompt_tokens_est": estimate_tokens(prompt) if prompt else 0,
         "llm_timeout_seconds": timeout_seconds,
         "truncated_sources": sum(
             1 for source in context.sources if source.content_truncated

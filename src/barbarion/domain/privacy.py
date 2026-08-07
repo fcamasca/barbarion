@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol, runtime_checkable
 
 
 class InferenceExecution(StrEnum):
@@ -145,6 +146,39 @@ class PrivacyEvidence:
         """Indica vigencia inclusiva desde verificacion y exclusiva al expirar."""
         _require_aware(evaluated_at, "evaluated_at")
         return self.verified_at <= evaluated_at < self.expires_at
+
+
+@dataclass(frozen=True, slots=True)
+class PrivacyPolicySourceResult:
+    """Evidencia normalizada y metadata segura de una fuente de politicas."""
+
+    source_id: str
+    source_version: str
+    evidence: tuple[PrivacyEvidence, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "source_id",
+            _normalize_required(self.source_id, "source_id"),
+        )
+        object.__setattr__(
+            self,
+            "source_version",
+            _normalize_required(self.source_version, "source_version"),
+        )
+        object.__setattr__(self, "evidence", tuple(self.evidence))
+        if any(not isinstance(item, PrivacyEvidence) for item in self.evidence):
+            raise ValueError("evidence solo admite PrivacyEvidence.")
+
+
+@runtime_checkable
+class PrivacyPolicySource(Protocol):
+    """Puerto que solo conoce la identidad publica del destino."""
+
+    def lookup(self, target: InferenceTarget) -> PrivacyPolicySourceResult:
+        """Obtiene evidencia ya normalizada, sin recibir contenido de usuario."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

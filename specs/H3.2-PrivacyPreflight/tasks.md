@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T04
-completadas; T05-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T05
+completadas; T06-T13 pendientes.
 
 ## 2. Tareas
 
@@ -95,7 +95,7 @@ IO, registry, cache, HTTP ni integracion con `AskService`.
 
 ### H3.2-T05 - Definir adaptador y normalizacion del registry
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** desacoplar formato externo de evidencia de dominio.  
 **Archivos/componentes esperados:** `PrivacyPolicySource`, adaptador inicial,
 schemas/fixtures sinteticos, errores tipados.  
@@ -106,6 +106,16 @@ evidencia.
 **Pruebas:** H3.2-TP-020..024.  
 **Dependencias:** T02, T04.  
 **Checkpoint:** payload observado contiene solo identidad publica.
+
+**Evidencia:** `PrivacyPolicySource` y resultado normalizado en
+`src/barbarion/domain/privacy.py`, adaptador puro en
+`src/barbarion/infrastructure/privacy_registry.py`, fixture sintetico y matriz
+`tests/unit/test_h32_privacy_registry.py`, y
+`reports/h32/t05-registry-normalization.md`. Se verifico la fuente real y se
+concluyo que indexa capabilities del offering: `training_on_customer_data =
+yes_public` puede respaldar no-training cuando el scope coincide, pero
+`retention_zdr` y `data_residency` nunca demuestran por si solos configuracion
+efectiva. El adaptador no interpreta texto libre ni realiza red, cache o refresh.
 
 ### H3.2-T06 - Implementar cache atomica y refresh explicito
 

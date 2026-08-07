@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "name": "AI Provider Trust Registry",
+  "generated": "2026-08-07",
+  "license": "Free to use with attribution and a link back.",
+  "disclaimer": "Evidence index, not a legal determination.",
+  "offerings": [
+    {
+      "id": "anthropic-api",
+      "name": "Anthropic API",
+      "developer": "Anthropic",
+      "platform": "Anthropic",
+      "summary": "SYNTHETIC-CONTENT-CANARY",
+      "dimensions": {
+        "training_on_customer_data": {
+          "value": "yes_public",
+          "confidence": "high",
+          "source": "https://example.invalid/no-training",
+          "verified": "2026-08-07",
+          "notes": "SYNTHETIC-NOTES-CANARY",
+          "evidence": "SYNTHETIC-EVIDENCE-CANARY",
+          "caveat": null
+        },
+        "retention_zdr": {
+          "value": "yes_sales_gated",
+          "confidence": "high",
+          "source": "https://example.invalid/zdr",
+          "verified": "2026-08-07",
+          "notes": "SYNTHETIC-ZDR-NOTES"
+        },
+        "data_residency": {
+          "value": "yes_public",
+          "confidence": "high",
+          "source": "https://example.invalid/residency",
+          "verified": "2026-08-07",
+          "notes": "SYNTHETIC-RESIDENCY-NOTES"
+        }
+      },
+      "model_exceptions": [
+        {
+          "model": "published-exception-v1",
+          "dimensions": {
+            "training_on_customer_data": {
+              "value": "yes_sales_gated",
+              "confidence": "high",
+              "source": "https://example.invalid/model-exception",
+              "verified": "2026-08-07"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "anthropic-distribution",
+      "name": "Anthropic Distribution",
+      "developer": "Anthropic",
+      "platform": "Synthetic Cloud",
+      "dimensions": {
+        "training_on_customer_data": {
+          "value": "yes_public",
+          "confidence": "high",
+          "source": "https://example.invalid/distribution-no-training",
+          "verified": "2026-08-07"
+        }
+      }
+    }
+  ]
+}

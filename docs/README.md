@@ -11,6 +11,7 @@ Esta carpeta reúne la definición pública del producto, su plan de ejecución 
 5. [CLI.md](CLI.md) — referencia completa de comandos, argumentos, ejemplos y códigos de salida.
 6. [INGESTION.md](INGESTION.md) — operación local de ingesta H2.
 7. [`../specs/`](../specs/) — especificaciones por hito y evidencias de aceptación o validación.
+8. [H31-RAG-CONTEXT.md](H31-RAG-CONTEXT.md) — operación, benchmark y decisiones de H3.1.
 
 ## Alcance público
 
@@ -25,6 +26,7 @@ La documentación pública no debe contener nombres de sistemas internos, objeto
 - `ARCHITECTURE.md` define las decisiones técnicas actuales.
 - `DECISIONS.md` registra por qué se eligieron y cómo se reemplazan.
 - `CLI.md` documenta la operación vigente de la línea de comandos.
+- `H31-RAG-CONTEXT.md` explica las políticas RAG, sus métricas y límites de privacidad.
 - Cada carpeta de `specs/` define el trabajo aprobado para un hito.
 - [`../specs/H5-SpecMode/acceptance.md`](../specs/H5-SpecMode/acceptance.md) registra la validación técnica H5 y mantiene explícita la revisión humana pendiente.
 - [`../specs/H1.1-LocalModelManagement/acceptance.md`](../specs/H1.1-LocalModelManagement/acceptance.md) registra la aceptación técnica H1.1 y la comparación real entre modelos que continúa pendiente.

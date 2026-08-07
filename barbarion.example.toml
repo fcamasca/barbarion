@@ -53,6 +53,7 @@ keyword_weight = 0.30
 # input_token_budget_est; el presupuesto del input completo se define tras medir.
 context_token_budget = 6000
 # input_token_budget_est = <definir a partir de una baseline reproducible>
+# chars4_v1 solo estima este presupuesto; no reemplaza el uso real del proveedor.
 # Valores: baseline_v1, optimized_v1. optimized_v1 requiere reemplazar
 # context_token_budget por input_token_budget_est.
 context_selection_policy = "baseline_v1"

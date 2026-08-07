@@ -256,7 +256,7 @@ del dominio.
 
 ## H3.1 -- Optimización de contexto RAG
 
-Estado: implementación iniciada; H3.1-T01 a H3.1-T10 completadas.
+Estado: implementación iniciada; H3.1-T01 a H3.1-T11 completadas.
 
 Pregunta que responde:
 
@@ -312,6 +312,11 @@ T10 valida `optimized_v1` sobre benchmark, consumidores y regresion completa:
 `907 passed, 3 skipped`, smoke instalado `11 passed` y matriz opt-in `76 passed`.
 La politica queda calificada como candidata a default, pero no se promueve;
 `baseline_v1` sigue siendo el valor efectivo hasta una decision explicita.
+
+T11 consolida operación, decisiones y lectura de métricas en
+[`H31-RAG-CONTEXT.md`](H31-RAG-CONTEXT.md). El resultado real de H3.1 es hacer
+medible el input completo y corregir una pérdida de evidencia por orden de
+selección; no se presenta el overlap marginal como la optimización principal.
 
 La evolución mantiene retrieval, trazabilidad, citas, Ollama, Anthropic y
 `--no-llm`. Sus benchmarks y fixtures deben ser públicos o sintéticos y no

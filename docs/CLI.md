@@ -246,6 +246,8 @@ No copia esos datos al JSON de respuesta ni los persiste en SQLite. Cuando
 Anthropic devuelve uso real, stderr incluye ademas `provider_input_tokens`,
 `provider_output_tokens`, `provider_total_tokens` y `provider_request_count`;
 un contador ausente no se convierte en cero ni se infiere desde `chars4_v1`.
+La reproducción del benchmark y la interpretación de cada familia de métricas
+están documentadas en [`H31-RAG-CONTEXT.md`](H31-RAG-CONTEXT.md).
 
 ### models
 

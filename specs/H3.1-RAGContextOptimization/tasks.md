@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T10
-completadas; H3.1-T11 a H3.1-T12 pendientes. T08 fue completada mediante una
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T11
+completadas; H3.1-T12 pendiente. T08 fue completada mediante una
 decision explicita de diferimiento basada en la baseline.
 
 ## 2. Tareas
@@ -228,7 +228,7 @@ no lo promueve: `baseline_v1` sigue siendo el default efectivo.
 
 ### H3.1-T11 - Documentar operacion y decisiones
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** dejar configuracion, metricas y limites comprensibles.  
 **Descripcion:** actualizar README, CLI, ARCHITECTURE, DECISIONS, EVOLUTION,
 ROADMAP, ejemplo TOML y spec. Explicar estimado/real, presupuesto, politicas,
@@ -237,6 +237,17 @@ benchmark y privacidad. No editar acta H1.2.
 **Resultado esperado:** documentacion coherente con codigo y defaults efectivos.  
 **Requisitos:** REQ-015; NFR-006.  
 **Checkpoint:** busquedas de estados/terminologia, enlaces y `git diff --check`.
+
+**Evidencia:** `docs/H31-RAG-CONTEXT.md` consolida el problema resuelto, la
+comparacion de politicas, el contrato opt-in, la decision de diferir overlap,
+la reproduccion/lectura del benchmark y su privacidad. README, CLI,
+ARCHITECTURE, DECISIONS, EVOLUTION, ROADMAP, ejemplo TOML y spec fueron
+revisados contra el default efectivo; H1.2 permanece sin cambios.
+El comando documentado reprodujo el benchmark. Pruebas focalizadas de README y
+configuracion: `97 passed`; regresion completa en la runtime disponible:
+`896 passed, 14 skipped`. Los skips adicionales corresponden a capacidades
+opcionales ausentes en esa runtime y no reemplazan la evidencia T10
+(`907 passed, 3 skipped`). `git diff --check` sin errores.
 
 ### H3.1-T12 - Aceptacion tecnica y funcional
 

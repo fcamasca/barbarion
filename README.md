@@ -156,7 +156,7 @@ Evoluciones posteriores al MVP:
 | H4.1 Configuraciones Data-Driven | Completada y aceptada técnicamente | [Aceptación](specs/H4.1-DataDrivenConfigurations/acceptance.md) |
 | H1.1 Gestión y Evaluación de Modelos Locales | Completada y aceptada técnicamente | [Aceptación](specs/H1.1-LocalModelManagement/acceptance.md) |
 | H1.2 Inferencia Remota con Anthropic | Completada y aceptada técnica y funcionalmente | [Aceptación](specs/H1.2-RemoteInference/acceptance.md) |
-| H3.1 Optimización de contexto RAG | Implementación iniciada; T01-T10 completadas, optimized_v1 calificado como candidato a default | [Spec](specs/H3.1-RAGContextOptimization/) |
+| H3.1 Optimización de contexto RAG | Implementación iniciada; T01-T11 completadas, `optimized_v1` calificado como candidato a default sin promoverlo | [Guía](docs/H31-RAG-CONTEXT.md) |
 
 El historial y alcance de las evoluciones se mantienen en [`docs/EVOLUTION.md`](docs/EVOLUTION.md).
 
@@ -169,6 +169,7 @@ El historial y alcance de las evoluciones se mantienen en [`docs/EVOLUTION.md`](
 - [Referencia CLI](docs/CLI.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Evolución del producto](docs/EVOLUTION.md)
+- [Contexto RAG y benchmark H3.1](docs/H31-RAG-CONTEXT.md)
 - [Operación de ingesta](docs/INGESTION.md)
 - [Configuración Data-Driven](docs/data-driven-configuration.md)
 - [Specs por hito](specs/)

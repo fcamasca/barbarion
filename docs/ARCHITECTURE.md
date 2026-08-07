@@ -430,6 +430,12 @@ permanecen separadas. No contiene pregunta, prompt, respuesta ni contenido de
 fuentes. Los contadores reales opcionales se etiquetan `provider_*_tokens` y
 nunca se derivan de `chars4_v1`. La CLI los presenta en stderr; SQLite conserva
 su esquema vigente y los reportes versionados usan solo agregados sinteticos.
+La selección `baseline_v1` continúa como default. `optimized_v1` es opt-in,
+requiere el presupuesto estimado del input completo y prioriza score global con
+desempate determinista antes de ordenar la presentación. El benchmark demostró
+que esta selección, y no el overlap marginal, explica la mejora material. La
+guía operativa y de métricas está en
+[`H31-RAG-CONTEXT.md`](H31-RAG-CONTEXT.md).
 
 ## 9. Estrategia de pruebas
 

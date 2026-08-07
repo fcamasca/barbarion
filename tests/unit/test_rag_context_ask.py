@@ -355,6 +355,124 @@ def ask_service(
     return service, fake_llm
 
 
+def _with_input_budget(service: AskService, budget: int) -> AskService:
+    return replace(
+        service,
+        settings=replace(
+            service.settings,
+            rag=replace(service.settings.rag, input_token_budget_est=budget),
+        ),
+    )
+
+
+def test_input_budget_applies_to_complete_generation_prompt(tmp_path) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        "order_total se selecciona desde dual [F1].",
+    )
+    service = _with_input_budget(service, 501)
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.status is RagQueryStatus.COMPLETED
+    assert len(fake_llm.prompts) == 1
+    assert result.debug["prompt_composition"]["tokens_est_local"] <= 501
+    budget = result.debug["input_budget"]
+    assert budget["configured_tokens_est_local"] == 501
+    assert budget["estimator_id"] == "chars4_v1"
+    assert budget["fixed_overhead_tokens_est_local"] > 0
+    assert budget["evidence_budget_tokens_est_local"] > 0
+    assert budget["final_prompt_tokens_est_local"] == result.debug[
+        "prompt_composition"
+    ]["tokens_est_local"]
+    assert budget["result"] == "fits"
+
+
+def test_input_budget_returns_insufficient_without_calling_llm_when_overhead_does_not_fit(
+    tmp_path,
+) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        "esta respuesta nunca debe solicitarse [F1].",
+    )
+    service = _with_input_budget(service, 501)
+
+    result = service.ask(
+        "order_total " + ("pregunta-muy-larga " * 180),
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.status is RagQueryStatus.INSUFFICIENT_EVIDENCE
+    assert result.no_llm is True
+    assert fake_llm.prompts == []
+    assert result.debug["input_budget"]["result"] == "fixed_overhead_exceeds_budget"
+
+
+def test_repair_is_not_called_when_its_complete_prompt_exceeds_input_budget(
+    tmp_path,
+) -> None:
+    invalid = "respuesta sin cita " + ("contenido " * 160)
+    service, fake_llm = ask_service(
+        tmp_path,
+        (invalid, "order_total se selecciona desde dual [F1]."),
+    )
+    service = _with_input_budget(service, 501)
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.status is RagQueryStatus.ERROR
+    assert len(fake_llm.prompts) == 1
+    assert result.debug["citation_repair_attempted"] is False
+    assert result.debug["citation_repair_skipped_reason"] == "input_token_budget_est"
+    assert (
+        result.debug["repair_prompt_composition"]["tokens_est_local"]
+        > result.debug["input_budget"]["configured_tokens_est_local"]
+    )
+
+
+def test_generation_and_repair_each_fit_the_configured_input_budget(tmp_path) -> None:
+    service, fake_llm = ask_service(
+        tmp_path,
+        (
+            "respuesta sin cita",
+            "order_total se selecciona desde dual [F1].",
+        ),
+    )
+    service = _with_input_budget(service, 1000)
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        debug=True,
+    )
+
+    assert result.status is RagQueryStatus.COMPLETED
+    assert len(fake_llm.prompts) == 2
+    assert result.debug["prompt_composition"]["tokens_est_local"] <= 1000
+    assert result.debug["repair_prompt_composition"]["tokens_est_local"] <= 1000
+
+
 def test_ask_logs_success_without_prompt_or_response_content(
     tmp_path,
     ask_log_records,

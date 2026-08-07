@@ -91,6 +91,7 @@ _DEFAULT_RETRIEVAL: dict[str, object] = {
 _DEFAULT_RAG: dict[str, object] = {
     "context_token_budget": 6000,
     "input_token_budget_est": None,
+    "context_selection_policy": "baseline_v1",
     "max_chunk_tokens": 1200,
     "dedupe_min_hash_prefix": 16,
     "include_snippets": True,
@@ -240,6 +241,7 @@ class RagSettings:
     dedupe_min_hash_prefix: int
     include_snippets: bool
     input_token_budget_est: int | None = None
+    context_selection_policy: str = "baseline_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,6 +485,7 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
             if settings.rag.input_token_budget_est is None
             else str(settings.rag.input_token_budget_est),
         ),
+        ("rag.context_selection_policy", settings.rag.context_selection_policy),
         ("rag.max_chunk_tokens", str(settings.rag.max_chunk_tokens)),
         ("rag.dedupe_min_hash_prefix", str(settings.rag.dedupe_min_hash_prefix)),
         ("rag.include_snippets", str(settings.rag.include_snippets).lower()),
@@ -874,6 +877,16 @@ def _build_rag_settings(value: object) -> RagSettings:
             "para el contrato de input completo H3.1."
         )
     input_token_budget_est = values["input_token_budget_est"]
+    context_selection_policy = _validate_choice(
+        values["context_selection_policy"],
+        "rag.context_selection_policy",
+        {"baseline_v1", "optimized_v1"},
+    )
+    if context_selection_policy == "optimized_v1" and input_token_budget_est is None:
+        raise ConfigError(
+            "'rag.context_selection_policy = optimized_v1' requiere "
+            "'rag.input_token_budget_est'."
+        )
     return RagSettings(
         context_token_budget=_validate_int_range(
             values["context_token_budget"],
@@ -907,6 +920,7 @@ def _build_rag_settings(value: object) -> RagSettings:
                 maximum=200_000,
             )
         ),
+        context_selection_policy=context_selection_policy,
     )
 
 

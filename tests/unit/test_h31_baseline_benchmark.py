@@ -7,7 +7,9 @@ from tests.support.h31_baseline_benchmark import (
     DEFAULT_DATASET,
     load_dataset,
     run_baseline,
+    run_optimized,
     write_reports,
+    write_t07_comparison,
 )
 
 
@@ -95,16 +97,43 @@ def test_baseline_measures_prompt_components_redundancy_and_repair() -> None:
 
 
 def test_committed_reports_are_exactly_reproducible(tmp_path: Path) -> None:
-    result = run_baseline(load_dataset(ROOT / DEFAULT_DATASET))
+    dataset = load_dataset(ROOT / DEFAULT_DATASET)
+    result = run_baseline(dataset)
+    optimized = run_optimized(dataset)
     write_reports(result, tmp_path)
+    write_t07_comparison(result, optimized, tmp_path)
 
     for name in (
         "t03-baseline.json",
         "t03-baseline.md",
         "t04-redundancy-report.json",
         "t04-redundancy-report.md",
+        "t07-relevance-first.json",
+        "t07-relevance-first.md",
     ):
         assert (tmp_path / name).read_bytes() == (REPORT_DIR / name).read_bytes()
+
+
+def test_relevance_first_recovers_rank_six_without_quality_regression() -> None:
+    dataset = load_dataset(ROOT / DEFAULT_DATASET)
+    baseline = run_baseline(dataset)
+    optimized = run_optimized(dataset)
+    baseline_cases = {case["id"]: case for case in baseline["cases"]}
+    optimized_cases = {case["id"]: case for case in optimized["cases"]}
+
+    assert baseline_cases["relevant-at-six"]["fact_coverage"] == 0.0
+    assert optimized_cases["relevant-at-six"]["fact_coverage"] == 1.0
+    assert baseline_cases["relevant-at-six"]["result_status"] == "insufficient"
+    assert optimized_cases["relevant-at-six"]["result_status"] == "completed"
+    for metric in (
+        "recall_at_5",
+        "recall_at_10",
+        "mrr",
+        "citation_precision",
+        "citation_recall",
+        "citation_valid_rate",
+    ):
+        assert optimized["metrics"][metric] >= baseline["metrics"][metric]
 
 
 def test_versioned_artifacts_do_not_contain_private_path_or_secret_canaries() -> None:

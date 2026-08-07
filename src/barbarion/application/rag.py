@@ -9,7 +9,7 @@ import math
 import re
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from barbarion.config import Settings
@@ -815,24 +815,25 @@ class SearchService:
         vector_candidates,
         keyword_candidates,
     ):
+        result_limit = request.candidate_k if request.defer_top_k else request.top_k
         if request.mode == RetrievalMode.SEMANTIC:
             candidates = tuple(
                 _with_mode(candidate, RetrievalMode.SEMANTIC)
                 for candidate in vector_candidates
-            )[: request.top_k]
+            )[:result_limit]
         elif request.mode == RetrievalMode.KEYWORD:
             candidates = tuple(
                 candidate
                 for candidate in keyword_candidates
                 if candidate.combined_score >= request.similarity_threshold
-            )[: request.top_k]
+            )[:result_limit]
         else:
             candidates = combine_hybrid_candidates(
                 vector_candidates,
                 keyword_candidates,
                 vector_weight=request.vector_weight,
                 keyword_weight=request.keyword_weight,
-                top_k=request.top_k,
+                top_k=result_limit,
                 threshold=request.similarity_threshold,
             )
         return self.repository.enrich_candidates(
@@ -1487,6 +1488,7 @@ class ContextBuilder:
     max_chunk_tokens: int
     dedupe_min_hash_prefix: int
     threshold: float = 0.0
+    selection_policy: str = "baseline_v1"
 
     def build(
         self,
@@ -1505,7 +1507,11 @@ class ContextBuilder:
         """
         thresholded, score_omitted = self._threshold(candidates)
         deduped, duplicate_omitted = self._dedupe(thresholded)
-        ordered = self._stable_document_order(deduped)
+        ordered = (
+            self._relevance_order(deduped)
+            if self.selection_policy == "optimized_v1"
+            else self._stable_document_order(deduped)
+        )
         sources: list[ContextSource] = []
         budget_omitted: list[dict[str, object]] = []
         content_omitted: list[dict[str, object]] = []
@@ -1538,6 +1544,14 @@ class ContextBuilder:
             token_estimate = estimate_tokens(_render_source_context(source))
             sources.append(source)
             used_tokens += token_estimate
+        if self.selection_policy == "optimized_v1":
+            sources = [
+                replace(source, source_id=f"F{index}")
+                for index, source in enumerate(
+                    self._stable_source_document_order(sources),
+                    start=1,
+                )
+            ]
         omitted = tuple(
             (
                 *score_omitted,
@@ -1587,7 +1601,7 @@ class ContextBuilder:
                 "truncated_sources": sum(
                     1 for source in sources if source.content_truncated
                 ),
-                "selection_policy": "baseline_v1",
+                "selection_policy": self.selection_policy,
                 "evidence_decisions": evidence_decisions,
                 "redundancy_report": redundancy,
             }
@@ -1641,6 +1655,24 @@ class ContextBuilder:
                 ),
             )
         )
+
+    def _relevance_order(self, candidates):
+        return tuple(
+            sorted(
+                candidates,
+                key=lambda candidate: (
+                    -candidate.combined_score,
+                    candidate.chunk_id,
+                ),
+            )
+        )
+
+    def _stable_source_document_order(self, sources):
+        candidates = self._stable_document_order(
+            tuple(source.candidate for source in sources)
+        )
+        source_by_candidate = {id(source.candidate): source for source in sources}
+        return tuple(source_by_candidate[id(candidate)] for candidate in candidates)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2156,6 +2188,9 @@ class AskService:
                 vector_weight=self.settings.retrieval.vector_weight,
                 keyword_weight=self.settings.retrieval.keyword_weight,
                 debug=debug,
+                defer_top_k=(
+                    self.settings.rag.context_selection_policy == "optimized_v1"
+                ),
             )
         )
         structured_candidates = (
@@ -2171,13 +2206,36 @@ class AskService:
             search.candidates,
             include_snippets=True,
         )
-        candidates = _merge_ask_candidates(
-            structured_candidates,
-            chunk_candidates,
-            limit=top_k,
-        )
+        candidate_selection_debug = None
+        if self.settings.rag.context_selection_policy == "optimized_v1":
+            candidates, candidate_selection_debug = (
+                _select_ask_candidates_relevance_first(
+                    structured_candidates,
+                    chunk_candidates,
+                    limit=top_k,
+                    dedupe_min_hash_prefix=self.context_builder.dedupe_min_hash_prefix,
+                )
+            )
+        else:
+            candidates = _merge_ask_candidates(
+                structured_candidates,
+                chunk_candidates,
+                limit=top_k,
+            )
         context_started = time.monotonic()
-        context = self.context_builder.build(candidates, debug=debug)
+        input_budget = self.settings.rag.input_token_budget_est
+        input_budget_debug = None
+        if input_budget is not None and not no_llm:
+            context, input_budget_debug = _build_context_for_input_budget(
+                context_builder=self.context_builder,
+                prompt_builder=self.prompt_builder,
+                candidates=candidates,
+                question=question,
+                input_token_budget_est=input_budget,
+                debug=debug,
+            )
+        else:
+            context = self.context_builder.build(candidates, debug=debug)
         context_ms = _duration_ms(context_started)
         base_debug_payload = (
             _ask_debug_payload(
@@ -2199,11 +2257,21 @@ class AskService:
                 structured_candidates
             )
             base_debug_payload["combined_candidates"] = len(candidates)
-        if not context.sources:
+            base_debug_payload["input_budget"] = input_budget_debug
+            base_debug_payload["candidate_selection"] = candidate_selection_debug
+        budget_has_insufficient_evidence = (
+            input_budget is not None
+            and not no_llm
+            and bool(context.sources)
+            and not _context_answers_question(question, context)
+        )
+        if budget_has_insufficient_evidence and input_budget_debug is not None:
+            input_budget_debug["result"] = "insufficient_evidence"
+        if not context.sources or budget_has_insufficient_evidence:
             answer = _insufficient_evidence_answer()
             self.search_service.repository.update_rag_query_metrics(
                 query_id=search.query_id,
-                context_sources=0,
+                context_sources=len(context.sources),
                 context_ms=context_ms,
                 llm_ms=None,
                 metrics=context.metrics,
@@ -2282,7 +2350,6 @@ class AskService:
         repair_attempted = False
         repair_valid = None
         if not validation.valid:
-            repair_attempted = True
             repair_prompt = self.prompt_builder.repair(
                 question=question,
                 context=context,
@@ -2294,45 +2361,64 @@ class AskService:
                 answer=answer,
             )
             _require_reconciled_prompt(repair_prompt, repair_composition)
-            try:
-                repaired_answer = self._generate_with_observability(
-                    repair_prompt,
-                    stage="repair",
-                )
-            except (Exception, KeyboardInterrupt):
-                self._record_failed_llm_query(
-                    query_id=search.query_id,
-                    context=context,
-                    context_ms=context_ms,
-                    llm_started=llm_started,
-                )
-                raise
-            validation = self.citation_validator.validate(
-                repaired_answer,
-                context,
-                question=question,
+            repair_fits_budget = (
+                input_budget is None
+                or repair_composition.tokens_est_local <= input_budget
             )
-            self._log_citation_validation(validation, stage="repair")
-            repair_valid = validation.valid
-            if debug:
-                debug_payload["repair_prompt"] = repair_prompt
-                debug_payload["repair_prompt_composition"] = (
-                    repair_composition.metrics()
-                )
-                debug_payload["repair_response"] = repaired_answer
-                debug_payload["repair_validation"] = _citation_validation_debug(
-                    answer=repaired_answer,
-                    context=context,
-                    validation=validation,
-                )
-            if validation.valid:
-                answer = repaired_answer
-            else:
+            if not repair_fits_budget:
                 answer = _invalid_citations_answer(
                     validation,
                     context,
-                    repair_attempted=True,
+                    repair_attempted=False,
                 )
+                if debug:
+                    debug_payload["citation_repair_skipped_reason"] = (
+                        "input_token_budget_est"
+                    )
+                    debug_payload["repair_prompt_composition"] = (
+                        repair_composition.metrics()
+                    )
+            else:
+                repair_attempted = True
+                try:
+                    repaired_answer = self._generate_with_observability(
+                        repair_prompt,
+                        stage="repair",
+                    )
+                except (Exception, KeyboardInterrupt):
+                    self._record_failed_llm_query(
+                        query_id=search.query_id,
+                        context=context,
+                        context_ms=context_ms,
+                        llm_started=llm_started,
+                    )
+                    raise
+                validation = self.citation_validator.validate(
+                    repaired_answer,
+                    context,
+                    question=question,
+                )
+                self._log_citation_validation(validation, stage="repair")
+                repair_valid = validation.valid
+                if debug:
+                    debug_payload["repair_prompt"] = repair_prompt
+                    debug_payload["repair_prompt_composition"] = (
+                        repair_composition.metrics()
+                    )
+                    debug_payload["repair_response"] = repaired_answer
+                    debug_payload["repair_validation"] = _citation_validation_debug(
+                        answer=repaired_answer,
+                        context=context,
+                        validation=validation,
+                    )
+                if validation.valid:
+                    answer = repaired_answer
+                else:
+                    answer = _invalid_citations_answer(
+                        validation,
+                        context,
+                        repair_attempted=True,
+                    )
         llm_ms = _duration_ms(llm_started)
         if debug:
             debug_payload["citation_repair_attempted"] = repair_attempted
@@ -2342,7 +2428,7 @@ class AskService:
             )
             if not repair_attempted:
                 debug_payload["repair_prompt"] = None
-                debug_payload["repair_prompt_composition"] = None
+                debug_payload.setdefault("repair_prompt_composition", None)
                 debug_payload["repair_response"] = None
                 debug_payload["repair_validation"] = None
         self.search_service.repository.update_rag_query_metrics(
@@ -2381,6 +2467,132 @@ class AskService:
             metrics=context.metrics,
             status=RagQueryStatus.ERROR,
         )
+
+
+def _build_context_for_input_budget(
+    *,
+    context_builder: ContextBuilder,
+    prompt_builder: PromptBuilder,
+    candidates: tuple[RetrievalCandidate, ...],
+    question: str,
+    input_token_budget_est: int,
+    debug: bool,
+) -> tuple[ContextBuildResult, dict[str, object]]:
+    """Presupuesta el prompt completo manteniendo la seleccion baseline."""
+    empty_context = context_builder.build((), debug=debug)
+    fixed_overhead = prompt_builder.compose(
+        question=question,
+        context=empty_context,
+    ).tokens_est_local
+    evidence_budget = max(0, input_token_budget_est - fixed_overhead)
+    context_budget = evidence_budget
+    while context_budget > 0:
+        context = replace(context_builder, token_budget=context_budget).build(
+            candidates,
+            debug=debug,
+        )
+        composition = prompt_builder.compose(question=question, context=context)
+        if composition.tokens_est_local <= input_token_budget_est:
+            return context, {
+                "configured_tokens_est_local": input_token_budget_est,
+                "estimator_id": TOKEN_ESTIMATOR_ID,
+                "fixed_overhead_tokens_est_local": fixed_overhead,
+                "evidence_budget_tokens_est_local": evidence_budget,
+                "final_prompt_tokens_est_local": composition.tokens_est_local,
+                "result": "fits" if context.sources else "insufficient_evidence",
+            }
+        if not context.sources:
+            break
+        overage = composition.tokens_est_local - input_token_budget_est
+        context_budget -= max(1, overage)
+    return empty_context, {
+        "configured_tokens_est_local": input_token_budget_est,
+        "estimator_id": TOKEN_ESTIMATOR_ID,
+        "fixed_overhead_tokens_est_local": fixed_overhead,
+        "evidence_budget_tokens_est_local": evidence_budget,
+        "final_prompt_tokens_est_local": fixed_overhead,
+        "result": (
+            "fixed_overhead_exceeds_budget"
+            if fixed_overhead > input_token_budget_est
+            else "insufficient_evidence"
+        ),
+    }
+
+
+def _select_ask_candidates_relevance_first(
+    structured: tuple[RetrievalCandidate, ...],
+    chunks: tuple[RetrievalCandidate, ...],
+    *,
+    limit: int,
+    dedupe_min_hash_prefix: int,
+) -> tuple[tuple[RetrievalCandidate, ...], tuple[dict[str, object], ...]]:
+    """Selecciona globalmente por score antes de gastar top-k."""
+    pool = tuple((*structured, *chunks))
+    has_structured_configuration = any(
+        candidate.source.get("evidence_kind") == "structured_symbol"
+        for candidate in structured
+    )
+    decisions: list[dict[str, object] | None] = [None] * len(pool)
+    eligible: list[tuple[int, RetrievalCandidate]] = []
+    for index, candidate in enumerate(pool):
+        if (
+            has_structured_configuration
+            and candidate.source.get("artifact_kind") == "configuration"
+            and candidate.source.get("evidence_kind") is None
+        ):
+            decisions[index] = _candidate_selection_decision(
+                candidate,
+                action="omitted",
+                reason="shadowed_configuration",
+            )
+        else:
+            eligible.append((index, candidate))
+    eligible.sort(
+        key=lambda item: (
+            -item[1].combined_score,
+            item[1].chunk_id,
+            item[0],
+        )
+    )
+    selected: list[RetrievalCandidate] = []
+    seen_chunks: set[str] = set()
+    seen_hashes: set[str] = set()
+    for index, candidate in eligible:
+        hash_prefix = candidate.content_sha256[:dedupe_min_hash_prefix]
+        if candidate.chunk_id in seen_chunks:
+            action, reason = "omitted", "duplicate_chunk_id"
+        elif hash_prefix in seen_hashes:
+            action, reason = "omitted", "duplicate_content"
+        elif len(selected) >= limit:
+            action, reason = "omitted", "top_k"
+        else:
+            action, reason = "selected", "relevance"
+            selected.append(candidate)
+            seen_chunks.add(candidate.chunk_id)
+            seen_hashes.add(hash_prefix)
+        decisions[index] = _candidate_selection_decision(
+            candidate,
+            action=action,
+            reason=reason,
+        )
+    return tuple(selected), tuple(
+        decision for decision in decisions if decision is not None
+    )
+
+
+def _candidate_selection_decision(
+    candidate: RetrievalCandidate,
+    *,
+    action: str,
+    reason: str,
+) -> dict[str, object]:
+    return {
+        "chunk_id": candidate.chunk_id,
+        "action": action,
+        "reasons": (reason,),
+        "combined_score": candidate.combined_score,
+        "evidence_kind": candidate.source.get("evidence_kind"),
+    }
 
 
 def _merge_ask_candidates(

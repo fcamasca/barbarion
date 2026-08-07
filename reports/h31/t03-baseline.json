@@ -4,6 +4,7 @@
   "case_count": 10,
   "cases": [
     {
+      "candidate_selection": [],
       "category": "literal",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -142,6 +143,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "semantic",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -280,6 +282,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "multi_source",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -445,6 +448,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "overlap",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -593,6 +597,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "duplicate",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -729,6 +734,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "retrieval_limit",
       "citation_precision": 1.0,
       "citation_recall": 0.0,
@@ -946,6 +952,7 @@
       "selected_source_recall": 0.0
     },
     {
+      "candidate_selection": [],
       "category": "ambiguity",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -1085,6 +1092,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "insufficient",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -1123,6 +1131,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "structured",
       "citation_precision": 1.0,
       "citation_recall": 1.0,
@@ -1261,6 +1270,7 @@
       "selected_source_recall": 1.0
     },
     {
+      "candidate_selection": [],
       "category": "repair",
       "citation_precision": 1.0,
       "citation_recall": 1.0,

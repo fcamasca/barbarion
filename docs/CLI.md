@@ -221,10 +221,23 @@ barbarion config show
 Usalo para verificar rutas, modelos y parametros antes de ejecutar ingesta o RAG. No modifica SQLite, no requiere embeddings y no requiere LLM. Codigos de salida: `0` si la configuracion es valida, `2` si hay error de configuracion.
 
 Para H3.1, `config show` presenta `rag.input_token_budget_est`. La clave es
-opcional, no tiene un default numerico y en T05 todavia no limita el prompt.
+opcional, no tiene un default numerico y, cuando se configura, limita la
+estimacion `chars4_v1` del prompt completo antes de llamar al LLM.
 Las configuraciones existentes siguen usando `rag.context_token_budget` con la
 politica `baseline_v1`. No declares ambas claves en el mismo archivo: representan
 contratos alternativos y la combinacion se rechaza como ambigua.
+
+Generation y repair se presupuestan por separado. Si no cabe evidencia
+relevante, generation no se ejecuta; si el prompt de repair no cabe, se omite la
+segunda llamada y el resultado conserva el error de citas. Este limite es una
+estimacion local, no el contador real del proveedor.
+
+`rag.context_selection_policy` admite `baseline_v1` (default) y
+`optimized_v1`. La politica optimizada requiere `input_token_budget_est`, ordena
+candidatos globalmente por score antes de gastar `top_k` o presupuesto y usa
+`chunk_id` como desempate determinista. La precedencia estructurada y el orden
+documental solo se aplican para presentar las fuentes ya seleccionadas. No usa
+un reranker nuevo ni diversidad semantica.
 
 ### models
 

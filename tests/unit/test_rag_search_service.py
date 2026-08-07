@@ -72,6 +72,23 @@ def test_semantic_search_uses_vectors_and_logs_query(tmp_path: Path) -> None:
     assert row == ("semantic", 1, "completed")
 
 
+def test_deferred_top_k_returns_ranked_candidate_pool_for_t07(tmp_path: Path) -> None:
+    service = service_for(tmp_path)
+
+    response = service.search(
+        SearchRequest(
+            query="procedure demo",
+            mode=RetrievalMode.SEMANTIC,
+            top_k=1,
+            candidate_k=2,
+            defer_top_k=True,
+        )
+    )
+
+    assert len(response.candidates) == 2
+    assert response.candidates[0].combined_score >= response.candidates[1].combined_score
+
+
 def test_keyword_search_finds_identifier_with_stable_ranking(tmp_path: Path) -> None:
     service = service_for(tmp_path)
 

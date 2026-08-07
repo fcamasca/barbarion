@@ -357,6 +357,7 @@ class SearchRequest:
     vector_weight: float = 0.7
     keyword_weight: float = 0.3
     debug: bool = False
+    defer_top_k: bool = False
 
     def __post_init__(self) -> None:
         _require_non_empty(self.query, "query")

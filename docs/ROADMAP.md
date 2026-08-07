@@ -270,7 +270,7 @@ Cada hito produce una etiqueta o commit identificable. La demostración final ej
 - **H1.1 — Gestión y Evaluación de Modelos Locales:** completada y aceptada técnicamente. Incorpora administración explícita de modelos Ollama, validación de generación y benchmark sintético reproducible. La comparación real entre al menos dos modelos aptos quedó pendiente por condiciones del entorno de aceptación y no bloquea el cierre técnico.
 - **H1.2 — Inferencia Remota con Anthropic:** completada y aceptada técnica y funcionalmente. Incorpora Anthropic como único backend remoto actual para la generación final, mantiene Ollama como default y conserva local ingesta, embeddings, retrieval, conocimiento y validación.
 - **H4.1 — Configuraciones Data-Driven:** completada y aceptada técnicamente.
-- **H3.1 — Optimización de contexto RAG:** implementación iniciada; H3.1-T01 a H3.1-T05 completadas. El contrato opcional de presupuesto del input está definido sin default arbitrario, pero no se aplicará hasta T06; T07 sigue siendo el foco y T08 puede diferirse según la decisión posterior.
+- **H3.1 — Optimización de contexto RAG:** implementación iniciada; H3.1-T01 a H3.1-T07 completadas. `optimized_v1` recupera la fuente relevante antes excluida por `top_k` sin degradar retrieval ni citas; el overlap sigue explicando solo `0.277%`, por lo que T08 puede evaluarse para diferimiento.
 
 El detalle y la evidencia de estas evoluciones se conservan en [`EVOLUTION.md`](EVOLUTION.md) y sus specs. La aceptación final de H1.2 está registrada en [`../specs/H1.2-RemoteInference/acceptance.md`](../specs/H1.2-RemoteInference/acceptance.md).
 

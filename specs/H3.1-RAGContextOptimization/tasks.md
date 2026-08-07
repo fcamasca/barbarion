@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.1-T12.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T05
-completadas; H3.1-T06 a H3.1-T12 pendientes.
+Estado actual del hito: implementacion iniciada. H3.1-T01 a H3.1-T07
+completadas; H3.1-T08 a H3.1-T12 pendientes.
 
 ## 2. Tareas
 
@@ -119,7 +119,7 @@ falla por ambiguedad. T05 no aplica el nuevo presupuesto ni cambia el pipeline.
 
 ### H3.1-T06 - Aplicar presupuesto al input completo
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** limitar localmente la composicion completa antes de generar.  
 **Descripcion:** medir overhead fijo, asignar remanente a evidencia, renderizar y
 revalidar el total estimado. Mantener estimador intercambiable y distinguir
@@ -131,9 +131,17 @@ falla de forma segura y trazable.
 **Checkpoint:** tests de bordes, pregunta larga, metadata, Unicode, cero remanente
 y reparacion.
 
+**Evidencia:** `reports/h31/t06-full-input-budget.md`. Con
+`input_token_budget_est`, generation reserva overhead fijo, asigna el remanente
+a evidencia con `baseline_v1` y revalida el prompt completo usando `chars4_v1`.
+Sin evidencia relevante que quepa, no llama al LLM. Repair se valida por
+separado y se omite de forma segura si excede el limite. Sin la clave nueva se
+mantienen byte a byte los prompts y la politica legada; T06 no implementa
+relevance-first.
+
 ### H3.1-T07 - Implementar seleccion relevance-first
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** evitar que orden documental o procedencia consuman presupuesto sin
 comparacion global.  
 **Descripcion:** seleccionar por score/relevancia, penalizar duplicados exactos
@@ -146,6 +154,14 @@ politica inicial. Mantener politica baseline elegible para comparacion.
 candidato.  
 **Requisitos:** REQ-006, REQ-008, REQ-009, REQ-010.  
 **Checkpoint:** tests con top-k, structured/chunks, scores, empates y fuente unica.
+
+**Evidencia:** `reports/h31/t07-relevance-first.json`/`.md`. La politica opt-in
+`optimized_v1` compara globalmente `combined_score`, aplica dedupe exacto antes
+de gastar `top_k`, desempata por `chunk_id` y ordena para presentacion despues
+de seleccionar. `relevant-at-six` pasa de cobertura `0`/`insufficient` a
+`1`/`completed`; selected-source recall, fact coverage y citation recall suben
+`0.111111`, sin regresion en recall@5, recall@10, MRR, precision ni validez de
+citas. No incorpora diversidad semantica, cobertura inteligente ni reranker.
 
 ### H3.1-T08 - Reducir overlap demostrable
 

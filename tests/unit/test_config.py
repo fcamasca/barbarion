@@ -211,6 +211,28 @@ def test_input_and_context_budgets_cannot_be_declared_together(tmp_path: Path) -
         load_settings(source, environ={}, cwd=tmp_path)
 
 
+def test_optimized_selection_requires_input_budget(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "optimized.toml",
+        "[rag]\ninput_token_budget_est = 9000\n"
+        'context_selection_policy = "optimized_v1"\n',
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.rag.context_selection_policy == "optimized_v1"
+
+
+def test_optimized_selection_without_input_budget_is_rejected(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "missing-budget.toml",
+        '[rag]\ncontext_selection_policy = "optimized_v1"\n',
+    )
+
+    with pytest.raises(ConfigError, match="requiere"):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
 @pytest.mark.parametrize(
     ("config_path", "environ", "origin"),
     [
@@ -605,6 +627,10 @@ def test_anthropic_api_key_cannot_be_stored_in_llm_config(
         ("[rag]\ncontext_token_budget = 500\n", "rag.context_token_budget"),
         ("[rag]\ninput_token_budget_est = 500\n", "rag.input_token_budget_est"),
         ("[rag]\ninput_token_budget_est = 200001\n", "rag.input_token_budget_est"),
+        (
+            '[rag]\ncontext_selection_policy = "unknown"\n',
+            "rag.context_selection_policy",
+        ),
         ("[rag]\ndedupe_min_hash_prefix = 7\n", "rag.dedupe_min_hash_prefix"),
         ("[rag]\ninclude_snippets = 1\n", "rag.include_snippets"),
         ("[llm]\nprovider = \"other\"\n", "llm.provider"),
@@ -858,6 +884,7 @@ def test_example_configuration_is_valid(tmp_path: Path) -> None:
     assert settings.retrieval.mode == "hybrid"
     assert settings.rag.context_token_budget == 6000
     assert settings.rag.input_token_budget_est is None
+    assert settings.rag.context_selection_policy == "baseline_v1"
     assert settings.llm.provider == "ollama"
     assert settings.data_driven.enabled is False
     assert settings.data_driven.file_patterns == ("config/**/*.sql",)

@@ -1964,6 +1964,7 @@ def _build_ask_service(settings: Settings) -> AskService:
             max_chunk_tokens=settings.rag.max_chunk_tokens,
             dedupe_min_hash_prefix=settings.rag.dedupe_min_hash_prefix,
             threshold=settings.retrieval.similarity_threshold,
+            selection_policy=settings.rag.context_selection_policy,
         ),
         prompt_builder=PromptBuilder(),
         citation_validator=CitationValidator(),

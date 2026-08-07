@@ -240,6 +240,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
         "retrieval.keyword_weight",
         "rag.context_token_budget",
         "rag.input_token_budget_est",
+        "rag.context_selection_policy",
         "rag.max_chunk_tokens",
         "rag.dedupe_min_hash_prefix",
         "rag.include_snippets",
@@ -267,6 +268,7 @@ def test_config_show_uses_file_and_stable_field_order(tmp_path: Path) -> None:
     assert "retrieval.mode = hybrid" in lines
     assert "rag.context_token_budget = 6000" in lines
     assert "rag.input_token_budget_est = no configurado" in lines
+    assert "rag.context_selection_policy = baseline_v1" in lines
     assert "llm.max_output_tokens = no configurado" in lines
     assert "data_driven.enabled = false" in lines
     assert list(tmp_path.iterdir()) == [source]

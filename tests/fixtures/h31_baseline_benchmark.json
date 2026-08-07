@@ -83,7 +83,7 @@
         {"chunk_id": "zeta-d3", "document_id": 13, "ordinal": 0, "content": "La Pieza Zeta aparece en el catálogo de unidades."},
         {"chunk_id": "zeta-d4", "document_id": 14, "ordinal": 0, "content": "La Pieza Zeta cuenta con historial de revisiones."},
         {"chunk_id": "zeta-d5", "document_id": 15, "ordinal": 0, "content": "La Pieza Zeta posee un identificador estable."},
-        {"chunk_id": "zeta-shape", "document_id": 16, "ordinal": 0, "content": "La Pieza Zeta tiene forma triangular."}
+        {"chunk_id": "zeta-shape", "document_id": 16, "ordinal": 0, "score": 0.95, "content": "La Pieza Zeta tiene forma triangular."}
       ],
       "expected_facts": [
         {"text": "La Pieza Zeta tiene forma triangular", "chunk_id": "zeta-shape"}

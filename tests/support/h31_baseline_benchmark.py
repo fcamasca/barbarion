@@ -15,6 +15,7 @@ from barbarion.application.rag import (
     CitationValidator,
     ContextBuilder,
     PromptBuilder,
+    _select_ask_candidates_relevance_first,
 )
 from barbarion.domain.rag import RetrievalCandidate
 
@@ -39,8 +40,20 @@ def load_dataset(path: Path = DEFAULT_DATASET) -> dict[str, Any]:
 
 def run_baseline(dataset: dict[str, Any]) -> dict[str, Any]:
     """Ejecuta mediciones baseline sin modificar el pipeline productivo."""
+    return _run_policy(dataset, policy="baseline_v1")
+
+
+def run_optimized(dataset: dict[str, Any]) -> dict[str, Any]:
+    """Ejecuta la politica relevance-first T07 sobre el mismo dataset."""
+    return _run_policy(dataset, policy="optimized_v1")
+
+
+def _run_policy(dataset: dict[str, Any], *, policy: str) -> dict[str, Any]:
     top_k = int(dataset["top_k"])
-    cases = tuple(_run_case(case, top_k=top_k) for case in dataset["cases"])
+    cases = tuple(
+        _run_case(case, top_k=top_k, selection_policy=policy)
+        for case in dataset["cases"]
+    )
     answerable = tuple(case for case in cases if case["expected_source_count"] > 0)
     generated = tuple(case for case in cases if case["generation"] is not None)
     answerable_generated = tuple(
@@ -56,12 +69,16 @@ def run_baseline(dataset: dict[str, Any]) -> dict[str, Any]:
         case["diagnostics"]["overlap_tokens_est_local"] for case in cases
     )
     return {
-        "benchmark_id": "h31-t03-baseline-v1",
+        "benchmark_id": (
+            "h31-t03-baseline-v1"
+            if policy == "baseline_v1"
+            else "h31-t07-optimized-v1"
+        ),
         "dataset_id": dataset["dataset_id"],
         "dataset_license": dataset["license"],
-        "policy": "baseline_v1",
+        "policy": policy,
         "estimator_id": TOKEN_ESTIMATOR_ID,
-        "optimization_enabled": False,
+        "optimization_enabled": policy == "optimized_v1",
         "top_k": top_k,
         "case_count": len(cases),
         "answerable_case_count": len(answerable),
@@ -129,17 +146,29 @@ def run_baseline(dataset: dict[str, Any]) -> dict[str, Any]:
         "repair_components": repair_component_totals,
         "cases": cases,
         "decisions": {
-            "t04_t08_gate": "pending-human-review",
+            "t04_t08_gate": (
+                "pending-human-review"
+                if policy == "baseline_v1"
+                else "unchanged-by-t07"
+            ),
             "token_reduction_target": None,
             "rule": (
                 "No optimization is authorized by T03; hypotheses may be "
                 "confirmed, rejected or deferred from these measurements."
+                if policy == "baseline_v1"
+                else "optimized_v1 changes selection only through global score, "
+                "exact dedupe and deterministic tie-breaks."
             ),
         },
     }
 
 
-def _run_case(case: dict[str, Any], *, top_k: int) -> dict[str, Any]:
+def _run_case(
+    case: dict[str, Any],
+    *,
+    top_k: int,
+    selection_policy: str,
+) -> dict[str, Any]:
     candidates = tuple(
         _candidate(source, rank=index)
         for index, source in enumerate(case["sources"], start=1)
@@ -147,12 +176,24 @@ def _run_case(case: dict[str, Any], *, top_k: int) -> dict[str, Any]:
     expected_facts = tuple(case["expected_facts"])
     expected_ids = tuple(dict.fromkeys(fact["chunk_id"] for fact in expected_facts))
     retrieved_ids = tuple(candidate.chunk_id for candidate in candidates)
-    selected_candidates = candidates[:top_k]
+    if selection_policy == "optimized_v1":
+        selected_candidates, candidate_selection = (
+            _select_ask_candidates_relevance_first(
+                (),
+                candidates,
+                limit=top_k,
+                dedupe_min_hash_prefix=16,
+            )
+        )
+    else:
+        selected_candidates = candidates[:top_k]
+        candidate_selection = ()
     context = ContextBuilder(
         token_budget=6000,
         max_chunk_tokens=1200,
         dedupe_min_hash_prefix=16,
         threshold=0.0,
+        selection_policy=selection_policy,
     ).build(selected_candidates, debug=True)
     selected_ids = tuple(source.candidate.chunk_id for source in context.sources)
     generation = None
@@ -246,6 +287,7 @@ def _run_case(case: dict[str, Any], *, top_k: int) -> dict[str, Any]:
         "generation": generation,
         "repair": repair,
         "evidence_decisions": evidence_decisions,
+        "candidate_selection": [dict(decision) for decision in candidate_selection],
         "diagnostics": _plain_value(context.debug["redundancy_report"]),
     }
 
@@ -265,7 +307,9 @@ def _candidate(source: dict[str, Any], *, rank: int) -> RetrievalCandidate:
     return RetrievalCandidate(
         chunk_id=source["chunk_id"],
         content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        combined_score=max(0.01, 1.0 - ((rank - 1) * 0.08)),
+        combined_score=float(
+            source.get("score", max(0.01, 1.0 - ((rank - 1) * 0.08)))
+        ),
         source=metadata,
     )
 
@@ -398,6 +442,144 @@ def write_reports(result: dict[str, Any], output_dir: Path = DEFAULT_OUTPUT) -> 
     (output_dir / "t04-redundancy-report.md").write_text(
         _render_t04_markdown(t04_result), encoding="utf-8"
     )
+
+
+def write_t07_comparison(
+    baseline: dict[str, Any],
+    optimized: dict[str, Any],
+    output_dir: Path = DEFAULT_OUTPUT,
+) -> None:
+    """Escribe la comparacion determinista baseline/relevance-first."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report = _t07_comparison(baseline, optimized)
+    (output_dir / "t07-relevance-first.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output_dir / "t07-relevance-first.md").write_text(
+        _render_t07_markdown(report), encoding="utf-8"
+    )
+
+
+def _t07_comparison(
+    baseline: dict[str, Any],
+    optimized: dict[str, Any],
+) -> dict[str, Any]:
+    quality_keys = (
+        "recall_at_5",
+        "recall_at_10",
+        "mrr",
+        "selected_source_recall",
+        "fact_coverage",
+        "citation_precision",
+        "citation_recall",
+        "citation_valid_rate",
+    )
+    metrics = {
+        key: {
+            "baseline": baseline["metrics"][key],
+            "optimized": optimized["metrics"][key],
+            "delta": round(
+                optimized["metrics"][key] - baseline["metrics"][key], 6
+            ),
+        }
+        for key in quality_keys
+    }
+    baseline_cases = {case["id"]: case for case in baseline["cases"]}
+    optimized_cases = {case["id"]: case for case in optimized["cases"]}
+    return {
+        "report_id": "h31-t07-relevance-first-v1",
+        "dataset_id": baseline["dataset_id"],
+        "baseline_policy": baseline["policy"],
+        "optimized_policy": optimized["policy"],
+        "algorithm": {
+            "primary": "combined_score_desc",
+            "exact_dedupe": True,
+            "tie_break": "chunk_id_asc",
+            "presentation_order_after_selection": True,
+            "semantic_diversity": False,
+            "new_reranker": False,
+        },
+        "metrics": metrics,
+        "insufficient_case_count": {
+            "baseline": baseline["metrics"]["insufficient_case_count"],
+            "optimized": optimized["metrics"]["insufficient_case_count"],
+        },
+        "key_case": {
+            "id": "relevant-at-six",
+            "baseline_selected_source_recall": baseline_cases["relevant-at-six"][
+                "selected_source_recall"
+            ],
+            "optimized_selected_source_recall": optimized_cases[
+                "relevant-at-six"
+            ]["selected_source_recall"],
+            "baseline_fact_coverage": baseline_cases["relevant-at-six"][
+                "fact_coverage"
+            ],
+            "optimized_fact_coverage": optimized_cases["relevant-at-six"][
+                "fact_coverage"
+            ],
+            "baseline_status": baseline_cases["relevant-at-six"]["result_status"],
+            "optimized_status": optimized_cases["relevant-at-six"]["result_status"],
+            "optimized_candidate_selection": optimized_cases["relevant-at-six"][
+                "candidate_selection"
+            ],
+        },
+        "quality_gate": {
+            "no_retrieval_or_citation_regression": all(
+                metrics[key]["delta"] >= 0
+                for key in (
+                    "recall_at_5",
+                    "recall_at_10",
+                    "mrr",
+                    "citation_precision",
+                    "citation_recall",
+                    "citation_valid_rate",
+                )
+            ),
+            "key_case_recovered": optimized_cases["relevant-at-six"][
+                "fact_coverage"
+            ]
+            == 1.0,
+        },
+    }
+
+
+def _render_t07_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# H3.1-T07 - Seleccion relevance-first",
+        "",
+        "## Comparacion",
+        "",
+        "| Metrica | baseline_v1 | optimized_v1 | Delta |",
+        "|---|---:|---:|---:|",
+    ]
+    for key, values in report["metrics"].items():
+        lines.append(
+            f"| `{key}` | {values['baseline']} | {values['optimized']} | "
+            f"{values['delta']:+.6f} |"
+        )
+    key_case = report["key_case"]
+    lines.extend(
+        [
+            "",
+            "## Caso clave",
+            "",
+            "`relevant-at-six` pasa de cobertura de hechos "
+            f"`{key_case['baseline_fact_coverage']}` a "
+            f"`{key_case['optimized_fact_coverage']}` y de estado "
+            f"`{key_case['baseline_status']}` a `{key_case['optimized_status']}`.",
+            "",
+            "## Alcance",
+            "",
+            "`optimized_v1` ordena globalmente por `combined_score`, evita duplicados",
+            "exactos antes de gastar `top_k`, desempata por `chunk_id` y ordena para",
+            "presentacion despues de seleccionar. No agrega diversidad semantica,",
+            "cobertura inteligente, embeddings adicionales ni reranker.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _t04_report(result: dict[str, Any]) -> dict[str, Any]:
@@ -612,8 +794,11 @@ def main() -> int:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
-    result = run_baseline(load_dataset(args.dataset))
+    dataset = load_dataset(args.dataset)
+    result = run_baseline(dataset)
+    optimized = run_optimized(dataset)
     write_reports(result, args.output)
+    write_t07_comparison(result, optimized, args.output)
     return 0
 
 

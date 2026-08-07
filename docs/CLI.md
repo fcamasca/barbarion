@@ -379,7 +379,9 @@ generación sin copiar contenido sensible:
   rechazo y conteos de citas o claims.
 
 Las categorías incluyen `missing_source_ids`, `no_valid_citations`,
-`unsupported_claims` y `contradiction_claims`. Estos eventos no registran el
+`unsupported_claims` y `contradiction_claims`. `unsupported_claims` también
+incluye párrafos o bullets factuales sin cita inline, aunque otras citas de la
+respuesta sean válidas. Estos eventos no registran el
 prompt, el contexto, la respuesta completa, el texto de los claims ni contenido
 de razonamiento interno devuelto por un modelo.
 

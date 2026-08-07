@@ -150,3 +150,10 @@ fuente” y describir una ausencia comprobable en ese texto. Si el concepto est�
 presente literalmente o mediante un patrón sintáctico conocido, el claim
 negativo falla. Esta excepción no desactiva la detección de contradicciones ni
 autoriza inferencias semánticas abiertas.
+
+La existencia de una cita válida en cualquier punto de la respuesta no basta:
+cada párrafo o bullet factual debe contener al menos una cita inline `[F<n>]`.
+Los encabezados Markdown, líneas vacías y bloques de código no se consideran
+claims independientes. Un bloque factual sin cita se trata como no soportado y
+sigue el mismo flujo de repair y rechazo seguro; las citas inexistentes, las
+contradicciones y el soporte del contenido continúan validándose por separado.

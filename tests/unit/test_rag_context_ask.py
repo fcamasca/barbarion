@@ -232,6 +232,46 @@ def test_citation_validator_rejects_answer_without_inline_citation() -> None:
     assert validation.cited_source_ids == ()
 
 
+def test_citation_validator_rejects_uncited_factual_paragraphs_and_bullets() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build(
+        (
+            candidate(
+                "one",
+                SHA_A,
+                0.9,
+                content="La configuracion A esta declarada.",
+            ),
+        )
+    )
+    answer = """## Conclusion
+La configuracion A participa en el proceso.
+
+## Evidencia
+- La configuracion A esta declarada. [F1]
+
+## Supuestos y limites
+- Podrian existir otras configuraciones."""
+
+    validation = CitationValidator().validate(
+        answer,
+        context,
+        question="configuracion A",
+    )
+
+    assert validation.valid is False
+    assert validation.cited_source_ids == ("F1",)
+    assert validation.missing_source_ids == ()
+    assert validation.unsupported_claims == (
+        "La configuracion A participa en el proceso.",
+        "- Podrian existir otras configuraciones.",
+    )
+    assert "no respaldadas" in validation.reason
+
+
 def test_citation_validator_accepts_insufficient_evidence_when_context_does_not_answer() -> None:
     context = ContextBuilder(
         token_budget=100,

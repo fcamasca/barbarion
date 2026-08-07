@@ -165,3 +165,12 @@ decision de despliegue permanece deliberadamente conservadora:
 - default: `baseline_v1`;
 - candidata opt-in: `optimized_v1`;
 - promocion a default: diferida.
+
+## Addendum post-H3.1: cobertura de citas por bloque
+
+Una validación posterior detectó que el validador comprobaba la existencia y el
+soporte de las citas presentes, pero no exigía la cita inline prometida por el
+prompt en cada párrafo o bullet factual. La corrección clasifica esos bloques
+sin cita como claims no soportados, conserva la detección de citas inexistentes,
+contradicciones e invenciones, y mantiene el repair y su presupuesto seguro.
+Encabezados, líneas vacías y bloques de código quedan fuera de esta regla.

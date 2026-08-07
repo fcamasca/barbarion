@@ -3280,7 +3280,7 @@ def _unsupported_claims(
     source_contents = {
         source.source_id: source.content for source in context.sources
     }
-    unsupported: list[str] = []
+    unsupported: list[str] = list(_uncited_factual_blocks(answer))
     for claim, source_ids in _cited_claims(answer):
         if _is_insufficient_evidence_answer(claim):
             continue
@@ -3301,6 +3301,48 @@ def _unsupported_claims(
         ):
             unsupported.append(_compact_claim(claim))
     return tuple(unsupported)
+
+
+def _uncited_factual_blocks(answer: str) -> tuple[str, ...]:
+    """Detecta parrafos y bullets factuales sin cita inline.
+
+    Los encabezados Markdown, lineas vacias y bloques de codigo no son
+    parrafos/bullets del contrato de respuesta y se excluyen deliberadamente.
+    """
+    blocks: list[str] = []
+    current: list[str] = []
+    in_fence = False
+
+    def flush() -> None:
+        if current:
+            blocks.append(" ".join(current).strip())
+            current.clear()
+
+    for raw_line in answer.splitlines():
+        line = raw_line.strip()
+        if line.startswith("```"):
+            flush()
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if not line or re.match(r"^#{1,6}\s+", line):
+            flush()
+            continue
+        is_list_item = bool(re.match(r"^(?:[-*+]\s+|\d+[.)]\s+)", line))
+        if is_list_item:
+            flush()
+            current.append(line)
+            continue
+        current.append(line)
+    flush()
+
+    return tuple(
+        _compact_claim(block)
+        for block in blocks
+        if _important_tokens(_strip_citations(block))
+        and not re.search(r"\[F\d+\]", block)
+    )
 
 
 def _contradiction_claims(

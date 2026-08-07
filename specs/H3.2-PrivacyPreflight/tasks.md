@@ -12,13 +12,14 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: especificacion; implementacion no iniciada.
+Estado actual del hito: implementacion iniciada. H3.2-T01 completada; T02-T13
+pendientes.
 
 ## 2. Tareas
 
 ### H3.2-T01 - Caracterizar fronteras y regresion previa
 
-**Estado:** pendiente.  
+**Estado:** completada.  
 **Objetivo:** congelar el comportamiento anterior al gate.  
 **Archivos/componentes esperados:** tests de `AskService`, factoria LLM,
 Anthropic/Ollama HTTP fakes, prompts H3.1 y salidas CLI.  
@@ -28,6 +29,13 @@ Anthropic/Ollama HTTP fakes, prompts H3.1 y salidas CLI.
 **Dependencias:** H1.2 y H3.1 aceptados.  
 **Checkpoint:** hashes/golden de prompts y conteo de requests sin cambios de
 `src/`.
+
+**Evidencia:** `tests/unit/test_h32_privacy_preflight_baseline.py`,
+`tests/integration/test_h32_privacy_preflight_cli_baseline.py` y
+`reports/h32/t01-baseline.md`. La suite focal aprobo 136 pruebas; generation
+valida realiza una solicitud, repair reutiliza el mismo provider como segunda y
+ultima solicitud, y `--no-llm`/evidencia insuficiente realizan cero. No se
+modifico ningun archivo bajo `src/`.
 
 ### H3.2-T02 - Modelar identidad, estados y politica
 

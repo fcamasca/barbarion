@@ -13,13 +13,13 @@
 - Estados iniciales: `pendiente`.
 
 Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T10
-completadas; T11-T13 pendientes.
+completadas; T12-T13 pendientes.
 
 ## 2. Tareas
 
 ### H3.2-T01 - Caracterizar fronteras y regresion previa
 
-**Estado:** completada.  
+**Estado:** completada.
 **Objetivo:** congelar el comportamiento anterior al gate.  
 **Archivos/componentes esperados:** tests de `AskService`, factoria LLM,
 Anthropic/Ollama HTTP fakes, prompts H3.1 y salidas CLI.  
@@ -225,7 +225,7 @@ contenido, prompt, respuestas, claims, credenciales ni payload del registry.
 
 ### H3.2-T11 - Ejecutar seguridad y regresion completa
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** demostrar compatibilidad y cero egress no autorizado.  
 **Archivos/componentes esperados:** integration/smoke tests, scanner de
 privacidad, reportes sinteticos.  
@@ -234,6 +234,13 @@ verifier, generation, repair, H3.1, H4.1, H4/H5 y suite completa.
 **Pruebas:** H3.2-INT-010..014, matriz de seguridad y regresion.  
 **Dependencias:** T10.  
 **Checkpoint:** suite offline pasa y todo BLOCK tiene cero requests LLM.
+
+**Resultado:** matriz adversarial agregada en
+`tests/integration/test_h32_privacy_security_regression.py`: PASS usa un unico
+preflight y llama directamente al endpoint configurado para generation/repair;
+cache missing/expired/invalid y Ollama Cloud via localhost bloquean antes de
+prompt/provider. Matriz focal: 55 passed. Regresion completa: 1056 passed,
+14 skipped. Evidencia sintetica en `reports/h32/t11-security-regression.md`.
 
 ### H3.2-T12 - Documentar operacion y decisiones
 

@@ -437,10 +437,10 @@ def test_prompt_builder_generation_and_repair_text_are_characterized_before_adap
     )
 
     assert hashlib.sha256(generation.encode("utf-8")).hexdigest() == (
-        "2cb7950ca1b20a109a37e997fff3bbe29cecf1d177c4b7a659f06bce6306ad0a"
+        "25ee82f503b534f9c237e1505de008ccf2160162d91a180b57141ad55ed7d43e"
     )
     assert hashlib.sha256(repair.encode("utf-8")).hexdigest() == (
-        "3185002c20b75f0a0b157cc20a6e3efa481e21b8de71d7321b95e592206c3cd2"
+        "e83e83d421891edac9f72cf28c50d173c5cb3fe410c7d39d062a687b71e051d6"
     )
 
 
@@ -463,6 +463,8 @@ def test_generation_and_repair_share_the_same_grounding_rules() -> None:
         "No infieras, no completes con conocimiento general y no inventes conclusiones.",
         "Responde de forma compacta y directa, sin conclusiones generales, "
         "recapitulaciones ni comentarios accesorios.",
+        "Para listas factuales, empieza directamente con bullets citados; no "
+        "agregues una frase introductoria que resuma o anuncie la lista.",
         "La seccion 'Supuestos y limites' es opcional: incluyela solo para "
         "supuestos o limites explicitamente demostrados por las fuentes, con "
         "una cita inline en cada bullet; si no existen, omite la seccion.",

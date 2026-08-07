@@ -366,7 +366,7 @@ Cambiar proveedor, modelo, dimension, distancia o normalizacion de embeddings pr
 
 Barbarion no envia corpus a servicios cloud. Los prompts completos no se almacenan por defecto. `rag_queries` guarda hash de la consulta, modo, filtros, conteos y latencias. En RAG, `--debug` puede mostrar scores, filtros, fuentes y snippets; debe usarse con la misma cautela que cualquier salida que pueda incluir fragmentos de codigo.
 
-Con `--debug`, ask escribe en stderr un diagnostico del flujo RAG: consulta, modelos usados, retrieval, chunks, prompt truncado, respuesta del LLM, validacion de citas, reparacion y resumen final. stdout conserva la salida normal, por lo que JSON y Markdown siguen siendo parseables.
+Con `--debug`, ask escribe en stderr un diagnostico del flujo RAG: consulta, modelos usados, retrieval, chunks, prompt truncado, respuesta del LLM, validacion de citas, reparacion y resumen final. También muestra en consola los eventos técnicos `INFO`. Sin `--debug`, esos eventos permanecen en `barbarion.log` pero no se mezclan con la respuesta; `WARNING` y `ERROR` siguen visibles. stdout conserva la salida normal, por lo que JSON y Markdown siguen siendo parseables.
 
 Además del diagnóstico de `--debug`, el log operativo registra las fronteras de
 generación sin copiar contenido sensible:
@@ -508,6 +508,12 @@ barbarion ask TEXTO [--mode semantic|keyword|hybrid] [--top-k N] [--candidate-k 
 ```
 
 Argumentos principales: comparte los argumentos de `search` y agrega `--no-llm`, que muestra contexto y fuentes sin invocar LLM.
+
+En `--format text`, la salida comienza con `Barbarion Ask` y resume modelo,
+validación (`PASS`/`FAIL`) y tiempo total de ejecución. Después, la respuesta y
+las fuentes se delimitan visualmente con los separadores `RESPUESTA` y
+`FUENTES`. Los formatos JSON y Markdown conservan su estructura vigente y los
+diagnósticos técnicos continúan en stderr.
 
 Ejemplos:
 

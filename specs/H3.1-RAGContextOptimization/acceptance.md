@@ -202,7 +202,9 @@ repair se actualizaron de forma explícita.
 La sección `Supuestos y limites` pasa a ser opcional y solo puede aparecer con
 límites o supuestos demostrados y citados. Generation y repair comparten además
 la instrucción de responder de forma compacta, sin conclusiones generales ni
-comentarios accesorios. Este ajuste cambia deliberadamente la caracterización
+comentarios accesorios. Las listas factuales empiezan directamente con bullets
+citados, sin una frase introductoria que las resuma o anuncie. Este ajuste
+cambia deliberadamente la caracterización
 de ambos prompts sin alterar retrieval ni el presupuesto configurado.
 
 Repair recibe las categorías y conteos seguros del fallo de generation, nunca

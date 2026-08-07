@@ -424,14 +424,14 @@
   "exact_duplicate_avoided_content_tokens_est_local": 17,
   "exact_duplicate_count": 1,
   "exact_duplicate_prompt_tokens_est_local": 0,
-  "generation_prompt_tokens_est_local_total": 3140,
+  "generation_prompt_tokens_est_local_total": 3437,
   "mode": "report_only",
   "overlap_chars": 27,
   "overlap_pair_count": 1,
   "overlap_tokens_est_local": 7,
   "policy": "baseline_v1",
   "redundancy_prompt_tokens_est_local": 7,
-  "redundancy_share_of_generation_prompt": 0.002229,
+  "redundancy_share_of_generation_prompt": 0.002037,
   "report_id": "h31-t04-redundancy-report-v1",
   "selected_not_cited_count": 8
 }

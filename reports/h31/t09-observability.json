@@ -14,12 +14,12 @@
         "truncated": 0
       },
       "generation": {
-        "chars": 12543,
+        "chars": 13731,
         "components": {
           "instructions": {
-            "chars": 8229,
-            "tokens_est_local": 2062,
-            "utf8_bytes": 8229
+            "chars": 9417,
+            "tokens_est_local": 2359,
+            "utf8_bytes": 9417
           },
           "output_format": {
             "chars": 603,
@@ -42,8 +42,8 @@
             "utf8_bytes": 2081
           }
         },
-        "tokens_est_local": 3140,
-        "utf8_bytes": 12583
+        "tokens_est_local": 3437,
+        "utf8_bytes": 13771
       },
       "quality": {
         "citation_recall": 0.888889,
@@ -56,12 +56,12 @@
         "overlap_tokens_est_local": 7
       },
       "repair": {
-        "chars": 1418,
+        "chars": 1550,
         "components": {
           "instructions": {
-            "chars": 1140,
-            "tokens_est_local": 285,
-            "utf8_bytes": 1140
+            "chars": 1272,
+            "tokens_est_local": 318,
+            "utf8_bytes": 1272
           },
           "output_format": {
             "chars": 20,
@@ -90,8 +90,8 @@
           }
         },
         "request_count": 1,
-        "tokens_est_local": 355,
-        "utf8_bytes": 1420
+        "tokens_est_local": 388,
+        "utf8_bytes": 1552
       },
       "repair_outcome": {
         "attempted": 1,
@@ -110,12 +110,12 @@
         "truncated": 1
       },
       "generation": {
-        "chars": 12514,
+        "chars": 13702,
         "components": {
           "instructions": {
-            "chars": 8229,
-            "tokens_est_local": 2062,
-            "utf8_bytes": 8229
+            "chars": 9417,
+            "tokens_est_local": 2359,
+            "utf8_bytes": 9417
           },
           "output_format": {
             "chars": 603,
@@ -138,8 +138,8 @@
             "utf8_bytes": 2087
           }
         },
-        "tokens_est_local": 3133,
-        "utf8_bytes": 12553
+        "tokens_est_local": 3430,
+        "utf8_bytes": 13741
       },
       "quality": {
         "citation_recall": 1.0,
@@ -152,12 +152,12 @@
         "overlap_tokens_est_local": 0
       },
       "repair": {
-        "chars": 1418,
+        "chars": 1550,
         "components": {
           "instructions": {
-            "chars": 1140,
-            "tokens_est_local": 285,
-            "utf8_bytes": 1140
+            "chars": 1272,
+            "tokens_est_local": 318,
+            "utf8_bytes": 1272
           },
           "output_format": {
             "chars": 20,
@@ -186,8 +186,8 @@
           }
         },
         "request_count": 1,
-        "tokens_est_local": 355,
-        "utf8_bytes": 1420
+        "tokens_est_local": 388,
+        "utf8_bytes": 1552
       },
       "repair_outcome": {
         "attempted": 1,

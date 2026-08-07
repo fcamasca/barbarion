@@ -1749,7 +1749,7 @@ class PromptBuilder:
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
         factual_rule, block_rule, inference_rule = _grounding_rules()
-        compact_rule, limits_rule = _response_contract_rules()
+        compact_rule, list_rule, limits_rule = _response_contract_rules()
         components = (
             PromptComponent(
                 "instructions",
@@ -1763,6 +1763,7 @@ class PromptBuilder:
                 "\"Evidencia insuficiente\".\n"
                 f"{inference_rule}"
                 f"{compact_rule}"
+                f"{list_rule}"
                 f"{limits_rule}"
                 "Cuando declares evidencia insuficiente, indica que evidencia falto "
                 "y cita las fuentes que demuestran el limite.\n\n",
@@ -1804,7 +1805,7 @@ class PromptBuilder:
         """
         source_ids = ", ".join(f"[{source.source_id}]" for source in context.sources)
         factual_rule, block_rule, inference_rule = _grounding_rules()
-        compact_rule, limits_rule = _response_contract_rules()
+        compact_rule, list_rule, limits_rule = _response_contract_rules()
         failure_summary = _validation_failure_summary(validation)
         failure_diagnostic = _render_repair_failure_diagnostic(failure_summary)
         components = (
@@ -1816,6 +1817,7 @@ class PromptBuilder:
                 f"Usa solo estos IDs de fuente existentes: {source_ids}.\n"
                 f"{inference_rule}"
                 f"{compact_rule}"
+                f"{list_rule}"
                 f"{limits_rule}"
                 "Corrige unicamente los problemas de soporte y citacion de la "
                 "respuesta anterior.\n"
@@ -1864,11 +1866,13 @@ def _grounding_rules() -> tuple[str, str, str]:
     )
 
 
-def _response_contract_rules() -> tuple[str, str]:
+def _response_contract_rules() -> tuple[str, str, str]:
     """Devuelve reglas de estilo compartidas sin clasificar la consulta."""
     return (
         "Responde de forma compacta y directa, sin conclusiones generales, "
         "recapitulaciones ni comentarios accesorios.\n",
+        "Para listas factuales, empieza directamente con bullets citados; no "
+        "agregues una frase introductoria que resuma o anuncie la lista.\n",
         "La seccion 'Supuestos y limites' es opcional: incluyela solo para "
         "supuestos o limites explicitamente demostrados por las fuentes, con "
         "una cita inline en cada bullet; si no existen, omite la seccion.\n",

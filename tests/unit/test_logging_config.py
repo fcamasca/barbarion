@@ -79,6 +79,27 @@ def test_info_is_written_to_console_and_file(tmp_path: Path) -> None:
     assert content.count("inicio de prueba") == 1
 
 
+def test_console_level_can_hide_info_without_losing_file_event(
+    tmp_path: Path,
+) -> None:
+    settings = prepared_settings(tmp_path)
+    console = io.StringIO()
+    logger = configure_logging(
+        settings,
+        stream=console,
+        console_level=logging.WARNING,
+    )
+
+    logger.info("solo archivo")
+    logger.warning("consola y archivo")
+
+    content = (settings.logs_dir / LOG_FILENAME).read_text(encoding="utf-8")
+    assert "solo archivo" not in console.getvalue()
+    assert "solo archivo" in content
+    assert "consola y archivo" in console.getvalue()
+    assert "consola y archivo" in content
+
+
 def test_log_file_creation_is_delayed_until_first_record(tmp_path: Path) -> None:
     settings = prepared_settings(tmp_path)
     logger = configure_logging(settings, stream=io.StringIO())

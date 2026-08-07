@@ -176,7 +176,9 @@ contradicciones y el soporte del contenido continúan validándose por separado.
 
 Generation y repair comparten un contrato de salida compacto: conclusión
 directa, evidencia citada y ningún cierre general, recapitulación o comentario
-accesorio. `Supuestos y limites` deja de ser obligatoria; solo se incluye cuando
+accesorio. Las listas factuales empiezan directamente con bullets citados, sin
+una frase introductoria que las resuma o anuncie. `Supuestos y limites` deja de
+ser obligatoria; solo se incluye cuando
 las fuentes demuestran explícitamente un supuesto o límite y cada bullet puede
 citarlo. Si no hay uno demostrable, la sección se omite sin afirmar que no
 existen otros límites.

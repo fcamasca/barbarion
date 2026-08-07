@@ -17,8 +17,13 @@ def configure_logging(
     settings: Settings,
     *,
     stream: TextIO | None = None,
+    console_level: int | None = None,
 ) -> logging.Logger:
-    """Configura consola y archivo sin duplicar handlers propios."""
+    """Configura consola y archivo sin duplicar handlers propios.
+
+    `console_level` permite que una interfaz reduzca ruido en pantalla sin
+    perder eventos admitidos por el nivel configurado en el archivo local.
+    """
     logger = logging.getLogger(LOGGER_NAME)
     _remove_managed_handlers(logger)
 
@@ -28,7 +33,8 @@ def configure_logging(
     console_handler = logging.StreamHandler(
         stream if stream is not None else sys.stderr
     )
-    _configure_handler(console_handler, level, formatter)
+    effective_console_level = level if console_level is None else console_level
+    _configure_handler(console_handler, effective_console_level, formatter)
 
     log_path = Path(settings.logs_dir) / LOG_FILENAME
     file_handler = logging.FileHandler(
@@ -38,7 +44,7 @@ def configure_logging(
     )
     _configure_handler(file_handler, level, formatter)
 
-    logger.setLevel(level)
+    logger.setLevel(min(level, effective_console_level))
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
     logger.propagate = False

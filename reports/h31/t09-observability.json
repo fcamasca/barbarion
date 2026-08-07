@@ -14,17 +14,17 @@
         "truncated": 0
       },
       "generation": {
-        "chars": 10077,
+        "chars": 12543,
         "components": {
           "instructions": {
-            "chars": 5448,
-            "tokens_est_local": 1364,
-            "utf8_bytes": 5448
+            "chars": 8229,
+            "tokens_est_local": 2062,
+            "utf8_bytes": 8229
           },
           "output_format": {
-            "chars": 918,
-            "tokens_est_local": 234,
-            "utf8_bytes": 918
+            "chars": 603,
+            "tokens_est_local": 153,
+            "utf8_bytes": 603
           },
           "question": {
             "chars": 467,
@@ -42,8 +42,8 @@
             "utf8_bytes": 2081
           }
         },
-        "tokens_est_local": 2523,
-        "utf8_bytes": 10117
+        "tokens_est_local": 3140,
+        "utf8_bytes": 12583
       },
       "quality": {
         "citation_recall": 0.888889,
@@ -56,12 +56,12 @@
         "overlap_tokens_est_local": 7
       },
       "repair": {
-        "chars": 876,
+        "chars": 1418,
         "components": {
           "instructions": {
-            "chars": 598,
-            "tokens_est_local": 150,
-            "utf8_bytes": 598
+            "chars": 1140,
+            "tokens_est_local": 285,
+            "utf8_bytes": 1140
           },
           "output_format": {
             "chars": 20,
@@ -90,8 +90,17 @@
           }
         },
         "request_count": 1,
-        "tokens_est_local": 219,
-        "utf8_bytes": 878
+        "tokens_est_local": 355,
+        "utf8_bytes": 1420
+      },
+      "repair_outcome": {
+        "attempted": 1,
+        "failed": 0,
+        "succeeded": 1,
+        "trigger_categories": {
+          "no_valid_citations": 1
+        },
+        "triggered": 1
       }
     },
     "optimized_v1": {
@@ -101,17 +110,17 @@
         "truncated": 1
       },
       "generation": {
-        "chars": 10048,
+        "chars": 12514,
         "components": {
           "instructions": {
-            "chars": 5448,
-            "tokens_est_local": 1364,
-            "utf8_bytes": 5448
+            "chars": 8229,
+            "tokens_est_local": 2062,
+            "utf8_bytes": 8229
           },
           "output_format": {
-            "chars": 918,
-            "tokens_est_local": 234,
-            "utf8_bytes": 918
+            "chars": 603,
+            "tokens_est_local": 153,
+            "utf8_bytes": 603
           },
           "question": {
             "chars": 467,
@@ -129,8 +138,8 @@
             "utf8_bytes": 2087
           }
         },
-        "tokens_est_local": 2515,
-        "utf8_bytes": 10087
+        "tokens_est_local": 3133,
+        "utf8_bytes": 12553
       },
       "quality": {
         "citation_recall": 1.0,
@@ -143,12 +152,12 @@
         "overlap_tokens_est_local": 0
       },
       "repair": {
-        "chars": 876,
+        "chars": 1418,
         "components": {
           "instructions": {
-            "chars": 598,
-            "tokens_est_local": 150,
-            "utf8_bytes": 598
+            "chars": 1140,
+            "tokens_est_local": 285,
+            "utf8_bytes": 1140
           },
           "output_format": {
             "chars": 20,
@@ -177,8 +186,17 @@
           }
         },
         "request_count": 1,
-        "tokens_est_local": 219,
-        "utf8_bytes": 878
+        "tokens_est_local": 355,
+        "utf8_bytes": 1420
+      },
+      "repair_outcome": {
+        "attempted": 1,
+        "failed": 0,
+        "succeeded": 1,
+        "trigger_categories": {
+          "no_valid_citations": 1
+        },
+        "triggered": 1
       }
     }
   },

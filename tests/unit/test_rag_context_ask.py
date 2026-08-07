@@ -406,6 +406,9 @@ def test_prompt_builder_lists_allowed_sources_and_inline_citation_rule() -> None
     assert "Evidencia insuficiente" in prompt
     assert "No infieras" in prompt
     assert "## Conclusion\n... [F1]" in prompt
+    assert "## Supuestos y limites" not in prompt
+    assert "si no existen, omite la seccion" in prompt
+    assert "recapitulaciones ni comentarios accesorios" in prompt
 
 
 def test_prompt_builder_generation_and_repair_text_are_characterized_before_adapter() -> None:
@@ -434,10 +437,10 @@ def test_prompt_builder_generation_and_repair_text_are_characterized_before_adap
     )
 
     assert hashlib.sha256(generation.encode("utf-8")).hexdigest() == (
-        "62c2f942c9c14acf1ce6f0b2c30fcd8c73fbc9c5debf78142eb41853e72d573a"
+        "2cb7950ca1b20a109a37e997fff3bbe29cecf1d177c4b7a659f06bce6306ad0a"
     )
     assert hashlib.sha256(repair.encode("utf-8")).hexdigest() == (
-        "ad7bfb55ce1d62589d4ac3c0c958b5c6192b3ded75094d0455df32fcbb9c26a2"
+        "3185002c20b75f0a0b157cc20a6e3efa481e21b8de71d7321b95e592206c3cd2"
     )
 
 
@@ -458,6 +461,11 @@ def test_generation_and_repair_share_the_same_grounding_rules() -> None:
         "Toda afirmacion factual debe citar una fuente inline como [F1].",
         "Cada parrafo o bullet de la respuesta debe incluir al menos una cita inline.",
         "No infieras, no completes con conocimiento general y no inventes conclusiones.",
+        "Responde de forma compacta y directa, sin conclusiones generales, "
+        "recapitulaciones ni comentarios accesorios.",
+        "La seccion 'Supuestos y limites' es opcional: incluyela solo para "
+        "supuestos o limites explicitamente demostrados por las fuentes, con "
+        "una cita inline en cada bullet; si no existen, omite la seccion.",
     )
 
     for rule in shared_rules:
@@ -467,6 +475,37 @@ def test_generation_and_repair_share_the_same_grounding_rules() -> None:
         "Corrige unicamente los problemas de soporte y citacion de la "
         "respuesta anterior."
     ) in repair
+
+
+def test_repair_receives_safe_failure_categories_and_forbids_new_facts() -> None:
+    context = ContextBuilder(
+        token_budget=100,
+        max_chunk_tokens=50,
+        dedupe_min_hash_prefix=8,
+    ).build((candidate("one", SHA_A, 0.9),))
+    sensitive_claim = "detalle interno que no debe copiarse al diagnostico"
+    repair = PromptBuilder().repair(
+        question="order_total",
+        context=context,
+        answer="Respuesta anterior.",
+        validation=CitationValidation(
+            valid=False,
+            missing_source_ids=("F9",),
+            cited_source_ids=("F1",),
+            unsupported_claims=(sensitive_claim, "otro claim"),
+            contradiction_claims=("contradiccion sensible",),
+            reason="detalle sensible",
+        ),
+    )
+
+    assert "- missing_source_ids: 1" in repair
+    assert "- unsupported_claims: 2" in repair
+    assert "- contradiction_claims: 1" in repair
+    assert "no_valid_citations" not in repair
+    assert sensitive_claim not in repair
+    assert "detalle sensible" not in repair
+    assert "No agregues hechos, interpretaciones ni conclusiones nuevas" in repair
+    assert "Conserva solo contenido respaldado" in repair
 
 
 def ask_service(
@@ -651,6 +690,14 @@ def test_repair_is_not_called_when_its_complete_prompt_exceeds_input_budget(
     assert len(fake_llm.prompts) == 1
     assert result.debug["citation_repair_attempted"] is False
     assert result.debug["citation_repair_skipped_reason"] == "input_token_budget_est"
+    assert result.debug["repair_outcome"] == {
+        "triggered": True,
+        "trigger_categories": ("no_valid_citations",),
+        "trigger_counts": {"no_valid_citations": 1},
+        "attempted": False,
+        "succeeded": None,
+        "result": "skipped_budget",
+    }
     assert (
         result.debug["repair_prompt_composition"]["tokens_est_local"]
         > result.debug["input_budget"]["configured_tokens_est_local"]
@@ -728,6 +775,11 @@ def test_repair_rebudgets_same_sources_when_generation_fills_input_budget() -> N
             generation_context=generation_context,
             question="order_total",
             rejected_answer=rejected_answer,
+            validation=CitationValidation(
+                valid=False,
+                unsupported_claims=("respuesta factual sin cita",),
+                reason="afirmaciones no respaldadas",
+            ),
             input_token_budget_est=4500,
         )
     )
@@ -814,7 +866,7 @@ def test_ask_logs_timeout_during_initial_generation(
     tmp_path,
     ask_log_records,
 ) -> None:
-    service, _fake_llm = ask_service(
+    service, fake_llm = ask_service(
         tmp_path,
         LlmProviderError("OLLAMA_LLM_TIMEOUT: timeout inicial"),
     )
@@ -846,7 +898,7 @@ def test_ask_logs_timeout_during_initial_generation(
 
 
 def test_ask_logs_timeout_during_repair(tmp_path, ask_log_records) -> None:
-    service, _fake_llm = ask_service(
+    service, fake_llm = ask_service(
         tmp_path,
         (
             "Respuesta original sin cita.",
@@ -974,7 +1026,7 @@ def test_ask_logs_citation_validation_reasons_without_response(
 ) -> None:
     initial_secret = "respuesta_inicial_secreta"
     repair_secret = "respuesta_reparada_secreta"
-    service, _fake_llm = ask_service(
+    service, fake_llm = ask_service(
         tmp_path,
         (initial_secret, repair_secret),
     )
@@ -1012,6 +1064,15 @@ def test_ask_logs_citation_validation_reasons_without_response(
     assert "unsupported_claims_count=1" in validation_logs[0]
     assert "contradiction_claims_count=1" in validation_logs[0]
     assert "stage=repair result=PASS reasons=ok" in validation_logs[1]
+    assert "- unsupported_claims: 1" in fake_llm.prompts[1]
+    assert "- contradiction_claims: 1" in fake_llm.prompts[1]
+    repair_logs = [
+        item for item in messages if item.startswith("ask_citation_repair")
+    ]
+    assert repair_logs == [
+        "ask_citation_repair triggered=True attempted=True result=succeeded "
+        "causes=unsupported_claims,contradiction_claims"
+    ]
     log_text = "\n".join(messages)
     assert initial_secret not in log_text
     assert repair_secret not in log_text
@@ -1109,6 +1170,15 @@ def test_ask_repairs_llm_answer_without_inline_citation(tmp_path) -> None:
     assert "No generes codigo ni completes codigo" in fake_llm.prompts[1]
     assert result.debug["citation_repair_attempted"] is True
     assert result.debug["citation_repair_valid"] is True
+    assert result.debug["repair_outcome"]["trigger_categories"] == (
+        "no_valid_citations",
+    )
+    assert result.debug["repair_outcome"]["attempted"] is True
+    assert result.debug["repair_outcome"]["succeeded"] is True
+    assert result.debug["repair_outcome"]["result"] == "succeeded"
+    assert result.debug["observability"]["repair_outcome"] == (
+        result.debug["repair_outcome"]
+    )
 
 
 def test_ask_falls_back_when_citation_repair_is_still_invalid(tmp_path) -> None:
@@ -1134,6 +1204,8 @@ def test_ask_falls_back_when_citation_repair_is_still_invalid(tmp_path) -> None:
     assert "- [F1] pkg/demo.sql" in result.answer
     assert result.debug["citation_repair_attempted"] is True
     assert result.debug["citation_repair_valid"] is False
+    assert result.debug["repair_outcome"]["result"] == "failed_validation"
+    assert result.debug["repair_outcome"]["succeeded"] is False
 
 
 def test_ask_repairs_valid_citation_with_unsupported_content_to_insufficient_evidence(
@@ -1236,6 +1308,7 @@ def test_ask_debug_reports_size_metrics_without_context_dump(tmp_path) -> None:
         "prompt_composition"
     ]["tokens_est_local"]
     assert observability["provider_usage"] is None
+    assert observability["repair_outcome"]["result"] == "not_needed"
     assert "order_total :=" not in str(dict(result.debug))
 
 

@@ -2232,6 +2232,18 @@ def _render_h31_observability(value: object) -> None:
                 f"repair_input_budget_{key}={repair_budget.get(key)}",
                 file=sys.stderr,
             )
+    repair_outcome = value.get("repair_outcome")
+    if isinstance(repair_outcome, Mapping):
+        print(
+            "repair_outcome "
+            f"triggered={repair_outcome.get('triggered')} "
+            f"attempted={repair_outcome.get('attempted')} "
+            f"succeeded={repair_outcome.get('succeeded')} "
+            f"result={repair_outcome.get('result')} "
+            "causes="
+            f"{_format_debug_list(repair_outcome.get('trigger_categories'))}",
+            file=sys.stderr,
+        )
     _render_decision_metrics("candidate", value.get("candidate_selection"))
     _render_decision_metrics("context", value.get("context_decisions"))
     redundancy = value.get("redundancy")

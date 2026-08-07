@@ -194,5 +194,20 @@ prompt había divergido de generation y no exigía una cita por cada párrafo o
 bullet factual. Ambos prompts reutilizan ahora las mismas reglas literales de
 citas y no inferencia. Repair agrega solo la instrucción de corregir los
 problemas de soporte y citación de la respuesta rechazada. El prompt de
-generation conserva su hash; la caracterización y métricas de repair se
-actualizan de forma explícita.
+generation quedó caracterizado en ese punto; la caracterización y métricas de
+repair se actualizaron de forma explícita.
+
+## Addendum post-H3.1: salida compacta y repair dirigido
+
+La sección `Supuestos y limites` pasa a ser opcional y solo puede aparecer con
+límites o supuestos demostrados y citados. Generation y repair comparten además
+la instrucción de responder de forma compacta, sin conclusiones generales ni
+comentarios accesorios. Este ajuste cambia deliberadamente la caracterización
+de ambos prompts sin alterar retrieval ni el presupuesto configurado.
+
+Repair recibe las categorías y conteos seguros del fallo de generation, nunca
+el texto de los claims, y tiene prohibido agregar hechos, interpretaciones o
+conclusiones nuevas. La observabilidad expone `repair_outcome` para
+distinguir causa, intento y resultado. `CitationValidator`, la política de
+selección y el valor privado de `4500` permanecen intactos; tampoco se introduce
+clasificación por tipo de consulta.

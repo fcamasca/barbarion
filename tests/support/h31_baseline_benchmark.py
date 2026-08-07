@@ -252,6 +252,7 @@ def _run_case(
                 question=case["question"],
                 context=context,
                 answer=answer,
+                validation=validation,
             )
             repair = _composition_metrics(repair_composition)
             answer = _answer_for(expected_facts, context=context)
@@ -508,6 +509,10 @@ def _t09_observability_report(
     optimized: dict[str, Any],
 ) -> dict[str, Any]:
     def policy_summary(result: dict[str, Any]) -> dict[str, Any]:
+        repaired_cases = [case for case in result["cases"] if case["repair"]]
+        successful_repairs = sum(
+            1 for case in repaired_cases if case["citations_valid"]
+        )
         return {
             "generation": {
                 "chars": result["metrics"]["generation_prompt_chars_total"],
@@ -529,6 +534,15 @@ def _t09_observability_report(
                     "repair_prompt_tokens_est_local_total"
                 ],
                 "components": result["repair_components"],
+            },
+            "repair_outcome": {
+                "triggered": len(repaired_cases),
+                "attempted": len(repaired_cases),
+                "succeeded": successful_repairs,
+                "failed": len(repaired_cases) - successful_repairs,
+                "trigger_categories": {
+                    "no_valid_citations": len(repaired_cases),
+                },
             },
             "decisions_by_action": _decision_counts(result["cases"]),
             "redundancy": {
@@ -600,6 +614,13 @@ def _render_t09_markdown(report: dict[str, Any]) -> str:
         )
     lines.extend(
         [
+            "",
+            "## Repair",
+            "",
+            "El benchmark sintetico provoca un fallo `no_valid_citations` por "
+            "politica. Ambos repairs se intentan y terminan en `succeeded`; "
+            "el contrato productivo tambien distingue `not_needed`, "
+            "`skipped_budget` y `failed_validation` sin exponer claims.",
             "",
             "## Uso real",
             "",

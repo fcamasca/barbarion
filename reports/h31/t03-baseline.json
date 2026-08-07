@@ -54,15 +54,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 1115,
+        "chars": 1389,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 604,
+            "chars": 913,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 151,
-            "utf8_bytes": 604
+            "tokens_est_local": 229,
+            "utf8_bytes": 913
           },
           {
             "chars": 60,
@@ -114,15 +114,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 279,
-        "utf8_bytes": 1120,
+        "tokens_est_local": 348,
+        "utf8_bytes": 1394,
         "utf8_bytes_reconciled": true
       },
       "id": "literal-single",
@@ -193,15 +193,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 1092,
+        "chars": 1366,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 604,
+            "chars": 913,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 151,
-            "utf8_bytes": 604
+            "tokens_est_local": 229,
+            "utf8_bytes": 913
           },
           {
             "chars": 52,
@@ -253,15 +253,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 273,
-        "utf8_bytes": 1094,
+        "tokens_est_local": 342,
+        "utf8_bytes": 1368,
         "utf8_bytes_reconciled": true
       },
       "id": "semantic-rank-two",
@@ -343,15 +343,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 1245,
+        "chars": 1519,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 610,
+            "chars": 919,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 153,
-            "utf8_bytes": 610
+            "tokens_est_local": 230,
+            "utf8_bytes": 919
           },
           {
             "chars": 52,
@@ -417,15 +417,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 312,
-        "utf8_bytes": 1253,
+        "tokens_est_local": 380,
+        "utf8_bytes": 1527,
         "utf8_bytes_reconciled": true
       },
       "id": "hybrid-multi-source",
@@ -508,15 +508,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 1121,
+        "chars": 1395,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 604,
+            "chars": 913,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 151,
-            "utf8_bytes": 604
+            "tokens_est_local": 229,
+            "utf8_bytes": 913
           },
           {
             "chars": 56,
@@ -568,15 +568,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 281,
-        "utf8_bytes": 1125,
+        "tokens_est_local": 349,
+        "utf8_bytes": 1399,
         "utf8_bytes_reconciled": true
       },
       "id": "window-overlap",
@@ -660,15 +660,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 939,
+        "chars": 1213,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 598,
+            "chars": 907,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 150,
-            "utf8_bytes": 598
+            "tokens_est_local": 227,
+            "utf8_bytes": 907
           },
           {
             "chars": 55,
@@ -706,15 +706,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 235,
-        "utf8_bytes": 943,
+        "tokens_est_local": 304,
+        "utf8_bytes": 1217,
         "utf8_bytes_reconciled": true
       },
       "id": "exact-duplicate",
@@ -814,15 +814,15 @@
       ],
       "fact_coverage": 0.0,
       "generation": {
-        "chars": 1478,
+        "chars": 1752,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 622,
+            "chars": 931,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 156,
-            "utf8_bytes": 622
+            "tokens_est_local": 233,
+            "utf8_bytes": 931
           },
           {
             "chars": 43,
@@ -916,15 +916,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 370,
-        "utf8_bytes": 1482,
+        "tokens_est_local": 438,
+        "utf8_bytes": 1756,
         "utf8_bytes_reconciled": true
       },
       "id": "relevant-at-six",
@@ -1003,15 +1003,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 1045,
+        "chars": 1319,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 604,
+            "chars": 913,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 151,
-            "utf8_bytes": 604
+            "tokens_est_local": 229,
+            "utf8_bytes": 913
           },
           {
             "chars": 44,
@@ -1063,15 +1063,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 262,
-        "utf8_bytes": 1050,
+        "tokens_est_local": 330,
+        "utf8_bytes": 1324,
         "utf8_bytes_reconciled": true
       },
       "id": "ambiguous-evidence",
@@ -1181,15 +1181,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 1135,
+        "chars": 1409,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 604,
+            "chars": 913,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 151,
-            "utf8_bytes": 604
+            "tokens_est_local": 229,
+            "utf8_bytes": 913
           },
           {
             "chars": 53,
@@ -1241,15 +1241,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 284,
-        "utf8_bytes": 1141,
+        "tokens_est_local": 353,
+        "utf8_bytes": 1415,
         "utf8_bytes_reconciled": true
       },
       "id": "structured-evidence",
@@ -1310,15 +1310,15 @@
       ],
       "fact_coverage": 1.0,
       "generation": {
-        "chars": 907,
+        "chars": 1181,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 598,
+            "chars": 907,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 150,
-            "utf8_bytes": 598
+            "tokens_est_local": 227,
+            "utf8_bytes": 907
           },
           {
             "chars": 52,
@@ -1356,15 +1356,15 @@
             "utf8_bytes": 2
           },
           {
-            "chars": 102,
+            "chars": 67,
             "kind": "output_format",
             "source_id": null,
-            "tokens_est_local": 26,
-            "utf8_bytes": 102
+            "tokens_est_local": 17,
+            "utf8_bytes": 67
           }
         ],
-        "tokens_est_local": 227,
-        "utf8_bytes": 909,
+        "tokens_est_local": 296,
+        "utf8_bytes": 1183,
         "utf8_bytes_reconciled": true
       },
       "id": "citation-repair",
@@ -1373,15 +1373,15 @@
       "recall_at_10": 1.0,
       "recall_at_5": 1.0,
       "repair": {
-        "chars": 876,
+        "chars": 1418,
         "chars_reconciled": true,
         "components": [
           {
-            "chars": 598,
+            "chars": 1140,
             "kind": "instructions",
             "source_id": null,
-            "tokens_est_local": 150,
-            "utf8_bytes": 598
+            "tokens_est_local": 285,
+            "utf8_bytes": 1140
           },
           {
             "chars": 52,
@@ -1433,8 +1433,8 @@
             "utf8_bytes": 20
           }
         ],
-        "tokens_est_local": 219,
-        "utf8_bytes": 878,
+        "tokens_est_local": 355,
+        "utf8_bytes": 1420,
         "utf8_bytes_reconciled": true
       },
       "result_status": "completed",
@@ -1457,14 +1457,14 @@
   "estimator_id": "chars4_v1",
   "generation_components": {
     "instructions": {
-      "chars": 5448,
-      "tokens_est_local": 1364,
-      "utf8_bytes": 5448
+      "chars": 8229,
+      "tokens_est_local": 2062,
+      "utf8_bytes": 8229
     },
     "output_format": {
-      "chars": 918,
-      "tokens_est_local": 234,
-      "utf8_bytes": 918
+      "chars": 603,
+      "tokens_est_local": 153,
+      "utf8_bytes": 603
     },
     "question": {
       "chars": 467,
@@ -1490,9 +1490,9 @@
     "exact_duplicate_pairs": 1,
     "exact_duplicate_prompt_tokens_est_local": 0,
     "fact_coverage": 0.888889,
-    "generation_prompt_chars_total": 10077,
-    "generation_prompt_tokens_est_local_total": 2523,
-    "generation_prompt_utf8_bytes_total": 10117,
+    "generation_prompt_chars_total": 12543,
+    "generation_prompt_tokens_est_local_total": 3140,
+    "generation_prompt_utf8_bytes_total": 12583,
     "insufficient_case_count": 2,
     "mrr": 0.851852,
     "overlap_chars": 27,
@@ -1501,20 +1501,20 @@
     "recall_at_10": 1.0,
     "recall_at_5": 0.888889,
     "redundancy_prompt_tokens_est_local": 7,
-    "redundancy_share_of_generation_prompt": 0.002774,
-    "repair_prompt_chars_total": 876,
+    "redundancy_share_of_generation_prompt": 0.002229,
+    "repair_prompt_chars_total": 1418,
     "repair_prompt_count": 1,
-    "repair_prompt_tokens_est_local_total": 219,
-    "repair_prompt_utf8_bytes_total": 878,
+    "repair_prompt_tokens_est_local_total": 355,
+    "repair_prompt_utf8_bytes_total": 1420,
     "selected_source_recall": 0.888889
   },
   "optimization_enabled": false,
   "policy": "baseline_v1",
   "repair_components": {
     "instructions": {
-      "chars": 598,
-      "tokens_est_local": 150,
-      "utf8_bytes": 598
+      "chars": 1140,
+      "tokens_est_local": 285,
+      "utf8_bytes": 1140
     },
     "output_format": {
       "chars": 20,

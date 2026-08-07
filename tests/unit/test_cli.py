@@ -1158,6 +1158,24 @@ def _ask_debug_payload(
                 "tokens_est_local": 10,
             },
             "repair": None,
+            "repair_outcome": {
+                "triggered": repair_attempted,
+                "trigger_categories": (
+                    ("no_valid_citations",) if repair_attempted else ()
+                ),
+                "trigger_counts": (
+                    {"no_valid_citations": 1} if repair_attempted else {}
+                ),
+                "attempted": repair_attempted,
+                "succeeded": repair_valid,
+                "result": (
+                    "succeeded"
+                    if repair_valid
+                    else "failed_validation"
+                    if repair_attempted
+                    else "not_needed"
+                ),
+            },
             "citation_coverage": {
                 "selected_source_count": 1,
                 "cited_source_count": 1 if valid else 0,
@@ -1332,6 +1350,8 @@ def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
     assert "candidate_decision chunk_id=chunk-safe" in captured.err
     assert "input_budget_configured_tokens_est_local=9000" in captured.err
     assert "generation_tokens_est_local=10" in captured.err
+    assert "repair_outcome triggered=False attempted=False" in captured.err
+    assert "result=not_needed causes=[]" in captured.err
     assert "[F1] score=0.800" in captured.err
     assert "validation: PASS" in captured.err
     assert "final_result: ACCEPTED" in captured.err
@@ -1357,6 +1377,8 @@ def test_ask_debug_with_successful_repair_reports_acceptance(
 
     assert exit_code == 0
     assert "Respuesta reparada [F1]" in captured.err
+    assert "repair_outcome triggered=True attempted=True succeeded=True" in captured.err
+    assert "result=succeeded causes=[no_valid_citations]" in captured.err
     assert "repair: PASS" in captured.err
     assert "final_result: ACCEPTED" in captured.err
 

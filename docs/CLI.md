@@ -376,7 +376,9 @@ generación sin copiar contenido sensible:
 - `ask_llm_finished`: etapa, duración, resultado (`completed`, `timeout` o
   `error`) y longitud de respuesta cuando existe;
 - `ask_citation_validation`: etapa, resultado `PASS`/`FAIL`, categorías de
-  rechazo y conteos de citas o claims.
+  rechazo y conteos de citas o claims;
+- `ask_citation_repair`: si el repair fue activado/intentado, resultado y
+  categorías agregadas que lo causaron.
 
 Las categorías incluyen `missing_source_ids`, `no_valid_citations`,
 `unsupported_claims` y `contradiction_claims`. `unsupported_claims` también
@@ -390,6 +392,12 @@ debug expone `repair_input_budget_*`: tamaño inicial/final, evidencia
 original/final, tokens recortados, confirmación `same_sources` y resultado. Son
 métricas agregadas; no incluyen contenido. Repair no realiza una segunda
 búsqueda ni cambia IDs de fuente.
+
+El resumen `repair_outcome` hace comparable la causa y eficacia del repair sin
+exponer texto: `not_needed`, `skipped_budget`, `succeeded` o
+`failed_validation`, junto con `trigger_categories`, `attempted` y
+`succeeded`. El prompt de repair recibe esas mismas categorías y conteos, pero
+nunca el texto de los claims rechazados.
 
 Errores operativos frecuentes:
 

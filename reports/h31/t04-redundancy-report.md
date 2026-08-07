@@ -7,13 +7,13 @@ efectiva permanece `baseline_v1`; no se elimina ni recorta evidencia.
 
 | Medicion | Valor |
 |---|---:|
-| Prompt generation | `2523` tokens est. |
+| Prompt generation | `3140` tokens est. |
 | Duplicados exactos detectados | `1` |
 | Duplicados exactos enviados | `0` tokens est. |
 | Contenido duplicado ya evitado | `17` tokens est. |
 | Pares con overlap | `1` |
 | Overlap enviado | `27` chars / `7` tokens est. |
-| Fraccion explicada del prompt | `0.277%` |
+| Fraccion explicada del prompt | `0.223%` |
 | Casos con perdida de cobertura | `1` |
 | Fuentes seleccionadas no citadas | `8` |
 

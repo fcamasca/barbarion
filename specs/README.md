@@ -13,7 +13,7 @@ Las specs convierten cada hito del roadmap en trabajo pequeño, revisable y veri
 | [H4.1-DataDrivenConfigurations](H4.1-DataDrivenConfigurations/) | Configuraciones persistidas integradas al conocimiento técnico | Completado |
 | [H5-SpecMode](H5-SpecMode/) | Generación guiada de specs Markdown | Completado |
 | [H1.1-LocalModelManagement](H1.1-LocalModelManagement/) | Gestión y evaluación reproducible de modelos Ollama locales | Completado; comparación real pendiente |
-| [H1.2-RemoteInference](H1.2-RemoteInference/) | Generación remota opcional mediante Anthropic sin cambiar el conocimiento local | Implementación completada; aceptación pendiente |
+| [H1.2-RemoteInference](H1.2-RemoteInference/) | Generación remota opcional mediante Anthropic sin cambiar el conocimiento local | Completado y aceptado técnica y funcionalmente |
 
 ## Estructura de una spec activa
 

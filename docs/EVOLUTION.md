@@ -167,7 +167,7 @@ Evidencia:
 
 ## H1.2 -- Inferencia Remota con Anthropic
 
-Estado: implementación técnica y documentación completadas; aceptación pendiente.
+Estado: completada y aceptada técnica y funcionalmente.
 
 Pregunta que responde:
 
@@ -195,10 +195,12 @@ Barbarion puede generar localmente con Ollama o enviar únicamente el prompt
 final a Anthropic. No incorpora streaming, retries, fallback entre proveedores,
 routing dinámico ni soporte cloud adicional.
 
-Evidencia de implementación:
+Evidencia de implementación y aceptación:
 
-[`../specs/H1.2-RemoteInference/`](../specs/H1.2-RemoteInference/). El documento
-`acceptance.md` se creará únicamente durante H1.2-T08.
+[`../specs/H1.2-RemoteInference/`](../specs/H1.2-RemoteInference/) y
+[`../specs/H1.2-RemoteInference/acceptance.md`](../specs/H1.2-RemoteInference/acceptance.md).
+H1.2-T08 quedó completada con validación real de Anthropic, suite de regresión y
+smoke instalado.
 
 ------------------------------------------------------------------------
 

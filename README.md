@@ -142,8 +142,8 @@ La sintaxis, opciones, efectos secundarios y códigos de salida están documenta
 
 - Versión actual: `0.6.0`
 - MVP completado: `5/5` hitos
-- Suite de aceptación del MVP: `502 passed, 2 skipped`
-- Smoke tests instalados: `10 passed`
+- Suite de aceptación vigente: `856 passed, 3 skipped`
+- Smoke tests instalados: `11 passed`
 - Runtime validado: Python `3.12`
 - Integración continua: GitHub Actions
 
@@ -155,7 +155,7 @@ Evoluciones posteriores al MVP:
 |---|---|---|
 | H4.1 Configuraciones Data-Driven | Completada y aceptada técnicamente | [Aceptación](specs/H4.1-DataDrivenConfigurations/acceptance.md) |
 | H1.1 Gestión y Evaluación de Modelos Locales | Completada y aceptada técnicamente | [Aceptación](specs/H1.1-LocalModelManagement/acceptance.md) |
-| H1.2 Inferencia Remota con Anthropic | Implementación técnica y documentación completadas; aceptación pendiente | [Spec](specs/H1.2-RemoteInference/) |
+| H1.2 Inferencia Remota con Anthropic | Completada y aceptada técnica y funcionalmente | [Aceptación](specs/H1.2-RemoteInference/acceptance.md) |
 
 El historial y alcance de las evoluciones se mantienen en [`docs/EVOLUTION.md`](docs/EVOLUTION.md).
 

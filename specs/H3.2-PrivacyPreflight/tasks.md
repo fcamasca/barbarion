@@ -12,8 +12,8 @@
 - No crear `acceptance.md` hasta H3.2-T13.
 - Estados iniciales: `pendiente`.
 
-Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T03
-completadas; T04-T13 pendientes.
+Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T04
+completadas; T05-T13 pendientes.
 
 ## 2. Tareas
 
@@ -76,15 +76,22 @@ agregar aun `[privacy]`, offering, registry, cache ni evaluacion strict.
 
 ### H3.2-T04 - Implementar evaluadores puros strict
 
-**Estado:** pendiente.  
+**Estado:** completada.  
 **Objetivo:** decidir cada restriccion sin IO ni puntajes.  
 **Archivos/componentes esperados:** `application/privacy.py`, unit tests
 parametrizados.  
 **Descripcion:** evaluar no-training, retencion y ubicacion; resolver evidencia
-incondicional, condicional, conflictiva, expirada y account-specific.  
+construida en memoria, incondicional, condicional, conflictiva y expirada. No
+consultar cuentas, registry, cache ni red.  
 **Pruebas:** H3.2-TP-010..019.  
 **Dependencias:** T02.  
 **Checkpoint:** toda combinacion remota que contenga FAIL/UNKNOWN bloquea.
+
+**Evidencia:** evaluadores puros en `src/barbarion/application/privacy.py`,
+matriz `tests/unit/test_h32_privacy_evaluation.py` y
+`reports/h32/t04-strict-evaluation.md`. Las 27 combinaciones remotas fueron
+probadas y la suite completa aprobo 1006 pruebas con 14 skips. No se agregaron
+IO, registry, cache, HTTP ni integracion con `AskService`.
 
 ### H3.2-T05 - Definir adaptador y normalizacion del registry
 

@@ -4,6 +4,14 @@
 
 `AskService` en `src/barbarion/application/rag.py` ejecuta `SearchService`, llama a `DataDrivenEvidenceRetriever` cuando está disponible, fusiona candidatos, y entrega una sola vez al `ContextBuilder`/selector H3.1. La persistencia real usa `SQLiteReverseEngineeringRepository.active_relations_for_symbol`; `TechnicalRelation` contiene `relation_type`, estado, origen/destino y `evidence_chunk_id`. H3.3 entra entre retrieval y selección final.
 
+### Resultado T01 — inventario real
+
+La inspección del repositorio confirma que `OracleParser` produce `package_spec`, `package_body`, `procedure` y `function`, conservando `parent_name` y `breadcrumb` para subprogramas. Sin embargo, `symbol_from_source()` no rellena `parent_symbol_id`; usa `container_name`/metadata. Por tanto, no existe actualmente una relación package→miembro persistida y navegable demostrada por el código.
+
+El resolvedor canoniza las relaciones como `calls`, `uses`, `opens`, `references`, `parent_of` y `precedes`. `active_relations_for_symbol()` permite `OUTGOING`, `INCOMING` y `BOTH`, y la dirección se calcula al consultar. `evidence_chunk_id` procede del `source_chunk_id` de la referencia; el fallback a ese chunk queda sujeto a la validación de vigencia y contenido definida en requirements.
+
+**Conclusión T01:** H3.3 puede comprobar inicialmente expansión de llamadas/uso de tablas y cruces H4.1 ya resueltos. El caso de package completo queda condicionado a una fixture/corpus que demuestre una relación package→miembro navegable o pasa a capacidad diferida.
+
 ```mermaid
 flowchart TD
  Q[Pregunta] --> H3[SearchService H3 híbrido]

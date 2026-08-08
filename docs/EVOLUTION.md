@@ -204,54 +204,6 @@ smoke instalado.
 
 ------------------------------------------------------------------------
 
-## H4.1 -- Configuraciones Data-Driven
-
-Estado: completada y aceptada técnicamente.
-
-Pregunta que responde:
-
-**¿Dónde vive realmente la lógica del negocio cuando no está escrita directamente en el código?**
-
-Construye:
-
-- entidades de configuración
-- reglas configuradas
-- expresiones y fórmulas
-- relaciones entre configuraciones
-- dependencias hacia componentes de ejecución
-- grafo conceptual de relaciones de configuración persistido en SQLite
-
-Detecta de forma genérica aplicaciones cuyo comportamiento está definido por configuración persistida, por ejemplo:
-
-- plantillas
-- reglas
-- parámetros
-- workflows
-- mappings
-- metadata de negocio
-- SQL dinámico
-- expresiones ejecutables
-
-Relaciona dichas configuraciones con:
-
-- procedimientos
-- funciones
-- packages
-- tablas
-- vistas
-- otros componentes técnicos
-
-Resultado:
-
-Barbarion incorpora al modelo relacional de conocimiento en SQLite la lógica
-definida en configuraciones, permitiendo comprender arquitecturas data-driven
-sin introducir una base de grafos ni depender de implementaciones específicas
-del dominio.
-
-------------------------------------------------------------------------
-
-# Evolución futura
-
 ------------------------------------------------------------------------
 
 ## H3.1 -- Optimización de contexto RAG
@@ -343,6 +295,108 @@ consulta.
 Spec:
 
 [`../specs/H3.1-RAGContextOptimization/`](../specs/H3.1-RAGContextOptimization/).
+
+------------------------------------------------------------------------
+
+## H3.2 -- Privacy Preflight
+
+Estado: aceptada técnicamente para H3.2 v1.
+
+H3.2 ejecuta un preflight antes del egress generativo remoto y aplica una
+decisión fail-closed. Una evaluación bloqueada no construye el prompt ni llama
+al LLM. Cuando la política de riesgo lo requiere, exige confirmación explícita
+del usuario y comparte una autorización inmutable entre generation y repair.
+
+La evidencia de privacidad se obtiene desde un registry estructurado y se
+mantiene mediante una cache local con vigencia demostrable; `ask` no refresca
+la fuente. La cache ausente, inválida o expirada bloquea el egress remoto. El
+registry permanece separado del corpus RAG y no recibe prompts ni contenido.
+
+El alcance aceptado distingue Ollama local, Ollama Cloud y Anthropic: Ollama
+local no usa privacy I/O; Ollama Cloud se resuelve como destino remoto sin
+clasificar por nombre de modelo; Anthropic conserva su egress directo. La
+aceptación no introduce gateway, proxy, routing por modelo, cambios en
+retrieval, presupuestos o `CitationValidator`.
+
+Evidencia: [`../specs/H3.2-PrivacyPreflight/acceptance.md`](../specs/H3.2-PrivacyPreflight/acceptance.md).
+
+------------------------------------------------------------------------
+
+## H3.3 -- Graph-Aware Retrieval
+
+Estado: **ACCEPTED**.
+
+H3.3 es una ampliación opt-in y provider-agnostic del retrieval. Permanece
+deshabilitada por defecto y reutiliza el retrieval H3, las relaciones activas
+de H4/H4.1 y la selección/presupuesto de H3.1. La expansión usa BFS
+determinista y acotado, con control de profundidad, seeds, vecinos, candidatos,
+ciclos y deduplicación, y solo resuelve evidencia citable vigente.
+
+La política recomendada es `balanced`: profundidad 2, 4 seeds, 6 vecinos por
+seed y 8 candidatos (`2/4/6/8`). Los límites siguen siendo explícitos y
+opt-in; no se convierten en defaults implícitos.
+
+Cuando el presupuesto omite toda evidencia graph seleccionada por H3.1, el
+fallback aceptado realiza como máximo una sustitución. Solo aplica si conserva
+el número de fuentes, deduplicación, materialización y el mismo presupuesto;
+si no, conserva el contexto original. H3.3 no agrega egress ni altera el
+contrato de privacidad.
+
+Permanece pendiente demostrar una relación navegable `package→member`; hasta
+que H4 produzca esa relación o una equivalente, la cobertura completa de un
+package queda diferida.
+
+Evidencia: [`../specs/H3.3-GraphAwareRetrieval/acceptance.md`](../specs/H3.3-GraphAwareRetrieval/acceptance.md).
+
+------------------------------------------------------------------------
+
+## H4.1 -- Configuraciones Data-Driven
+
+Estado: completada y aceptada técnicamente.
+
+Pregunta que responde:
+
+**¿Dónde vive realmente la lógica del negocio cuando no está escrita directamente en el código?**
+
+Construye:
+
+- entidades de configuración
+- reglas configuradas
+- expresiones y fórmulas
+- relaciones entre configuraciones
+- dependencias hacia componentes de ejecución
+- grafo conceptual de relaciones de configuración persistido en SQLite
+
+Detecta de forma genérica aplicaciones cuyo comportamiento está definido por configuración persistida, por ejemplo:
+
+- plantillas
+- reglas
+- parámetros
+- workflows
+- mappings
+- metadata de negocio
+- SQL dinámico
+- expresiones ejecutables
+
+Relaciona dichas configuraciones con:
+
+- procedimientos
+- funciones
+- packages
+- tablas
+- vistas
+- otros componentes técnicos
+
+Resultado:
+
+Barbarion incorpora al modelo relacional de conocimiento en SQLite la lógica
+definida en configuraciones, permitiendo comprender arquitecturas data-driven
+sin introducir una base de grafos ni depender de implementaciones específicas
+del dominio.
+
+------------------------------------------------------------------------
+
+# Evolución futura
 
 ------------------------------------------------------------------------
 

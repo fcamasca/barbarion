@@ -1,6 +1,9 @@
 """Pruebas H4-T06 para navegacion de dependencias."""
 
-from barbarion.application.reverse_engineering import DependencyWalkService
+from barbarion.application.reverse_engineering import (
+    DependencyWalkService,
+    query_graph_relations,
+)
 from barbarion.domain.models import Confidence
 from barbarion.domain.reverse_engineering import (
     EvidenceClassification,
@@ -45,6 +48,106 @@ def test_dependency_walk_uses_bfs_depth_and_marks_cycles() -> None:
     assert len(walk.edges) == 3
     assert walk.edges[-1].is_cycle is True
     assert walk.cycles == ((root.symbol_id, worker.symbol_id, leaf.symbol_id, root.symbol_id),)
+
+
+def test_query_graph_relations_filters_direction_type_resolution_and_confidence() -> None:
+    root = _symbol("pkg.root")
+    target = _symbol("pkg.target")
+    incoming = _symbol("pkg.incoming")
+    repository = _FakeRepository(
+        symbols=(root, target, incoming),
+        relations=(
+            _relation(root, target, relation_type="calls", confidence=Confidence.HIGH),
+            _relation(root, target, relation_type="uses", confidence=Confidence.LOW),
+            _relation(incoming, root, relation_type="opens", confidence=Confidence.HIGH),
+            _relation(
+                root,
+                target,
+                relation_type="references",
+                confidence=Confidence.HIGH,
+                resolution_status=ResolutionStatus.AMBIGUOUS,
+            ),
+        ),
+    )
+
+    outgoing = query_graph_relations(
+        repository,
+        root.symbol_id,
+        direction=DependencyDirection.OUTGOING,
+        relation_types=frozenset({"calls", "uses", "references"}),
+        min_confidence=Confidence.MEDIUM,
+    )
+    incoming_result = query_graph_relations(
+        repository,
+        root.symbol_id,
+        direction=DependencyDirection.INCOMING,
+        relation_types=frozenset({"opens"}),
+    )
+
+    assert tuple(relation.relation_type for relation in outgoing) == ("calls",)
+    assert tuple(relation.relation_type for relation in incoming_result) == ("opens",)
+
+
+def test_query_graph_relations_handles_dynamic_external_and_domain() -> None:
+    root = _symbol("pkg.root")
+    local = _symbol("pkg.local")
+    foreign = _symbol("pkg.foreign")
+    repository = _FakeRepository(
+        symbols=(root, local, foreign),
+        relations=(
+            _relation(root, local, relation_type="uses"),
+            _relation(
+                root,
+                local,
+                relation_type="uses",
+                resolution_status=ResolutionStatus.DYNAMIC,
+            ),
+            _relation(
+                root,
+                local,
+                relation_type="uses",
+                resolution_status=ResolutionStatus.EXTERNAL,
+            ),
+            _relation(root, foreign, relation_type="calls"),
+        ),
+        domains={
+            root.symbol_id: "legacy",
+            local.symbol_id: "legacy",
+            foreign.symbol_id: "other",
+        },
+    )
+
+    resolved = query_graph_relations(
+        repository,
+        root.symbol_id,
+        direction=DependencyDirection.OUTGOING,
+        relation_types=frozenset({"calls", "uses"}),
+        domain="legacy",
+    )
+    dynamic = query_graph_relations(
+        repository,
+        root.symbol_id,
+        resolution_status=ResolutionStatus.DYNAMIC,
+        domain="legacy",
+    )
+    external = query_graph_relations(
+        repository,
+        root.symbol_id,
+        resolution_status=ResolutionStatus.EXTERNAL,
+        domain="legacy",
+    )
+    wrong_domain = query_graph_relations(
+        repository,
+        root.symbol_id,
+        domain="other",
+    )
+
+    assert tuple(relation.relation_type for relation in resolved) == ("uses",)
+    assert len(dynamic) == 1
+    assert dynamic[0].resolution_status == ResolutionStatus.DYNAMIC
+    assert len(external) == 1
+    assert external[0].resolution_status == ResolutionStatus.EXTERNAL
+    assert wrong_domain == ()
 
 
 def test_dependency_walk_respects_direction_and_depth_zero() -> None:
@@ -185,14 +288,22 @@ class _FakeRepository:
         symbols: tuple[TechnicalSymbol, ...],
         relations: tuple[TechnicalRelation, ...],
         candidates: dict[str, tuple[RelationCandidate, ...]] | None = None,
+        domains: dict[str, str] | None = None,
     ) -> None:
         self._symbols = {symbol.symbol_id: symbol for symbol in symbols}
         self._relations = relations
         self._candidates = candidates or {}
+        self._domains = domains or {
+            symbol.symbol_id: "default" for symbol in symbols
+        }
 
     def get_symbol(self, symbol_id: str) -> TechnicalSymbol | None:
         """Devuelve un simbolo fixture por ID."""
         return self._symbols.get(symbol_id)
+
+    def symbol_domain(self, symbol_id: str) -> str | None:
+        """Devuelve el dominio fixture del simbolo."""
+        return self._domains.get(symbol_id)
 
     def active_relations_for_symbol(
         self,

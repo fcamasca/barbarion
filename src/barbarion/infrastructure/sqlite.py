@@ -2422,6 +2422,20 @@ class SQLiteReverseEngineeringRepository:
             ).fetchone()
         return None if row is None else _technical_symbol_from_row(row)
 
+    def symbol_domain(self, symbol_id: str) -> str | None:
+        """Devuelve el dominio fuente de un simbolo, si conserva archivo."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT files.domain
+                FROM symbols
+                JOIN files ON files.id = symbols.file_id
+                WHERE symbols.id = ?
+                """,
+                (symbol_id,),
+            ).fetchone()
+        return None if row is None else str(row["domain"])
+
     def active_symbols(self) -> tuple[TechnicalSymbol, ...]:
         """Lista simbolos activos para resolucion reverse engineering."""
         with self._connect_readonly() as connection:

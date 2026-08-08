@@ -70,6 +70,10 @@ _CONFIGURATION_ALIAS_SYMBOL_TYPES = {
     "configuration_parameter",
 }
 
+GRAPH_RELATION_TYPES = frozenset(
+    {"calls", "uses", "opens", "references", "parent_of", "precedes"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SymbolCatalogSummary:
@@ -718,6 +722,85 @@ class InventoryService:
             summary=self.repository.inventory_summary(request.filters),
             items=self.repository.inventory_items(request.filters),
         )
+
+
+def query_graph_relations(
+    repository: SQLiteReverseEngineeringRepository,
+    symbol_id: str,
+    *,
+    direction: DependencyDirection = DependencyDirection.OUTGOING,
+    relation_types: frozenset[str] | None = None,
+    resolution_status: ResolutionStatus = ResolutionStatus.RESOLVED,
+    min_confidence: Confidence | None = None,
+    domain: str | None = None,
+) -> tuple[TechnicalRelation, ...]:
+    """Consulta relaciones H4/H4.1 adyacentes sin recorrer el grafo.
+
+    Reutiliza la consulta de relaciones activas del repositorio y los mismos
+    filtros del servicio de dependencias. El resultado solo contiene
+    relaciones activas, ordenadas por el repositorio y filtradas de forma
+    determinista; la expansión BFS pertenece a una tarea posterior.
+    """
+    if not isinstance(direction, DependencyDirection):
+        raise ValueError("direction debe ser DependencyDirection.")
+    if relation_types is not None:
+        if not relation_types:
+            return ()
+        if any(not isinstance(value, str) or not value.strip() for value in relation_types):
+            raise ValueError("relation_types debe contener nombres no vacios.")
+        unsupported = relation_types - GRAPH_RELATION_TYPES
+        if unsupported:
+            raise ValueError(
+                "relation_types contiene tipos no soportados por H3.3: "
+                + ", ".join(sorted(unsupported))
+            )
+    if domain is not None and (not isinstance(domain, str) or not domain.strip()):
+        raise ValueError("domain debe ser una cadena no vacia.")
+    if domain is not None and repository.symbol_domain(symbol_id) != domain:
+        return ()
+    relations = repository.active_relations_for_symbol(
+        symbol_id,
+        direction=direction,
+    )
+    filtered = _filter_relations(
+        relations,
+        DependencyFilters(
+            resolution_status=resolution_status,
+            min_confidence=min_confidence,
+        ),
+        repository,
+    )
+    if relation_types is None:
+        by_type = filtered
+    else:
+        by_type = tuple(
+            relation
+            for relation in filtered
+            if relation.relation_type in relation_types
+        )
+    if domain is None:
+        return by_type
+    return tuple(
+        relation
+        for relation in by_type
+        if _relation_in_domain(relation, domain, repository)
+    )
+
+
+def _relation_in_domain(
+    relation: TechnicalRelation,
+    domain: str,
+    repository: SQLiteReverseEngineeringRepository,
+) -> bool:
+    """Comprueba el dominio de todos los extremos persistidos de la relacion."""
+    symbol_ids = tuple(
+        symbol_id
+        for symbol_id in (relation.source_symbol_id, relation.target_symbol_id)
+        if symbol_id is not None
+    )
+    return bool(symbol_ids) and all(
+        repository.symbol_domain(symbol_id) == domain for symbol_id in symbol_ids
+    )
 
 
 @dataclass(frozen=True, slots=True)

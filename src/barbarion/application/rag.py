@@ -9,6 +9,7 @@ import math
 import re
 import time
 import uuid
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
@@ -18,7 +19,9 @@ from barbarion.application.privacy import (
     PrivacyPreflightService,
     resolve_inference_target,
 )
+from barbarion.application.reverse_engineering import query_graph_relations
 from barbarion.config import Settings
+from barbarion.domain.models import Confidence
 from barbarion.domain.privacy import (
     InferenceTarget,
     PrivacyAuthorization,
@@ -33,6 +36,8 @@ from barbarion.domain.progress import (
 from barbarion.domain.ports import EmbeddingProviderPort, LlmProviderPort, VectorStorePort
 from barbarion.domain.rag import (
     AnswerResult,
+    CandidateOrigin,
+    CandidateOriginKind,
     ChunkEmbeddingState,
     CitationValidation,
     ContextBuildResult,
@@ -42,6 +47,11 @@ from barbarion.domain.rag import (
     EmbeddingRequest,
     EmbeddingRunMode,
     EmbeddingRunStatus,
+    GraphCandidateStatus,
+    GraphCandidateTrace,
+    GraphExpansionLimits,
+    GraphPath,
+    GraphSeed,
     IndexAction,
     IndexRunSummary,
     IndexScope,
@@ -60,6 +70,7 @@ from barbarion.domain.rag import (
 )
 from barbarion.domain.reverse_engineering import (
     DependencyDirection,
+    SymbolStatus,
     TechnicalRelation,
     TechnicalSymbol,
 )
@@ -869,6 +880,253 @@ def _with_mode(candidate, mode: RetrievalMode):
         keyword_score=candidate.keyword_score,
         metadata=candidate.metadata,
         source={**dict(candidate.source), "retrieval_mode": mode.value},
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class GraphExpansionService:
+    """Expande seeds H3 sobre relaciones H4/H4.1 de forma BFS acotada."""
+
+    repository: SQLiteReverseEngineeringRepository
+    domain: str
+
+    def expand(
+        self,
+        seeds: tuple[GraphSeed, ...],
+        *,
+        limits: GraphExpansionLimits,
+        relation_types: frozenset[str],
+        direction: DependencyDirection = DependencyDirection.OUTGOING,
+        min_confidence: Confidence | None = None,
+    ) -> tuple[GraphCandidateTrace, ...]:
+        """Devuelve trazas estructurales; no resuelve todavía símbolos a chunks."""
+        ordered_seeds = tuple(
+            sorted(seeds, key=lambda seed: (-seed.retrieval_score, seed.seed_id))
+        )
+        traces: list[GraphCandidateTrace] = []
+        accepted_symbols: set[str] = set()
+        candidate_limit_reached = False
+
+        for seed_index, seed in enumerate(ordered_seeds):
+            if seed_index >= limits.max_seeds:
+                traces.append(_seed_limit_trace(seed))
+                continue
+            if seed.symbol_id is None:
+                traces.append(_unresolved_seed_trace(seed))
+                continue
+            root = self.repository.get_symbol(seed.symbol_id)
+            if root is None or root.status != SymbolStatus.ACTIVE:
+                traces.append(_unresolved_seed_trace(seed))
+                continue
+
+            queue = deque(
+                [
+                    GraphPath(
+                        nodes=(root.symbol_id,),
+                        relations=(),
+                        direction=direction,
+                        depth=0,
+                    )
+                ]
+            )
+            neighbors_seen = 0
+            while queue and not candidate_limit_reached:
+                current_path = queue.popleft()
+                if current_path.depth >= limits.max_depth:
+                    continue
+                current_symbol_id = current_path.nodes[-1]
+                relations = query_graph_relations(
+                    self.repository,
+                    current_symbol_id,
+                    direction=direction,
+                    relation_types=relation_types,
+                    min_confidence=min_confidence,
+                    domain=self.domain,
+                )
+                for relation in relations:
+                    if neighbors_seen >= limits.max_neighbors_per_seed:
+                        traces.append(
+                            _relation_limit_trace(seed, current_path, relation)
+                        )
+                        break
+                    neighbors_seen += 1
+                    next_symbol_id = _graph_next_symbol_id(
+                        current_symbol_id,
+                        relation,
+                    )
+                    if next_symbol_id is None:
+                        traces.append(
+                            _unresolved_relation_trace(seed, current_path, relation)
+                        )
+                        continue
+                    if next_symbol_id in current_path.nodes:
+                        traces.append(
+                            _cycle_trace(seed, current_path, relation, next_symbol_id)
+                        )
+                        continue
+                    next_symbol = self.repository.get_symbol(next_symbol_id)
+                    if next_symbol is None or next_symbol.status != SymbolStatus.ACTIVE:
+                        traces.append(
+                            _unresolved_relation_trace(
+                                seed,
+                                current_path,
+                                relation,
+                                candidate_id=next_symbol_id,
+                            )
+                        )
+                        continue
+                    next_path = GraphPath(
+                        nodes=(*current_path.nodes, next_symbol_id),
+                        relations=(*current_path.relations, relation.relation_id),
+                        direction=direction,
+                        depth=current_path.depth + 1,
+                    )
+                    status = GraphCandidateStatus.ACCEPTED
+                    if next_symbol_id in accepted_symbols:
+                        status = GraphCandidateStatus.DUPLICATE
+                    elif len(accepted_symbols) >= limits.max_candidates:
+                        status = GraphCandidateStatus.LIMIT
+                        candidate_limit_reached = True
+                    else:
+                        accepted_symbols.add(next_symbol_id)
+                    traces.append(
+                        _graph_trace(seed, next_path, next_symbol_id, status)
+                    )
+                    if status == GraphCandidateStatus.ACCEPTED:
+                        queue.append(next_path)
+                    if candidate_limit_reached:
+                        break
+        return tuple(traces)
+
+
+def _graph_next_symbol_id(
+    current_symbol_id: str,
+    relation: TechnicalRelation,
+) -> str | None:
+    if relation.source_symbol_id == current_symbol_id:
+        return relation.target_symbol_id
+    if relation.target_symbol_id == current_symbol_id:
+        return relation.source_symbol_id
+    return None
+
+
+def _graph_origin(seed: GraphSeed, path: GraphPath) -> CandidateOrigin:
+    return CandidateOrigin(
+        kind=CandidateOriginKind.GRAPH_EXPANSION,
+        seed_ids=(seed.seed_id,),
+        relation_ids=path.relations,
+        path=path,
+    )
+
+
+def _graph_trace(
+    seed: GraphSeed,
+    path: GraphPath,
+    candidate_id: str,
+    status: GraphCandidateStatus,
+) -> GraphCandidateTrace:
+    return GraphCandidateTrace(
+        candidate_id=candidate_id,
+        origin=_graph_origin(seed, path),
+        discovered_at_depth=path.depth,
+        dedupe_key=candidate_id,
+        status=status,
+    )
+
+
+def _cycle_trace(
+    seed: GraphSeed,
+    path: GraphPath,
+    relation: TechnicalRelation,
+    candidate_id: str,
+) -> GraphCandidateTrace:
+    attempted = GraphPath(
+        nodes=path.nodes,
+        relations=path.relations,
+        direction=path.direction,
+        depth=path.depth,
+    )
+    origin = CandidateOrigin(
+        kind=CandidateOriginKind.GRAPH_EXPANSION,
+        seed_ids=(seed.seed_id,),
+        relation_ids=(*path.relations, relation.relation_id),
+        path=attempted,
+    )
+    return GraphCandidateTrace(
+        candidate_id=candidate_id,
+        origin=origin,
+        discovered_at_depth=path.depth + 1,
+        dedupe_key=candidate_id,
+        status=GraphCandidateStatus.CYCLE,
+    )
+
+
+def _unresolved_relation_trace(
+    seed: GraphSeed,
+    path: GraphPath,
+    relation: TechnicalRelation,
+    *,
+    candidate_id: str | None = None,
+) -> GraphCandidateTrace:
+    candidate_id = candidate_id or relation.target_key or relation.relation_id
+    origin = CandidateOrigin(
+        kind=CandidateOriginKind.GRAPH_EXPANSION,
+        seed_ids=(seed.seed_id,),
+        relation_ids=(*path.relations, relation.relation_id),
+        path=path,
+    )
+    return GraphCandidateTrace(
+        candidate_id=candidate_id,
+        origin=origin,
+        discovered_at_depth=path.depth + 1,
+        dedupe_key=candidate_id,
+        status=GraphCandidateStatus.UNRESOLVED_SOURCE,
+    )
+
+
+def _relation_limit_trace(
+    seed: GraphSeed,
+    path: GraphPath,
+    relation: TechnicalRelation,
+) -> GraphCandidateTrace:
+    candidate_id = relation.target_symbol_id or relation.target_key or relation.relation_id
+    return GraphCandidateTrace(
+        candidate_id=candidate_id,
+        origin=CandidateOrigin(
+            kind=CandidateOriginKind.GRAPH_EXPANSION,
+            seed_ids=(seed.seed_id,),
+            relation_ids=(*path.relations, relation.relation_id),
+            path=path,
+        ),
+        discovered_at_depth=path.depth + 1,
+        dedupe_key=candidate_id,
+        status=GraphCandidateStatus.LIMIT,
+    )
+
+
+def _seed_limit_trace(seed: GraphSeed) -> GraphCandidateTrace:
+    return GraphCandidateTrace(
+        candidate_id=seed.symbol_id or seed.chunk_id,
+        origin=CandidateOrigin(
+            kind=CandidateOriginKind.DIRECT_H3,
+            seed_ids=(seed.seed_id,),
+        ),
+        discovered_at_depth=0,
+        dedupe_key=seed.symbol_id or seed.chunk_id,
+        status=GraphCandidateStatus.LIMIT,
+    )
+
+
+def _unresolved_seed_trace(seed: GraphSeed) -> GraphCandidateTrace:
+    return GraphCandidateTrace(
+        candidate_id=seed.symbol_id or seed.chunk_id,
+        origin=CandidateOrigin(
+            kind=CandidateOriginKind.DIRECT_H3,
+            seed_ids=(seed.seed_id,),
+        ),
+        discovered_at_depth=0,
+        dedupe_key=seed.symbol_id or seed.chunk_id,
+        status=GraphCandidateStatus.UNRESOLVED_SOURCE,
     )
 
 

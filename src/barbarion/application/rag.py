@@ -61,6 +61,7 @@ from barbarion.domain.rag import (
     RetrievalCandidate,
     RetrievalFilter,
     RetrievalMode,
+    SeedOrigin,
     SearchRequest,
     SearchResponse,
     SearchTimings,
@@ -71,6 +72,7 @@ from barbarion.domain.rag import (
 from barbarion.domain.reverse_engineering import (
     DependencyDirection,
     SymbolStatus,
+    TechnicalReference,
     TechnicalRelation,
     TechnicalSymbol,
 )
@@ -1128,6 +1130,252 @@ def _unresolved_seed_trace(seed: GraphSeed) -> GraphCandidateTrace:
         dedupe_key=seed.symbol_id or seed.chunk_id,
         status=GraphCandidateStatus.UNRESOLVED_SOURCE,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class GraphEvidenceResolver:
+    """Convierte trazas aceptadas en chunks vigentes y citables."""
+
+    repository: SQLiteReverseEngineeringRepository
+    rag_repository: SQLiteRagRepository
+    domain: str
+
+    def resolve(
+        self,
+        traces: tuple[GraphCandidateTrace, ...],
+        *,
+        seeds: tuple[GraphSeed, ...],
+    ) -> tuple[RetrievalCandidate, ...]:
+        seed_scores = {seed.seed_id: seed.retrieval_score for seed in seeds}
+        by_symbol: dict[str, list[GraphCandidateTrace]] = {}
+        for trace in traces:
+            if trace.status not in {
+                GraphCandidateStatus.ACCEPTED,
+                GraphCandidateStatus.DUPLICATE,
+            }:
+                continue
+            by_symbol.setdefault(trace.candidate_id, []).append(trace)
+
+        resolved: list[RetrievalCandidate] = []
+        for symbol_id in sorted(by_symbol):
+            symbol = self.repository.get_symbol(symbol_id)
+            if symbol is None or symbol.status != SymbolStatus.ACTIVE:
+                continue
+            symbol_traces = tuple(by_symbol[symbol_id])
+            candidate = self._resolve_symbol(symbol, symbol_traces, seed_scores)
+            if candidate is not None:
+                resolved.append(candidate)
+        resolved.sort(key=lambda candidate: (-candidate.combined_score, candidate.chunk_id))
+        return tuple(resolved)
+
+    def _resolve_symbol(
+        self,
+        symbol: TechnicalSymbol,
+        traces: tuple[GraphCandidateTrace, ...],
+        seed_scores: Mapping[str, float],
+    ) -> RetrievalCandidate | None:
+        score = max(
+            (
+                seed_scores.get(seed_id, 0.0)
+                * (0.95 ** max(1, trace.discovered_at_depth))
+                for trace in traces
+                for seed_id in trace.origin.seed_ids
+            ),
+            default=0.01,
+        )
+        origins = tuple(_graph_origin_payload(trace) for trace in traces)
+        relation_ids = tuple(
+            dict.fromkeys(
+                relation_id
+                for trace in traces
+                for relation_id in trace.origin.relation_ids
+            )
+        )
+        if symbol.chunk_id is not None:
+            candidate = self._materialize(
+                symbol.chunk_id,
+                symbol=symbol,
+                relation_ids=relation_ids,
+                origins=origins,
+                score=score,
+                fallback=False,
+            )
+            if candidate is not None:
+                return candidate
+
+        for relation_id in reversed(relation_ids):
+            relation = self.repository.get_relation(relation_id)
+            if relation is None or relation.evidence_chunk_id is None:
+                continue
+            candidate = self._materialize(
+                relation.evidence_chunk_id,
+                symbol=symbol,
+                relation_ids=relation_ids,
+                origins=origins,
+                score=score,
+                fallback=True,
+            )
+            if candidate is None:
+                continue
+            reference = self.repository.get_reference(relation.reference_id)
+            content = str(candidate.source.get("content") or "")
+            if _valid_relation_evidence_chunk(
+                relation,
+                reference,
+                chunk_id=candidate.chunk_id,
+                content=content,
+            ):
+                return candidate
+        return None
+
+    def _materialize(
+        self,
+        chunk_id: str,
+        *,
+        symbol: TechnicalSymbol,
+        relation_ids: tuple[str, ...],
+        origins: tuple[dict[str, object], ...],
+        score: float,
+        fallback: bool,
+    ) -> RetrievalCandidate | None:
+        if not self.rag_repository.active_chunk_exists(chunk_id, domain=self.domain):
+            return None
+        candidate = RetrievalCandidate(
+            chunk_id=chunk_id,
+            content_sha256=symbol.symbol_id,
+            combined_score=score,
+            keyword_score=score,
+            metadata=SymbolMetadata(
+                symbol_name=symbol.normalized_name,
+                symbol_kind=symbol.symbol_type,
+                parent_symbol=symbol.container_name,
+            ),
+            source={
+                "evidence_kind": "graph_expansion",
+                "retrieval_mode": "structured_expansion",
+                "symbol_id": symbol.symbol_id,
+                "relation_ids": relation_ids,
+                "graph_origins": origins,
+                "relation_evidence_fallback": fallback,
+            },
+        )
+        enriched = self.rag_repository.enrich_candidates(
+            (candidate,), include_snippets=True
+        )[0]
+        if not enriched.source.get("content"):
+            return None
+        return enriched
+
+
+@dataclass(frozen=True, slots=True)
+class GraphAwareEvidenceRetriever:
+    """Orquesta seeds, expansión y resolución citable antes de H3.1."""
+
+    expansion_service: GraphExpansionService
+    resolver: GraphEvidenceResolver
+    limits: GraphExpansionLimits
+    relation_types: frozenset[str]
+    direction: DependencyDirection = DependencyDirection.OUTGOING
+    min_confidence: Confidence | None = None
+
+    def retrieve(
+        self,
+        candidates: tuple[RetrievalCandidate, ...],
+    ) -> tuple[RetrievalCandidate, ...]:
+        seeds = _graph_seeds_from_candidates(
+            candidates,
+            repository=self.expansion_service.repository,
+        )
+        traces = self.expansion_service.expand(
+            seeds,
+            limits=self.limits,
+            relation_types=self.relation_types,
+            direction=self.direction,
+            min_confidence=self.min_confidence,
+        )
+        return self.resolver.resolve(traces, seeds=seeds)
+
+
+def _graph_seeds_from_candidates(
+    candidates: tuple[RetrievalCandidate, ...],
+    *,
+    repository: SQLiteReverseEngineeringRepository,
+) -> tuple[GraphSeed, ...]:
+    seeds: list[GraphSeed] = []
+    seen_symbols: set[str] = set()
+    for candidate in candidates:
+        explicit_symbol_id = candidate.source.get("symbol_id")
+        symbols = (
+            (repository.get_symbol(str(explicit_symbol_id)),)
+            if explicit_symbol_id
+            else repository.active_symbols_for_chunk(candidate.chunk_id)
+        )
+        for symbol in symbols:
+            if (
+                symbol is None
+                or symbol.status != SymbolStatus.ACTIVE
+                or symbol.symbol_id in seen_symbols
+            ):
+                continue
+            seen_symbols.add(symbol.symbol_id)
+            seed_id = hashlib.sha256(
+                f"h33:{candidate.chunk_id}:{symbol.symbol_id}".encode("utf-8")
+            ).hexdigest()
+            seeds.append(
+                GraphSeed(
+                    seed_id=seed_id,
+                    chunk_id=candidate.chunk_id,
+                    symbol_id=symbol.symbol_id,
+                    retrieval_score=max(0.0, min(1.0, candidate.combined_score)),
+                    origin=(
+                        SeedOrigin.H41_STRUCTURED
+                        if candidate.source.get("evidence_kind") == "structured_symbol"
+                        else SeedOrigin.H3_CHUNK
+                    ),
+                    source_candidate_id=candidate.chunk_id,
+                )
+            )
+    return tuple(seeds)
+
+
+def _graph_origin_payload(trace: GraphCandidateTrace) -> dict[str, object]:
+    path = trace.origin.path
+    return {
+        "seed_ids": trace.origin.seed_ids,
+        "relation_ids": trace.origin.relation_ids,
+        "nodes": path.nodes if path is not None else (),
+        "direction": path.direction.value if path is not None else None,
+        "depth": trace.discovered_at_depth,
+        "status": trace.status.value,
+    }
+
+
+def _valid_relation_evidence_chunk(
+    relation: TechnicalRelation,
+    reference: TechnicalReference | None,
+    *,
+    chunk_id: str,
+    content: str,
+) -> bool:
+    if (
+        reference is None
+        or relation.evidence_chunk_id != chunk_id
+        or reference.source_chunk_id != chunk_id
+        or reference.reference_id != relation.reference_id
+        or not content
+    ):
+        return False
+    normalized_content = _normalize_relation_evidence(content)
+    evidence_values = (reference.raw_text, reference.normalized_target)
+    return any(
+        len(normalized) >= 3 and normalized in normalized_content
+        for value in evidence_values
+        if (normalized := _normalize_relation_evidence(str(value)))
+    )
+
+
+def _normalize_relation_evidence(value: str) -> str:
+    return re.sub(r"[\s\"']+", "", value.casefold())
 
 
 @dataclass(frozen=True, slots=True)
@@ -2453,6 +2701,7 @@ class AskService:
     settings: Settings
     privacy_preflight: PrivacyPreflightService
     structured_retriever: DataDrivenEvidenceRetriever | None = None
+    graph_retriever: GraphAwareEvidenceRetriever | None = None
 
     def _generate_with_observability(
         self,
@@ -2658,11 +2907,23 @@ class AskService:
             search.candidates,
             include_snippets=True,
         )
+        graph_candidates = (
+            self.graph_retriever.retrieve(
+                tuple((*structured_candidates, *chunk_candidates))
+            )
+            if self.graph_retriever is not None
+            else ()
+        )
+        structural_candidates, chunk_candidates = _prepare_graph_aware_families(
+            structured_candidates,
+            graph_candidates,
+            chunk_candidates,
+        )
         candidate_selection_debug = None
         if self.settings.rag.context_selection_policy == "optimized_v1":
             candidates, candidate_selection_debug = (
                 _select_ask_candidates_relevance_first(
-                    structured_candidates,
+                    structural_candidates,
                     chunk_candidates,
                     limit=top_k,
                     dedupe_min_hash_prefix=self.context_builder.dedupe_min_hash_prefix,
@@ -2671,7 +2932,7 @@ class AskService:
             )
         else:
             candidates = _merge_ask_candidates(
-                structured_candidates,
+                structural_candidates,
                 chunk_candidates,
                 limit=top_k,
             )
@@ -2709,6 +2970,7 @@ class AskService:
             base_debug_payload["structured_candidates"] = len(
                 structured_candidates
             )
+            base_debug_payload["graph_candidates"] = len(graph_candidates)
             base_debug_payload["combined_candidates"] = len(candidates)
             base_debug_payload["input_budget"] = input_budget_debug
             base_debug_payload["candidate_selection"] = candidate_selection_debug
@@ -3436,6 +3698,82 @@ def _candidate_selection_decision(
             }
         )
     return decision
+
+
+def _prepare_graph_aware_families(
+    structured: tuple[RetrievalCandidate, ...],
+    graph: tuple[RetrievalCandidate, ...],
+    chunks: tuple[RetrievalCandidate, ...],
+) -> tuple[tuple[RetrievalCandidate, ...], tuple[RetrievalCandidate, ...]]:
+    """Deduplica antes de H3.1 conservando todas las trazas por chunk."""
+    structural: list[RetrievalCandidate] = []
+    structural_index: dict[str, int] = {}
+    for candidate in (*structured, *graph):
+        index = structural_index.get(candidate.chunk_id)
+        if index is None:
+            structural_index[candidate.chunk_id] = len(structural)
+            structural.append(candidate)
+        else:
+            structural[index] = _merge_same_chunk_candidate(
+                structural[index], candidate
+            )
+
+    remaining_chunks: list[RetrievalCandidate] = []
+    for candidate in chunks:
+        index = structural_index.get(candidate.chunk_id)
+        if index is None:
+            remaining_chunks.append(candidate)
+        else:
+            structural[index] = _merge_same_chunk_candidate(
+                structural[index], candidate
+            )
+    return tuple(structural), tuple(remaining_chunks)
+
+
+def _merge_same_chunk_candidate(
+    primary: RetrievalCandidate,
+    additional: RetrievalCandidate,
+) -> RetrievalCandidate:
+    """Fusiona procedencias de un mismo chunk sin perder evidencia materializada."""
+    source = {**dict(additional.source), **dict(primary.source)}
+    origins = []
+    seen_origins: set[str] = set()
+    for candidate in (primary, additional):
+        values = candidate.source.get("graph_origins")
+        if not isinstance(values, (tuple, list)):
+            continue
+        for value in values:
+            key = json.dumps(value, sort_keys=True, ensure_ascii=False)
+            if key not in seen_origins:
+                seen_origins.add(key)
+                origins.append(value)
+    if origins:
+        source["graph_origins"] = tuple(origins)
+    kinds = tuple(
+        dict.fromkeys(
+            str(candidate.source.get("evidence_kind") or "h3_chunk")
+            for candidate in (primary, additional)
+        )
+    )
+    source["candidate_origin_kinds"] = kinds
+    return RetrievalCandidate(
+        chunk_id=primary.chunk_id,
+        content_sha256=primary.content_sha256,
+        combined_score=max(primary.combined_score, additional.combined_score),
+        vector_score=_max_optional(primary.vector_score, additional.vector_score),
+        keyword_score=_max_optional(primary.keyword_score, additional.keyword_score),
+        metadata=(
+            primary.metadata
+            if primary.metadata.symbol_name is not None
+            else additional.metadata
+        ),
+        source=source,
+    )
+
+
+def _max_optional(left: float | None, right: float | None) -> float | None:
+    values = tuple(value for value in (left, right) if value is not None)
+    return max(values) if values else None
 
 
 def _merge_ask_candidates(

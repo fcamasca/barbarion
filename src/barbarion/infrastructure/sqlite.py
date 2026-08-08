@@ -1992,6 +1992,23 @@ class SQLiteRagRepository:
             )
         return tuple(enriched)
 
+    def active_chunk_exists(self, chunk_id: str, *, domain: str) -> bool:
+        """Comprueba que un chunk pertenece a un archivo vigente del dominio."""
+        with self._connect_readonly() as connection:
+            row = connection.execute(
+                """
+                SELECT 1
+                FROM chunks
+                JOIN documents ON documents.id = chunks.document_id
+                JOIN files ON files.id = documents.file_id
+                WHERE chunks.id = ?
+                  AND files.domain = ?
+                  AND files.status = 'processed'
+                """,
+                (chunk_id, domain),
+            ).fetchone()
+        return row is not None
+
     def record_rag_query(
         self,
         *,
@@ -2449,6 +2466,23 @@ class SQLiteReverseEngineeringRepository:
                 WHERE status = 'active'
                 ORDER BY technology, container_name, normalized_name, id
                 """
+            ).fetchall()
+        return tuple(_technical_symbol_from_row(row) for row in rows)
+
+    def active_symbols_for_chunk(self, chunk_id: str) -> tuple[TechnicalSymbol, ...]:
+        """Lista símbolos activos asociados directamente a un chunk vigente."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, file_id, document_id, chunk_id, original_name,
+                       normalized_name, symbol_type, technology, parent_symbol_id,
+                       container_name, signature, start_line, end_line,
+                       extraction_method, confidence, status, metadata_json
+                FROM symbols
+                WHERE status = 'active' AND chunk_id = ?
+                ORDER BY technology, container_name, normalized_name, id
+                """,
+                (chunk_id,),
             ).fetchall()
         return tuple(_technical_symbol_from_row(row) for row in rows)
 

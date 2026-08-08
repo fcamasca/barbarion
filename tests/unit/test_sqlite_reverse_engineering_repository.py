@@ -133,6 +133,8 @@ def test_h4_repository_inserts_and_reads_run_symbols_references_and_relations(
     assert repository.get_symbol(symbol_id) == symbol
     assert repository.symbol_domain(symbol_id) == "default"
     assert repository.symbol_domain("0" * 64) is None
+    assert repository.active_symbols_for_chunk("chunk-1") == (symbol,)
+    assert repository.active_symbols_for_chunk("missing") == ()
     assert repository.get_reference(reference_id) == reference
     assert repository.get_relation(relation_id) == relation
     assert repository.active_relations_for_symbol(

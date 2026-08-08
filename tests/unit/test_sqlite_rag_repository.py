@@ -64,6 +64,23 @@ def test_symbol_occurrences_table_is_reserved_but_empty(tmp_path: Path) -> None:
     assert count == (0,)
 
 
+def test_active_chunk_exists_requires_processed_file_and_domain(tmp_path: Path) -> None:
+    path = tmp_path / "barbarion.db"
+    initialize_database(path)
+    seed_chunks(path)
+    repository = SQLiteRagRepository(path)
+
+    assert repository.active_chunk_exists("chunk-1", domain="default") is True
+    assert repository.active_chunk_exists("chunk-1", domain="other") is False
+    assert repository.active_chunk_exists("missing", domain="default") is False
+
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE files SET status = 'deleted' WHERE id = 1")
+        connection.commit()
+
+    assert repository.active_chunk_exists("chunk-1", domain="default") is False
+
+
 def test_embedding_error_details_are_read_from_sqlite(tmp_path: Path) -> None:
     path = tmp_path / "barbarion.db"
     initialize_database(path)

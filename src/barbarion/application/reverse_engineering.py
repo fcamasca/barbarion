@@ -751,7 +751,7 @@ def query_graph_relations(
         unsupported = relation_types - GRAPH_RELATION_TYPES
         if unsupported:
             raise ValueError(
-                "relation_types contiene tipos no soportados por H3.3: "
+                "relation_types contiene tipos no soportados por el modo de relaciones: "
                 + ", ".join(sorted(unsupported))
             )
     if domain is not None and (not isinstance(domain, str) or not domain.strip()):

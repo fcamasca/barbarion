@@ -26,6 +26,9 @@
     "optimized_candidate_selection": [
       {
         "action": "selected",
+        "candidate_origin_kinds": [
+          "h3_chunk"
+        ],
         "chunk_id": "zeta-d1",
         "combined_score": 1.0,
         "evidence_kind": null,
@@ -35,10 +38,14 @@
         "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 0,
+        "selection_global_rank": 0,
         "selection_relative_score": 1.0
       },
       {
         "action": "selected",
+        "candidate_origin_kinds": [
+          "h3_chunk"
+        ],
         "chunk_id": "zeta-d2",
         "combined_score": 0.92,
         "evidence_kind": null,
@@ -48,10 +55,14 @@
         "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 2,
+        "selection_global_rank": 2,
         "selection_relative_score": 0.6
       },
       {
         "action": "selected",
+        "candidate_origin_kinds": [
+          "h3_chunk"
+        ],
         "chunk_id": "zeta-d3",
         "combined_score": 0.84,
         "evidence_kind": null,
@@ -61,10 +72,14 @@
         "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 3,
+        "selection_global_rank": 3,
         "selection_relative_score": 0.4
       },
       {
         "action": "selected",
+        "candidate_origin_kinds": [
+          "h3_chunk"
+        ],
         "chunk_id": "zeta-d4",
         "combined_score": 0.76,
         "evidence_kind": null,
@@ -74,10 +89,14 @@
         "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 4,
+        "selection_global_rank": 4,
         "selection_relative_score": 0.19999999999999996
       },
       {
         "action": "omitted",
+        "candidate_origin_kinds": [
+          "h3_chunk"
+        ],
         "chunk_id": "zeta-d5",
         "combined_score": 0.6799999999999999,
         "evidence_kind": null,
@@ -87,10 +106,14 @@
         "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 5,
+        "selection_global_rank": 5,
         "selection_relative_score": 0.0
       },
       {
         "action": "selected",
+        "candidate_origin_kinds": [
+          "h3_chunk"
+        ],
         "chunk_id": "zeta-shape",
         "combined_score": 0.95,
         "evidence_kind": null,
@@ -100,6 +123,7 @@
         "selection_exact_identifier_match": false,
         "selection_family": "chunks",
         "selection_family_rank": 1,
+        "selection_global_rank": 1,
         "selection_relative_score": 0.8
       }
     ],

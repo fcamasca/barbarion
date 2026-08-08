@@ -333,7 +333,7 @@ class ReviewIssue:
 
     Review es una etapa interna distinta de la validacion de archivos
     renderizados. Este modelo solo representa el hallazgo; las reglas concretas
-    de review pertenecen a H5-T06.
+    de review pertenecen a la etapa de revisión.
     """
 
     severity: ValidationSeverity
@@ -359,7 +359,7 @@ def spec_draft_id(request: SpecRequest, intent: RequirementIntent) -> str:
     """Calcula una identidad estable para un draft H5.
 
     El ID depende de la solicitud y de la interpretacion inicial, no de salidas
-    posteriores del LLM. Esto permite comparar corridas deterministas de H5-T01.
+    posteriores del LLM. Esto permite comparar corridas deterministas.
     """
 
     return _sha256_payload(

@@ -1,4 +1,4 @@
-"""Composicion local del destino de inferencia para H3.2."""
+"""Composición local del destino de inferencia y sus garantías de privacidad."""
 
 from __future__ import annotations
 

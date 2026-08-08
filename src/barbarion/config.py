@@ -926,7 +926,7 @@ def _build_rag_settings(value: object) -> RagSettings:
             "Las claves 'rag.context_token_budget' y "
             "'rag.input_token_budget_est' no pueden declararse juntas. "
             "Use context_token_budget para baseline_v1 o input_token_budget_est "
-            "para el contrato de input completo H3.1."
+            "para el contrato de input completo."
         )
     input_token_budget_est = values["input_token_budget_est"]
     context_selection_policy = _validate_choice(

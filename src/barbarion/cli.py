@@ -2401,10 +2401,10 @@ def _render_prompt_composition_metrics(value: object) -> None:
 
 
 def _render_h31_observability(value: object) -> None:
-    """Renderiza el resumen H3.1 sin revelar texto controlado o evidencia."""
+    """Renderiza el resumen de observabilidad sin revelar texto controlado o evidencia."""
     if not isinstance(value, Mapping):
         return
-    print("=== H3.1 OBSERVABILITY ===", file=sys.stderr)
+    print("=== OBSERVABILITY ===", file=sys.stderr)
     for key in ("schema_version", "selection_policy", "estimator_id"):
         print(f"{key}={value.get(key)}", file=sys.stderr)
     context = value.get("context")
@@ -2502,7 +2502,7 @@ def _render_h31_observability(value: object) -> None:
 
 
 def _render_h33_graph_observability(debug: object) -> None:
-    """Renderiza métricas H3.3 permitidas sin exponer evidencia ni contenido."""
+    """Renderiza métricas de recuperación permitidas sin exponer evidencia ni contenido."""
     if not isinstance(debug, Mapping):
         return
     safe_keys = (
@@ -2532,7 +2532,7 @@ def _render_h33_graph_observability(debug: object) -> None:
     present = tuple(key for key in safe_keys if key in debug)
     if not present:
         return
-    print("=== H3.3 GRAPH-AWARE RETRIEVAL ===", file=sys.stderr)
+    print("=== GRAPH-AWARE RETRIEVAL ===", file=sys.stderr)
     if debug.get("graph_enabled") is False:
         print("graph_status=disabled", file=sys.stderr)
     else:
@@ -2549,7 +2549,7 @@ def _render_h33_graph_observability(debug: object) -> None:
 
 
 def _format_h33_metric(value: object) -> str:
-    """Normaliza escalares seguros del bloque H3.3."""
+    """Normaliza escalares seguros del bloque de recuperación."""
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -2558,7 +2558,7 @@ def _format_h33_metric(value: object) -> str:
 
 
 def _h33_h31_selection_metrics(debug: Mapping[str, object]) -> dict[str, object]:
-    """Agrega decisiones H3.1 de candidatos graph-aware sin revelar IDs."""
+    """Agrega decisiones de candidatos graph-aware sin revelar IDs."""
     decisions = debug.get("candidate_selection")
     if not isinstance(decisions, (tuple, list)):
         observability = debug.get("observability")

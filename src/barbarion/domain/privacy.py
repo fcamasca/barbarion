@@ -1,4 +1,4 @@
-"""Value objects puros para Privacy Preflight H3.2."""
+"""Value objects puros para la evaluación previa de privacidad."""
 
 from __future__ import annotations
 

@@ -29,23 +29,33 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "alpha-main",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 41,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "alpha-distractor",
           "citation_status": "not_cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 44,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 1,
@@ -168,23 +178,33 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "beta-distractor",
           "citation_status": "not_cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 40,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "beta-state",
           "citation_status": "cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 41,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 1,
@@ -307,33 +327,48 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "gamma-start",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 38,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "gamma-distractor",
           "citation_status": "not_cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 41,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "gamma-end",
           "citation_status": "cited",
           "combined_score": 0.84,
           "contribution_tokens_est_local": 39,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 2,
@@ -482,23 +517,33 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "delta-window-a",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 43,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "delta-window-b",
           "citation_status": "cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 44,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 2,
@@ -635,23 +680,33 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "epsilon-original",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 43,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "omitted",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "epsilon-copy",
           "citation_status": "not_selected",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 0,
+          "evidence_kind": null,
           "reasons": [
             "duplicate_content"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 1,
@@ -759,53 +814,78 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "zeta-d1",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 36,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "zeta-d2",
           "citation_status": "not_cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 35,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "zeta-d3",
           "citation_status": "not_cited",
           "combined_score": 0.84,
           "contribution_tokens_est_local": 35,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "zeta-d4",
           "citation_status": "not_cited",
           "combined_score": 0.76,
           "contribution_tokens_est_local": 35,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "zeta-d5",
           "citation_status": "not_cited",
           "combined_score": 0.6799999999999999,
           "contribution_tokens_est_local": 34,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 1,
@@ -977,23 +1057,33 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "eta-a",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 36,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "eta-b",
           "citation_status": "cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 35,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 2,
@@ -1156,23 +1246,33 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "structured_symbol"
+          ],
           "chunk_id": "iota-structured",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 50,
+          "evidence_kind": "structured_symbol",
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         },
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "iota-code",
           "citation_status": "not_cited",
           "combined_score": 0.92,
           "contribution_tokens_est_local": 42,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 1,
@@ -1295,13 +1395,18 @@
       "evidence_decisions": [
         {
           "action": "selected",
+          "candidate_origin_kinds": [
+            "h3_chunk"
+          ],
           "chunk_id": "kappa-state",
           "citation_status": "cited",
           "combined_score": 1.0,
           "contribution_tokens_est_local": 36,
+          "evidence_kind": null,
           "reasons": [
             "selected"
-          ]
+          ],
+          "selection_global_rank": null
         }
       ],
       "expected_source_count": 1,

@@ -157,7 +157,7 @@ class PrivacySnapshotCache:
             if expires_at <= now:
                 raise PrivacyRefreshError("El snapshot ya esta expirado.")
             _validate_verified_clock(payload, fetched_at=now)
-            # Valida el contrato T05 antes de tocar la cache vigente.
+            # Valida el contrato de cache antes de tocar la cache vigente.
             AiProviderTrustRegistrySource(payload, expires_at=expires_at)
             envelope = _build_envelope(
                 payload,

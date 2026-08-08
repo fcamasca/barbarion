@@ -1269,7 +1269,7 @@ class GraphEvidenceResolver:
 
 @dataclass(frozen=True, slots=True)
 class GraphAwareRetrievalResult:
-    """Resultado citable y métricas seguras de H3.3."""
+    """Resultado citable y métricas seguras de recuperación."""
 
     candidates: tuple[RetrievalCandidate, ...]
     metrics: Mapping[str, object]
@@ -1294,7 +1294,7 @@ def _disabled_graph_metrics() -> dict[str, object]:
 
 @dataclass(frozen=True, slots=True)
 class GraphAwareEvidenceRetriever:
-    """Orquesta seeds, expansión y resolución citable antes de H3.1."""
+    """Orquesta seeds, expansión y resolución citable."""
 
     expansion_service: GraphExpansionService
     resolver: GraphEvidenceResolver
@@ -3939,7 +3939,7 @@ def _reconcile_graph_fallback_observability(
     dedupe_min_hash_prefix: int,
     debug: bool,
 ) -> ContextBuildResult:
-    """Reconcilia diagnostico del fallback contra el universo H3.1 original."""
+    """Reconcilia el diagnóstico del fallback contra el universo original."""
     selected_chunk_ids = {
         source.candidate.chunk_id for source in alternative_context.sources
     }
@@ -4015,7 +4015,7 @@ def _prepare_graph_aware_families(
     graph: tuple[RetrievalCandidate, ...],
     chunks: tuple[RetrievalCandidate, ...],
 ) -> tuple[tuple[RetrievalCandidate, ...], tuple[RetrievalCandidate, ...]]:
-    """Deduplica antes de H3.1 conservando todas las trazas por chunk."""
+    """Deduplica conservando todas las trazas por chunk."""
     structural: list[RetrievalCandidate] = []
     structural_index: dict[str, int] = {}
     for candidate in (*structured, *graph):

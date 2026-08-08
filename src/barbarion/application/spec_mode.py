@@ -104,7 +104,7 @@ class RequirementAnalyzer:
     La interpretacion inicial es conservadora y determinista: conserva el texto
     original, deriva terminos de busqueda y senala ambiguedades. La sintesis
     asistida queda fuera de esta clase para no introducir dependencia de LLM en
-    H5-T02.
+    el contrato de componentes.
     """
 
     def analyze(self, request: SpecRequest | str) -> RequirementIntent:
@@ -322,8 +322,8 @@ class SpecReviewResult:
 class SpecReviewer:
     """Review automatico conservador sobre `SpecDraft`.
 
-    T06 revisa el modelo antes del render. La validacion estructural de archivos
-    Markdown completos queda para H5-T07.
+    La revisión del modelo ocurre antes del render. La validación estructural de
+    archivos Markdown completos queda para una etapa posterior.
     """
 
     def review(self, draft: SpecDraft) -> SpecReviewResult:

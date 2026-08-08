@@ -1268,6 +1268,31 @@ class GraphEvidenceResolver:
 
 
 @dataclass(frozen=True, slots=True)
+class GraphAwareRetrievalResult:
+    """Resultado citable y métricas seguras de H3.3."""
+
+    candidates: tuple[RetrievalCandidate, ...]
+    metrics: Mapping[str, object]
+
+
+def _disabled_graph_metrics() -> dict[str, object]:
+    return {
+        "graph_enabled": False,
+        "graph_seeds": 0,
+        "graph_relations_seen": 0,
+        "graph_traces": 0,
+        "graph_candidates": 0,
+        "graph_accepted": 0,
+        "graph_duplicates": 0,
+        "graph_cycles": 0,
+        "graph_limits": 0,
+        "graph_unresolved_sources": 0,
+        "graph_max_depth_reached": 0,
+        "graph_ms": 0,
+    }
+
+
+@dataclass(frozen=True, slots=True)
 class GraphAwareEvidenceRetriever:
     """Orquesta seeds, expansión y resolución citable antes de H3.1."""
 
@@ -1281,7 +1306,8 @@ class GraphAwareEvidenceRetriever:
     def retrieve(
         self,
         candidates: tuple[RetrievalCandidate, ...],
-    ) -> tuple[RetrievalCandidate, ...]:
+    ) -> GraphAwareRetrievalResult:
+        started = time.monotonic()
         seeds = _graph_seeds_from_candidates(
             candidates,
             repository=self.expansion_service.repository,
@@ -1293,7 +1319,37 @@ class GraphAwareEvidenceRetriever:
             direction=self.direction,
             min_confidence=self.min_confidence,
         )
-        return self.resolver.resolve(traces, seeds=seeds)
+        resolved = self.resolver.resolve(traces, seeds=seeds)
+        statuses = {
+            status: sum(1 for trace in traces if trace.status == status)
+            for status in GraphCandidateStatus
+        }
+        relation_ids = {
+            relation_id
+            for trace in traces
+            for relation_id in trace.origin.relation_ids
+        }
+        return GraphAwareRetrievalResult(
+            candidates=resolved,
+            metrics={
+                "graph_enabled": True,
+                "graph_seeds": len(seeds),
+                "graph_relations_seen": len(relation_ids),
+                "graph_traces": len(traces),
+                "graph_candidates": len(resolved),
+                "graph_accepted": statuses[GraphCandidateStatus.ACCEPTED],
+                "graph_duplicates": statuses[GraphCandidateStatus.DUPLICATE],
+                "graph_cycles": statuses[GraphCandidateStatus.CYCLE],
+                "graph_limits": statuses[GraphCandidateStatus.LIMIT],
+                "graph_unresolved_sources": statuses[
+                    GraphCandidateStatus.UNRESOLVED_SOURCE
+                ],
+                "graph_max_depth_reached": max(
+                    (trace.discovered_at_depth for trace in traces), default=0
+                ),
+                "graph_ms": _duration_ms(started),
+            },
+        )
 
 
 def _graph_seeds_from_candidates(
@@ -2907,13 +2963,14 @@ class AskService:
             search.candidates,
             include_snippets=True,
         )
-        graph_candidates = (
+        graph_result = (
             self.graph_retriever.retrieve(
                 tuple((*structured_candidates, *chunk_candidates))
             )
             if self.graph_retriever is not None
-            else ()
+            else None
         )
+        graph_candidates = graph_result.candidates if graph_result is not None else ()
         structural_candidates, chunk_candidates = _prepare_graph_aware_families(
             structured_candidates,
             graph_candidates,
@@ -2971,6 +3028,11 @@ class AskService:
                 structured_candidates
             )
             base_debug_payload["graph_candidates"] = len(graph_candidates)
+            base_debug_payload.update(
+                dict(graph_result.metrics)
+                if graph_result is not None
+                else _disabled_graph_metrics()
+            )
             base_debug_payload["combined_candidates"] = len(candidates)
             base_debug_payload["input_budget"] = input_budget_debug
             base_debug_payload["candidate_selection"] = candidate_selection_debug

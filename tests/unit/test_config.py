@@ -233,6 +233,64 @@ def test_optimized_selection_without_input_budget_is_rejected(tmp_path: Path) ->
         load_settings(source, environ={}, cwd=tmp_path)
 
 
+def test_graph_aware_is_disabled_without_changing_legacy_defaults(tmp_path: Path) -> None:
+    settings = load_settings(environ={}, cwd=tmp_path)
+
+    assert settings.rag.graph_aware_enabled is False
+    assert settings.rag.graph_max_depth is None
+    assert settings.rag.graph_relation_types == ()
+
+
+def test_graph_aware_opt_in_requires_and_loads_explicit_policy(tmp_path: Path) -> None:
+    source = write_config(
+        tmp_path / "graph.toml",
+        "\n".join(
+            (
+                "[rag]",
+                "graph_aware_enabled = true",
+                "graph_max_depth = 2",
+                "graph_max_seeds = 4",
+                "graph_max_neighbors_per_seed = 12",
+                "graph_max_candidates = 20",
+                'graph_relation_types = ["calls", "uses", "references"]',
+                'graph_direction = "both"',
+                'graph_min_confidence = "high"',
+            )
+        ),
+    )
+
+    settings = load_settings(source, environ={}, cwd=tmp_path)
+
+    assert settings.rag.graph_aware_enabled is True
+    assert settings.rag.graph_max_depth == 2
+    assert settings.rag.graph_relation_types == ("calls", "uses", "references")
+    assert settings.rag.graph_direction == "both"
+    assert settings.rag.graph_min_confidence == "high"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "graph_aware_enabled = true\n",
+        (
+            "graph_aware_enabled = true\n"
+            "graph_max_depth = 1\n"
+            "graph_max_seeds = 1\n"
+            "graph_max_neighbors_per_seed = 1\n"
+            "graph_max_candidates = 1\n"
+            'graph_relation_types = ["unknown"]\n'
+        ),
+    ],
+)
+def test_graph_aware_rejects_incomplete_or_unknown_policy(
+    tmp_path: Path, body: str
+) -> None:
+    source = write_config(tmp_path / "invalid-graph.toml", "[rag]\n" + body)
+
+    with pytest.raises(ConfigError, match="graph_"):
+        load_settings(source, environ={}, cwd=tmp_path)
+
+
 @pytest.mark.parametrize(
     ("config_path", "environ", "origin"),
     [

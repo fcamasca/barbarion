@@ -60,6 +60,9 @@ from barbarion.application.rag import (
     CitationValidator,
     ContextBuilder,
     DataDrivenEvidenceRetriever,
+    GraphAwareEvidenceRetriever,
+    GraphEvidenceResolver,
+    GraphExpansionService,
     IndexService,
     PromptBuilder,
     SearchService,
@@ -111,6 +114,7 @@ from barbarion.domain.rag import (
     EmbeddingRunStatus,
     IndexRunSummary,
     IndexScope,
+    GraphExpansionLimits,
     LlmProviderError,
     RetrievalFilter,
     RetrievalMode,
@@ -2129,6 +2133,29 @@ def _build_llm_provider(
 
 def _build_ask_service(settings: Settings) -> AskService:
     search_service = _build_search_service(settings)
+    reverse_repository = SQLiteReverseEngineeringRepository(settings.database_path)
+    graph_retriever = None
+    if settings.rag.graph_aware_enabled:
+        graph_retriever = GraphAwareEvidenceRetriever(
+            expansion_service=GraphExpansionService(
+                repository=reverse_repository,
+                domain=settings.domain,
+            ),
+            resolver=GraphEvidenceResolver(
+                repository=reverse_repository,
+                rag_repository=search_service.repository,
+                domain=settings.domain,
+            ),
+            limits=GraphExpansionLimits(
+                max_depth=settings.rag.graph_max_depth,
+                max_seeds=settings.rag.graph_max_seeds,
+                max_neighbors_per_seed=settings.rag.graph_max_neighbors_per_seed,
+                max_candidates=settings.rag.graph_max_candidates,
+            ),
+            relation_types=frozenset(settings.rag.graph_relation_types),
+            direction=DependencyDirection(settings.rag.graph_direction),
+            min_confidence=Confidence(settings.rag.graph_min_confidence),
+        )
     return AskService(
         search_service=search_service,
         context_builder=ContextBuilder(
@@ -2144,10 +2171,11 @@ def _build_ask_service(settings: Settings) -> AskService:
         settings=settings,
         privacy_preflight=_build_privacy_preflight(settings),
         structured_retriever=DataDrivenEvidenceRetriever(
-            repository=SQLiteReverseEngineeringRepository(settings.database_path),
+            repository=reverse_repository,
             rag_repository=search_service.repository,
             domain=settings.domain,
         ),
+        graph_retriever=graph_retriever,
     )
 
 

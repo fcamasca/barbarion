@@ -95,6 +95,14 @@ _DEFAULT_RAG: dict[str, object] = {
     "max_chunk_tokens": 1200,
     "dedupe_min_hash_prefix": 16,
     "include_snippets": True,
+    "graph_aware_enabled": False,
+    "graph_max_depth": None,
+    "graph_max_seeds": None,
+    "graph_max_neighbors_per_seed": None,
+    "graph_max_candidates": None,
+    "graph_relation_types": (),
+    "graph_direction": "outgoing",
+    "graph_min_confidence": "medium",
 }
 _DEFAULT_LLM: dict[str, object] = {
     "provider": "ollama",
@@ -180,6 +188,9 @@ _DATA_DRIVEN_TARGET_TECHNOLOGIES = frozenset(
 _DATA_DRIVEN_REFERENCE_RELATION_TYPES = frozenset(
     {"references", "parent_of", "precedes", "uses", "calls"}
 )
+_GRAPH_RELATION_TYPES = frozenset(
+    {"calls", "uses", "opens", "references", "parent_of", "precedes"}
+)
 
 
 class ConfigError(ValueError):
@@ -243,6 +254,14 @@ class RagSettings:
     include_snippets: bool
     input_token_budget_est: int | None = None
     context_selection_policy: str = "baseline_v1"
+    graph_aware_enabled: bool = False
+    graph_max_depth: int | None = None
+    graph_max_seeds: int | None = None
+    graph_max_neighbors_per_seed: int | None = None
+    graph_max_candidates: int | None = None
+    graph_relation_types: tuple[str, ...] = ()
+    graph_direction: str = "outgoing"
+    graph_min_confidence: str = "medium"
 
 
 @dataclass(frozen=True, slots=True)
@@ -491,6 +510,33 @@ def settings_display_items(settings: Settings) -> tuple[tuple[str, str], ...]:
         ("rag.max_chunk_tokens", str(settings.rag.max_chunk_tokens)),
         ("rag.dedupe_min_hash_prefix", str(settings.rag.dedupe_min_hash_prefix)),
         ("rag.include_snippets", str(settings.rag.include_snippets).lower()),
+        ("rag.graph_aware_enabled", str(settings.rag.graph_aware_enabled).lower()),
+        (
+            "rag.graph_max_depth",
+            "no configurado" if settings.rag.graph_max_depth is None else str(settings.rag.graph_max_depth),
+        ),
+        (
+            "rag.graph_max_seeds",
+            "no configurado" if settings.rag.graph_max_seeds is None else str(settings.rag.graph_max_seeds),
+        ),
+        (
+            "rag.graph_max_neighbors_per_seed",
+            "no configurado"
+            if settings.rag.graph_max_neighbors_per_seed is None
+            else str(settings.rag.graph_max_neighbors_per_seed),
+        ),
+        (
+            "rag.graph_max_candidates",
+            "no configurado"
+            if settings.rag.graph_max_candidates is None
+            else str(settings.rag.graph_max_candidates),
+        ),
+        (
+            "rag.graph_relation_types",
+            ",".join(settings.rag.graph_relation_types) or "no configurado",
+        ),
+        ("rag.graph_direction", settings.rag.graph_direction),
+        ("rag.graph_min_confidence", settings.rag.graph_min_confidence),
         ("llm.provider", settings.llm.provider),
         ("llm.model", settings.llm.model),
         (
@@ -893,6 +939,62 @@ def _build_rag_settings(value: object) -> RagSettings:
             "'rag.context_selection_policy = optimized_v1' requiere "
             "'rag.input_token_budget_est'."
         )
+    graph_aware_enabled = _validate_bool(
+        values["graph_aware_enabled"], "rag.graph_aware_enabled"
+    )
+    graph_limits: dict[str, int | None] = {}
+    for key, maximum in (
+        ("graph_max_depth", 10),
+        ("graph_max_seeds", 100),
+        ("graph_max_neighbors_per_seed", 1000),
+        ("graph_max_candidates", 5000),
+    ):
+        raw_limit = values[key]
+        graph_limits[key] = (
+            None
+            if raw_limit is None
+            else _validate_int_range(
+                raw_limit,
+                f"rag.{key}",
+                minimum=1,
+                maximum=maximum,
+            )
+        )
+    graph_relation_types = _validate_string_list(
+        values["graph_relation_types"], "rag.graph_relation_types"
+    )
+    unsupported_graph_types = set(graph_relation_types) - _GRAPH_RELATION_TYPES
+    if unsupported_graph_types:
+        raise ConfigError(
+            "'rag.graph_relation_types' contiene tipos no soportados: "
+            + ", ".join(sorted(unsupported_graph_types))
+        )
+    if len(set(graph_relation_types)) != len(graph_relation_types):
+        raise ConfigError("'rag.graph_relation_types' no admite duplicados.")
+    graph_direction = _validate_choice(
+        values["graph_direction"],
+        "rag.graph_direction",
+        {"outgoing", "incoming", "both"},
+    )
+    graph_min_confidence = _validate_choice(
+        values["graph_min_confidence"],
+        "rag.graph_min_confidence",
+        {"low", "medium", "high"},
+    )
+    if graph_aware_enabled:
+        missing = tuple(
+            key
+            for key, limit in graph_limits.items()
+            if limit is None
+        )
+        if missing or not graph_relation_types:
+            required = list(missing)
+            if not graph_relation_types:
+                required.append("graph_relation_types")
+            raise ConfigError(
+                "'rag.graph_aware_enabled = true' requiere declarar: "
+                + ", ".join(f"rag.{key}" for key in required)
+            )
     return RagSettings(
         context_token_budget=_validate_int_range(
             values["context_token_budget"],
@@ -927,6 +1029,14 @@ def _build_rag_settings(value: object) -> RagSettings:
             )
         ),
         context_selection_policy=context_selection_policy,
+        graph_aware_enabled=graph_aware_enabled,
+        graph_max_depth=graph_limits["graph_max_depth"],
+        graph_max_seeds=graph_limits["graph_max_seeds"],
+        graph_max_neighbors_per_seed=graph_limits["graph_max_neighbors_per_seed"],
+        graph_max_candidates=graph_limits["graph_max_candidates"],
+        graph_relation_types=graph_relation_types,
+        graph_direction=graph_direction,
+        graph_min_confidence=graph_min_confidence,
     )
 
 

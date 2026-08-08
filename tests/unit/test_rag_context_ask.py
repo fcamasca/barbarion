@@ -12,6 +12,7 @@ from barbarion.application.rag import (
     AskService,
     CitationValidator,
     ContextBuilder,
+    GraphAwareRetrievalResult,
     PromptBuilder,
     _build_context_for_input_budget,
     _build_repair_context_for_input_budget,
@@ -623,6 +624,121 @@ def test_optimized_policy_preserves_no_llm_without_provider_call(tmp_path) -> No
     assert result.no_llm is True
     assert fake_llm.prompts == []
     assert result.context.debug["selection_policy"] == "optimized_v1"
+
+
+def test_graph_aware_debug_and_no_llm_do_not_call_provider(tmp_path) -> None:
+    service, fake_llm = ask_service(tmp_path, "no debe generarse [F1].")
+    graph = _FakeGraphRetriever()
+    service = replace(service, graph_retriever=graph)
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        no_llm=True,
+        debug=True,
+    )
+
+    assert result.no_llm is True
+    assert fake_llm.prompts == []
+    assert graph.calls == 1
+    assert result.debug["graph_enabled"] is True
+    assert result.debug["graph_seeds"] == 1
+    assert result.debug["graph_candidates"] == 1
+
+
+def test_graph_disabled_keeps_candidates_and_reports_zero_metrics(tmp_path) -> None:
+    service, _fake_llm = ask_service(tmp_path, "unused [F1].")
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        no_llm=True,
+        debug=True,
+    )
+
+    assert service.graph_retriever is None
+    assert result.debug["graph_enabled"] is False
+    assert result.debug["graph_candidates"] == 0
+    assert result.debug["graph_ms"] == 0
+
+
+def test_graph_debug_does_not_add_sensitive_rag_query_columns(tmp_path) -> None:
+    question = "pregunta privada order_total"
+    service, _fake_llm = ask_service(tmp_path, "unused [F1].")
+    service = replace(service, graph_retriever=_FakeGraphRetriever())
+
+    service.ask(
+        question,
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        no_llm=True,
+        debug=True,
+    )
+
+    with sqlite3.connect(service.search_service.repository.database_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(rag_queries)")
+        }
+        stored = connection.execute(
+            "SELECT query_text_sha256 FROM rag_queries ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    assert not {
+        "question",
+        "query_text",
+        "prompt",
+        "response",
+        "answer",
+        "content",
+    } & columns
+    assert stored is not None
+    assert stored[0] != question
+
+
+class _FakeGraphRetriever:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def retrieve(self, candidates):
+        self.calls += 1
+        candidate = replace(
+            candidates[0],
+            source={
+                **dict(candidates[0].source),
+                "evidence_kind": "graph_expansion",
+                "graph_origins": (
+                    {
+                        "seed_ids": ("seed-safe",),
+                        "relation_ids": ("relation-safe",),
+                        "depth": 1,
+                    },
+                ),
+            },
+        )
+        return GraphAwareRetrievalResult(
+            candidates=(candidate,),
+            metrics={
+                "graph_enabled": True,
+                "graph_seeds": 1,
+                "graph_relations_seen": 1,
+                "graph_traces": 1,
+                "graph_candidates": 1,
+                "graph_accepted": 1,
+                "graph_duplicates": 0,
+                "graph_cycles": 0,
+                "graph_limits": 0,
+                "graph_unresolved_sources": 0,
+                "graph_max_depth_reached": 1,
+                "graph_ms": 1,
+            },
+        )
 
 
 def test_input_budget_applies_to_complete_generation_prompt(tmp_path) -> None:

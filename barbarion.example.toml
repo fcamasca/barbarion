@@ -60,6 +60,16 @@ context_selection_policy = "baseline_v1"
 max_chunk_tokens = 1200
 dedupe_min_hash_prefix = 16
 include_snippets = true
+# H3.3 es opt-in. Al activarlo, declara todos los limites y tipos tras medir
+# una baseline reproducible; no existen defaults numericos implicitos.
+graph_aware_enabled = false
+# graph_max_depth = <definir por baseline>
+# graph_max_seeds = <definir por baseline>
+# graph_max_neighbors_per_seed = <definir por baseline>
+# graph_max_candidates = <definir por baseline>
+# graph_relation_types = ["calls", "uses", "references"]
+# graph_direction = "outgoing" # outgoing, incoming, both
+# graph_min_confidence = "medium" # low, medium, high
 
 [llm]
 # Backend generativo predeterminado y local. Valores admitidos: ollama, anthropic.

@@ -1411,7 +1411,7 @@ def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
     assert "embedding_provider=ollama" in captured.err
     assert "mode=hybrid" in captured.err
     assert "retrieved_chunks=3" in captured.err
-    assert "=== H3.1 OBSERVABILITY ===" in captured.err
+    assert "=== OBSERVABILITY ===" in captured.err
     assert "selection_policy=optimized_v1" in captured.err
     assert "estimator_id=chars4_v1" in captured.err
     assert "candidate_decision" not in captured.err
@@ -1528,7 +1528,7 @@ def test_ask_debug_renders_safe_h33_metrics_between_h31_and_privacy(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    header = "=== H3.3 GRAPH-AWARE RETRIEVAL ==="
+    header = "=== GRAPH-AWARE RETRIEVAL ==="
     assert header in captured.err
     assert "graph_status=enabled" in captured.err
     assert "structured_candidates=2" in captured.err
@@ -1552,7 +1552,7 @@ def test_ask_debug_renders_safe_h33_metrics_between_h31_and_privacy(
     assert "graph_omitted_by_budget_ranks=[9]" in captured.err
     assert "graph_selected_in_context_tokens_est_local=50" in captured.err
     assert "graph_omitted_by_budget_tokens_est_local=null" in captured.err
-    assert captured.err.index("=== H3.1 OBSERVABILITY ===") < captured.err.index(header)
+    assert captured.err.index("=== OBSERVABILITY ===") < captured.err.index(header)
     assert captured.err.index(header) < captured.err.index("=== PRIVACY PREFLIGHT ===")
     assert "SECRET_SYMBOL" not in captured.err
     assert "secret/path.sql" not in captured.err
@@ -1592,7 +1592,7 @@ def test_ask_debug_renders_h33_disabled_compactly(
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "=== H3.3 GRAPH-AWARE RETRIEVAL ===" in captured.err
+    assert "=== GRAPH-AWARE RETRIEVAL ===" in captured.err
     assert "graph_status=disabled" in captured.err
     assert "graph_enabled=false" in captured.err
     assert "graph_candidates=0" in captured.err

@@ -298,6 +298,7 @@ def resolve_inference_target(settings: Settings) -> InferenceTarget:
             execution=InferenceExecution.REMOTE,
             provider="anthropic",
             platform="direct_api",
+            offering="anthropic-api",
             model=settings.llm.model,
         )
     if provider != "ollama":

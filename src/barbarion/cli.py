@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from barbarion import __version__
@@ -148,7 +148,8 @@ from barbarion.infrastructure.parsers import (
     TextParser,
 )
 from barbarion.infrastructure.parsers.registry import ParserRegistry
-from barbarion.infrastructure.privacy_cache import PrivacySnapshotCache
+from barbarion.infrastructure.privacy_cache import PrivacyRefreshError, PrivacySnapshotCache
+from barbarion.infrastructure.privacy_registry_http import HttpPrivacyRegistryFetcher
 from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
@@ -1568,6 +1569,25 @@ def _run_embeddings(args: argparse.Namespace) -> int:
             f"  indexed={item.indexed} stale={item.stale} "
             f"deleted={item.deleted} error={item.error}"
         )
+    return 0
+
+
+def _run_privacy_refresh(args: argparse.Namespace) -> int:
+    """Descarga y persiste metadata publica del registry de privacidad."""
+    settings = load_settings(args.config)
+    cache = PrivacySnapshotCache(settings.data_dir)
+    try:
+        result = cache.refresh(
+            HttpPrivacyRegistryFetcher(),
+            now=datetime.now(timezone.utc),
+            ttl=timedelta(hours=24),
+        )
+    except PrivacyRefreshError as error:
+        print(f"Privacy refresh: ERROR ({error})", file=sys.stderr)
+        return 1
+    print(f"Privacy snapshot actualizada: {result.path}")
+    print(f"source_version: {result.source_version}")
+    print(f"expires_at: {result.expires_at.isoformat()}")
     return 0
 
 
@@ -3775,6 +3795,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_help_option(show_parser)
     show_parser.set_defaults(handler=_show_config)
+
+    privacy_parser = commands.add_parser(
+        "privacy",
+        help="actualiza metadata publica de privacidad",
+        description="Gestiona la snapshot local de privacidad.",
+        add_help=False,
+    )
+    _add_help_option(privacy_parser)
+    privacy_commands = privacy_parser.add_subparsers(
+        dest="privacy_command",
+        title="subcomandos",
+        metavar="SUBCOMANDO",
+        required=True,
+    )
+    privacy_refresh_parser = privacy_commands.add_parser(
+        "refresh",
+        help="descarga y valida el registry publico",
+        description="Actualiza la snapshot publica de privacidad mediante GET.",
+        add_help=False,
+    )
+    _add_help_option(privacy_refresh_parser)
+    privacy_refresh_parser.set_defaults(handler=_run_privacy_refresh)
 
     models_parser = commands.add_parser(
         "models",

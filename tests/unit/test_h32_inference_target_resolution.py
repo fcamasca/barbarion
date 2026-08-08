@@ -47,6 +47,7 @@ def test_h32_tp009_anthropic_direct_is_always_remote(
     assert target.execution is InferenceExecution.REMOTE
     assert target.provider == "anthropic"
     assert target.platform == "direct_api"
+    assert target.offering == "anthropic-api"
     assert target.model == model
 
 

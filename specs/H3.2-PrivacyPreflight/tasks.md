@@ -13,7 +13,7 @@
 - Estados iniciales: `pendiente`.
 
 Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T10
-completadas; T12-T13 pendientes.
+completadas; T12 y T12.1 completadas; T13 pendiente.
 
 ## 2. Tareas
 
@@ -244,7 +244,7 @@ prompt/provider. Matriz focal: 55 passed. Regresion completa: 1056 passed,
 
 ### H3.2-T12 - Documentar operacion y decisiones
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** alinear documentacion una vez estabilizados los contratos.  
 **Archivos/componentes esperados:** `barbarion.example.toml`, README, CLI,
 ARCHITECTURE, DECISIONS, ROADMAP, EVOLUTION y guia de privacy/cache.  
@@ -254,6 +254,22 @@ limitaciones de evidencia y ausencia de garantias legales.
 **Pruebas:** H3.2-TP-054 y links/docs tests.  
 **Dependencias:** T11.  
 **Checkpoint:** ejemplos sinteticos, sin afirmar soporte/verificacion inexistente.
+
+**Evidencia:** documentación alineada en `README.md`, `barbarion.example.toml`,
+`docs/ARCHITECTURE.md`, `docs/DECISIONS.md`, `docs/CLI.md` y `docs/PRIVACY.md`.
+Se dejó expuesto `barbarion privacy refresh` con GET oficial, validación previa,
+normalización T05 y escritura atómica T06.
+
+### H3.2-T12.1 - Production Registry Refresh
+
+**Estado:** completada.
+**Objetivo:** exponer el refresh productivo del registry sin alterar `ask`.
+**Implementación:** `HttpPrivacyRegistryFetcher` usa únicamente GET contra
+`https://aiprovidertrust.com/data.json`, con timeout de 20 segundos, headers
+estáticos, límite de payload y validación HTTP/JSON. El comando reutiliza
+`PrivacySnapshotCache.refresh`, la normalización T05 y la escritura atómica T06;
+los fallos conservan la cache anterior y Ctrl+C devuelve 130.
+**Pruebas:** `tests/unit/test_h32_privacy_registry_http.py` y regresión focal.
 
 ### H3.2-T13 - Aceptacion tecnica y funcional
 

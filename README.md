@@ -112,7 +112,31 @@ barbarion config show
 
 Cuando Anthropic devuelve métricas de uso, la CLI puede mostrar tokens de entrada, tokens de salida, total de tokens y tiempo transcurrido. Barbarion no denomina “créditos” a los tokens ni calcula costos.
 
-Para los detalles técnicos y de seguridad, consulta la [arquitectura](docs/ARCHITECTURE.md), las [decisiones](docs/DECISIONS.md), la [referencia CLI](docs/CLI.md) y la [spec H1.2](specs/H1.2-RemoteInference/).
+Para los detalles técnicos y de seguridad, consulta la [arquitectura](docs/ARCHITECTURE.md), las [decisiones](docs/DECISIONS.md), la [guía de Privacy Preflight](docs/PRIVACY.md), la [referencia CLI](docs/CLI.md) y la [spec H1.2](specs/H1.2-RemoteInference/).
+
+## Privacy Preflight (H3.2)
+
+Antes de una inferencia remota, Barbarion aplica un preflight fail-closed.
+`strict` exige no-training, ZDR efectivo y ubicación conocida. `allowed_regions`
+es opcional; cuando se define, la ubicación efectiva también debe pertenecer a
+esa lista. La ejecución local no requiere esta autorización.
+
+El registry público solo aporta metadata estructurada sobre capacidades. No
+demuestra que una cuenta concreta tenga activado ZDR o una región concreta, ni
+verifica el cumplimiento contractual interno del proveedor. “ZDR disponible”
+no equivale a “ZDR efectivo”. En v1 `AccountPrivacyVerifier` es únicamente un
+contrato preparado: su implementación productiva es `unavailable` y no usa
+credenciales ni red.
+
+La cache se actualiza solo mediante `barbarion privacy refresh` y contiene
+metadata pública normalizada, fuera del contenido RAG. `ask` consume la cache
+local y nunca consulta ni refresca el registry. El refresh valida el documento
+oficial y conserva la snapshot anterior si falla.
+
+Cuando el preflight remoto da PASS, Barbarion llama directamente al proveedor
+configurado: no existe gateway ni proxy de inferencia. `localhost` tampoco
+implica ejecución local; Ollama Cloud declarado remoto permanece sujeto al
+preflight.
 
 ## Comandos principales
 

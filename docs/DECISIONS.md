@@ -4,6 +4,15 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 
 ## Estados
 
+### Decisiones H3.2 Privacy Preflight
+
+- `strict` exige no-training, ZDR efectivo y ubicación conocida; `allowed_regions` es opcional.
+- El gate remoto es fail-closed y PASS llama directamente al proveedor configurado: no existe gateway/proxy.
+- El registry solo contiene evidencia pública estructurada y permanece separado del contenido RAG.
+- `ask` consume cache local y no hace refresh; “ZDR disponible” no equivale a “ZDR efectivo”.
+- `localhost` no implica ejecución local: Ollama Cloud declarado remoto sigue sujeto al preflight.
+- `AccountPrivacyVerifier` es contrato futuro; en v1 queda `unavailable`, sin credenciales ni red.
+
 - **Aceptada:** guía la implementación actual.
 - **Acotada:** continúa vigente con una excepción definida por una decisión posterior.
 - **Propuesta:** requiere validación antes de implementarse.

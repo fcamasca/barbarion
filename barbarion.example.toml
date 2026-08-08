@@ -88,6 +88,14 @@ num_ctx = 16384
 # ANTHROPIC_API_KEY se lee exclusivamente desde el entorno al generar. Nunca la
 # escribas en este archivo. El endpoint y anthropic-version son fijos en H1.2.
 
+# Privacy Preflight H3.2 se aplica automáticamente a inferencia remota.
+# strict equivale a no-training + ZDR efectivo + ubicación conocida.
+# allowed_regions es opcional y todavía no es una sección TOML configurable en
+# v1; la política efectiva usa sus valores seguros por defecto.
+# ask consume únicamente la cache local de metadata pública. El refresh es
+# explícito y no se ejecuta durante ask; no pongas preguntas, prompts ni
+# credenciales en snapshots de privacidad.
+
 [data_driven]
 enabled = false
 file_patterns = ["config/**/*.sql"]

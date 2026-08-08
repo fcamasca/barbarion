@@ -455,6 +455,34 @@ los alcances parciales no aplican esa limpieza global.
 
 La suite normal bloquea conexiones externas salvo loopback y no requiere modelos, API keys ni servicios reales. Las integraciones reales con Ollama o Anthropic se ejecutan de forma separada y explícita; Anthropic solo puede validarse con datos sintéticos y autorización.
 
+### 5.11 Privacy Preflight H3.2
+
+La frontera de privacidad se resuelve a partir del transporte y la metadata
+operativa, nunca del nombre del modelo. Anthropic directo es
+`remote/direct_api`; Ollama local es `local/local_runtime`; Ollama Cloud es
+`remote/ollama_cloud`, incluso cuando el cliente se conecta a un daemon en
+`localhost`. Si la frontera no puede demostrarse, el target es `unknown` y el
+preflight bloquea.
+
+La política estricta (`strict`) exige no-training, ZDR efectivo y ubicación de
+datos conocida. `allowed_regions` es opcional y solo restringe adicionalmente
+la ubicación efectiva cuando se especifica. El resultado remoto es PASS
+únicamente con PASS en las tres restricciones; cualquier FAIL o UNKNOWN es
+BLOCK. La ejecución local es `NOT_APPLICABLE`.
+
+El registry separado del corpus RAG solo normaliza evidencia pública
+estructurada. Una capacidad publicada como “available”, “configurable” o
+“sales-gated” no demuestra configuración efectiva de cuenta: ZDR disponible no
+es ZDR efectivo. Barbarion verifica la evidencia disponible, pero no puede
+demostrar que el proveedor cumpla internamente sus compromisos contractuales.
+`AccountPrivacyVerifier` queda preparado como contrato futuro; la implementación
+productiva v1 es `unavailable`, sin credenciales, HTTP ni detección real.
+
+El refresh de `PrivacySnapshotCache` es explícito, valida y escribe metadata
+pública en `data_dir/privacy/` mediante reemplazo atómico. `ask` solo consume
+esa cache local y nunca hace refresh ni consulta el registry. PASS permite una
+llamada directa al proveedor configurado; no existe gateway/proxy de inferencia.
+
 ## 10. Evolución futura sin implementarla ahora
 
 Una extensión de VS Code puede añadirse después como un adaptador que invoque la CLI o una API local estable:

@@ -30,6 +30,24 @@ stats
 
 `spec create` coordina Spec Mode sobre la evidencia ya disponible: H3 para evidencia documental, H4 para impacto tecnico, Review interno, render Markdown, validacion estructural y escritura segura. `spec validate` revisa una carpeta Markdown existente sin regenerarla.
 
+## Privacy Preflight
+
+`ask` consume únicamente la snapshot local de privacidad. No hace refresh ni
+consulta el registry durante una pregunta. Si la snapshot falta, expira o no
+supera la validación, una inferencia remota termina en `BLOCK` antes de
+construir o registrar el prompt.
+
+`barbarion privacy refresh` descarga mediante un único `GET` la URL oficial
+fija, valida status y JSON, normaliza el schema T05 y escribe atómicamente la
+snapshot mediante `PrivacySnapshotCache`. Solo persiste metadata pública y, si
+la descarga o validación falla, conserva la snapshot anterior.
+
+En una autorización remota `PASS`, la llamada generativa va directamente al
+endpoint del proveedor configurado. No se utiliza gateway/proxy. La salida
+normal de `BLOCK` muestra únicamente estados de restricciones; `--debug`
+puede mostrar target público, política, fuente/version, cache y verifier, pero
+nunca query, prompt, chunks, paths, símbolos, fórmulas, respuestas o secretos.
+
 
 ## Preparación del entorno
 

@@ -308,6 +308,14 @@ Retorna localmente antes del preflight y conserva metricas/estado actuales.
 Verifica enlaces, `strict = ZDR`, allowlist opcional, refresh explicito, llamada directa, fail-closed,
 limitaciones y ausencia de afirmaciones/provider policies hardcodeadas.
 
+### H3.2-TP-055 - Politica pragmatica v1
+
+`no_training` FAIL/UNKNOWN bloquea; retention FAIL/UNKNOWN muestra WARNING y
+requiere confirmacion antes del prompt; data_location no bloquea. Ollama Cloud
+puede usar la politica oficial de Ollama como evidencia secundaria uniforme,
+sin reglas por modelo. `N` mantiene cero llamadas LLM y `S` marca
+`user_accepted_risk`.
+
 ## 7. Pruebas de integracion
 
 ### H3.2-INT-001 - Baseline H3.1

@@ -1,5 +1,17 @@
 # H3.2 - Privacy Preflight para inferencia remota: Diseno
 
+## Enmienda pragmática v1
+
+La decisión remota es `BLOCK` si `no_training` es FAIL/UNKNOWN, `WARNING` si
+`no_training=PASS` y `retention` no es PASS, y `PASS` si ambas son PASS. La
+ubicación se conserva en el diagnóstico, pero no decide el gate. WARNING exige
+confirmación antes de construir el prompt y produce una autorización marcada
+`user_accepted_risk`; N mantiene cero llamadas LLM.
+
+Para `provider=ollama` y `platform=ollama_cloud` se combina el registry con una
+fuente oficial estática basada en la política de Ollama. La selección es por
+transporte/oferta, nunca por nombre de modelo.
+
 ## 1. Comportamiento actual verificado
 
 `AskService.ask()` recupera candidatos, integra evidencia H4.1, selecciona y

@@ -48,6 +48,12 @@ normal de `BLOCK` muestra únicamente estados de restricciones; `--debug`
 puede mostrar target público, política, fuente/version, cache y verifier, pero
 nunca query, prompt, chunks, paths, símbolos, fórmulas, respuestas o secretos.
 
+Si `no_training=PASS` pero `retention` no es PASS, `ask` muestra `WARNING` y
+solicita `[S/N]` antes de construir el prompt. `N` devuelve sin llamar al LLM;
+`S` emite una autorización marcada `user_accepted_risk` y permite generation y
+repair con la misma autorización. `no_training=FAIL/UNKNOWN` nunca permite
+confirmación.
+
 
 ## Preparación del entorno
 

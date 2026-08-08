@@ -6,7 +6,7 @@ Este documento conserva las decisiones que delimitan el MVP de Barbarion. Se usa
 
 ### Decisiones H3.2 Privacy Preflight
 
-- `strict` exige no-training, ZDR efectivo y ubicación conocida; `allowed_regions` es opcional.
+- H3.2 v1 exige no-training; retention advierte y requiere confirmación, y data_location es informativa.
 - El gate remoto es fail-closed y PASS llama directamente al proveedor configurado: no existe gateway/proxy.
 - El registry solo contiene evidencia pública estructurada y permanece separado del contenido RAG.
 - `ask` consume cache local y no hace refresh; “ZDR disponible” no equivale a “ZDR efectivo”.

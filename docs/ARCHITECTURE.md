@@ -464,11 +464,10 @@ operativa, nunca del nombre del modelo. Anthropic directo es
 `localhost`. Si la frontera no puede demostrarse, el target es `unknown` y el
 preflight bloquea.
 
-La política estricta (`strict`) exige no-training, ZDR efectivo y ubicación de
-datos conocida. `allowed_regions` es opcional y solo restringe adicionalmente
-la ubicación efectiva cuando se especifica. El resultado remoto es PASS
-únicamente con PASS en las tres restricciones; cualquier FAIL o UNKNOWN es
-BLOCK. La ejecución local es `NOT_APPLICABLE`.
+En H3.2 v1 `no_training` es la única restricción obligatoria: FAIL o UNKNOWN
+produce BLOCK. `retention` FAIL/UNKNOWN produce WARNING y requiere aceptación
+explícita del usuario antes de construir el prompt; `data_location` queda como
+diagnóstico no bloqueante. La ejecución local es `NOT_APPLICABLE`.
 
 El registry separado del corpus RAG solo normaliza evidencia pública
 estructurada. Una capacidad publicada como “available”, “configurable” o
@@ -477,6 +476,9 @@ es ZDR efectivo. Barbarion verifica la evidencia disponible, pero no puede
 demostrar que el proveedor cumpla internamente sus compromisos contractuales.
 `AccountPrivacyVerifier` queda preparado como contrato futuro; la implementación
 productiva v1 es `unavailable`, sin credenciales, HTTP ni detección real.
+
+Ollama Cloud puede aportar una segunda evidencia desde la política oficial de
+Ollama, aplicada al transporte `ollama/ollama_cloud` y no al nombre del modelo.
 
 El refresh de `PrivacySnapshotCache` es explícito, valida y escribe metadata
 pública en `data_dir/privacy/` mediante reemplazo atómico. `ask` solo consume

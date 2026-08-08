@@ -1006,6 +1006,15 @@ class FakeAskService:
             token_estimate=2,
             metrics=ContextQualityMetrics(duplicate_ratio=0, token_waste=0.5),
         )
+        result_debug = (
+            self.debug_payload
+            if kwargs["debug"]
+            else (
+                {"privacy_summary": self.debug_payload["privacy_summary"]}
+                if "privacy_summary" in self.debug_payload
+                else {}
+            )
+        )
         return AnswerResult(
             query_id=8,
             question=args[0],
@@ -1014,7 +1023,7 @@ class FakeAskService:
             status=RagQueryStatus.COMPLETED,
             no_llm=kwargs["no_llm"],
             citations_valid=self.citations_valid,
-            debug=self.debug_payload if kwargs["debug"] else {},
+            debug=result_debug,
         )
 
 
@@ -1500,6 +1509,104 @@ def test_ask_without_debug_keeps_normal_stdout(
     assert "=== QUERY ===" not in captured.err
     assert "Debug:" not in captured.out
     assert "## Conclusion" in captured.out
+
+
+@pytest.mark.parametrize(
+    ("privacy_decision", "retention", "expected_lines"),
+    [
+        (
+            "pass",
+            "pass",
+            (
+                "Privacidad: PASS · no-training ✓ · retención ✓",
+                "Fuente: Ollama Privacy Policy",
+            ),
+        ),
+        (
+            "user_accepted_risk",
+            "unknown",
+            (
+                "Privacidad: WARNING · no-training ✓ · retención no verificada",
+                "Fuente: AI Provider Trust Registry · riesgo aceptado",
+            ),
+        ),
+    ],
+)
+def test_ask_normal_privacy_summary_is_human_and_compact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    privacy_decision: str,
+    retention: str,
+    expected_lines: tuple[str, str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        debug_payload={
+            "privacy_summary": {
+                "privacy_decision": privacy_decision,
+                "no_training": "pass",
+                "retention": retention,
+                "data_location": "unknown",
+                "evidence_source": (
+                    "provider_official_policy"
+                    if privacy_decision == "pass"
+                    else "trust_registry"
+                ),
+            },
+            "sources": None,
+            "context_chars": None,
+        }
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    assert cli.main(["--config", str(source), "ask", "Donde esta?"]) == 0
+    output = capsys.readouterr().out
+
+    assert expected_lines[0] in output
+    assert expected_lines[1] in output
+    assert "Debug:" not in output
+    assert "None" not in output
+    for internal in (
+        "provider_official_policy",
+        "trust_registry",
+        "no_training=PASS",
+        "retention=PASS",
+        "location=",
+    ):
+        assert internal not in output
+
+
+def test_ask_debug_keeps_technical_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        debug_payload={
+            "sources": None,
+            "context_chars": None,
+            "privacy_summary": {
+                "privacy_decision": "pass",
+                "no_training": "pass",
+                "retention": "pass",
+                "data_location": "unknown",
+                "evidence_source": "provider_official_policy",
+            },
+        }
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    assert cli.main(["--config", str(source), "ask", "Donde esta?", "--debug"]) == 0
+    captured = capsys.readouterr()
+
+    assert "Debug:" not in captured.out
+    assert "=== MODEL ===" in captured.err
 
 
 def test_ask_anthropic_usage_is_rendered_on_stderr_without_breaking_json(

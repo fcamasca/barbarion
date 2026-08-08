@@ -269,9 +269,13 @@ def test_h32_remote_aggregation_allows_only_three_passes(states) -> None:
         evaluations=evaluations,
     )
     expected = (
-        PrivacyPreflightDecision.PASS
-        if all(state is EvaluationState.PASS for state in states)
-        else PrivacyPreflightDecision.BLOCK
+        PrivacyPreflightDecision.BLOCK
+        if states[0] is not EvaluationState.PASS
+        else (
+            PrivacyPreflightDecision.PASS
+            if states[1] is EvaluationState.PASS
+            else PrivacyPreflightDecision.WARNING
+        )
     )
     assert result.decision is expected
 

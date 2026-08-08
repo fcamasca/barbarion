@@ -22,6 +22,7 @@ from barbarion.domain.privacy import (
     PrivacyAuthorization,
     PrivacyPolicy,
     PrivacyPolicySource,
+    PrivacyPolicySourceResult,
     PrivacyPreflightDecision,
     PrivacyPreflightResult,
 )
@@ -33,6 +34,8 @@ TRAINING_CONFIRMED = "training_confirmed"
 TRAINING_OPT_OUT_AVAILABLE = "opt_out_available"
 ZERO_DATA_RETENTION = "zdr"
 ZERO_DATA_RETENTION_AVAILABLE = "zdr_available"
+OLLAMA_OFFICIAL_POLICY_URL = "https://ollama.com/privacy"
+OLLAMA_OFFICIAL_POLICY_VERSION = "2026-03"
 _LOGGER = logging.getLogger("barbarion")
 
 
@@ -77,6 +80,15 @@ class PrivacyPreflightBlockedError(RuntimeError):
         super().__init__("Privacy preflight bloqueo la inferencia remota.")
 
 
+class PrivacyPreflightWarning(RuntimeError):
+    """Advertencia remota que requiere aceptación explícita del usuario."""
+
+    def __init__(self, diagnostics: PrivacyPreflightDiagnostics) -> None:
+        self.diagnostics = diagnostics
+        self.result = diagnostics.result
+        super().__init__("Privacy preflight requiere aceptar riesgo.")
+
+
 class InvalidPrivacyAuthorizationError(RuntimeError):
     """La autorizacion no corresponde a la invocacion generativa efectiva."""
 
@@ -90,11 +102,14 @@ class PrivacyPreflightDiagnostics:
     account_verifier_status: str
     source_id: str | None = None
     source_version: str | None = None
+    evidence_source: str = "trust_registry"
+    privacy_decision: str | None = None
 
     def as_safe_dict(self) -> dict[str, object]:
         target = self.result.target
         return {
             "decision": self.result.decision.value,
+            "privacy_decision": self.privacy_decision or self.result.decision.value,
             "execution": target.execution.value,
             "provider": target.provider,
             "platform": target.platform,
@@ -108,6 +123,7 @@ class PrivacyPreflightDiagnostics:
             "account_verifier": self.account_verifier_status,
             "source_id": self.source_id,
             "source_version": self.source_version,
+            "evidence_source": self.evidence_source,
             "constraints": {
                 evaluation.constraint.value: {
                     "state": evaluation.state.value,
@@ -143,6 +159,7 @@ class PrivacyPreflightService:
     policy: PrivacyPolicy
     policy_source: PrivacyPolicySource | None
     account_verifier: AccountPrivacyVerifier
+    secondary_policy_source: PrivacyPolicySource | None = None
     cache_status: str = "unknown"
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
@@ -151,10 +168,12 @@ class PrivacyPreflightService:
         *,
         operation_id: str,
         target: InferenceTarget,
+        risk_accepted: bool = False,
     ) -> PrivacyAuthorization:
         return self.authorize_with_diagnostics(
             operation_id=operation_id,
             target=target,
+            risk_accepted=risk_accepted,
         ).authorization
 
     def authorize_with_diagnostics(
@@ -162,6 +181,7 @@ class PrivacyPreflightService:
         *,
         operation_id: str,
         target: InferenceTarget,
+        risk_accepted: bool = False,
     ) -> PrivacyPreflightOutcome:
         evaluated_at = self.clock()
         if target.execution is InferenceExecution.LOCAL:
@@ -188,16 +208,34 @@ class PrivacyPreflightService:
         evidence: tuple[PrivacyEvidence, ...] = ()
         source_id = None
         source_version = None
+        evidence_source = "trust_registry"
         account_status = "not_consulted"
         if target.execution is InferenceExecution.REMOTE:
-            if self.policy_source is not None:
+            source_results = []
+            for source in (self.policy_source, self.secondary_policy_source):
+                if source is None:
+                    continue
                 try:
-                    source_result = self.policy_source.lookup(target)
-                    evidence = source_result.evidence
-                    source_id = source_result.source_id
-                    source_version = source_result.source_version
+                    source_results.append(source.lookup(target))
                 except Exception:
-                    evidence = ()
+                    continue
+            if source_results:
+                evidence = tuple(
+                    item for result in source_results for item in result.evidence
+                )
+                source_id = "+".join(
+                    result.source_id for result in source_results if result.evidence
+                ) or source_results[0].source_id
+                source_version = "+".join(
+                    result.source_version
+                    for result in source_results
+                    if result.evidence
+                ) or source_results[0].source_version
+                if any(
+                    item.source_kind == "provider_official_policy"
+                    for item in evidence
+                ):
+                    evidence_source = "provider_official_policy"
             try:
                 account = self.account_verifier.verify(target)
             except Exception:
@@ -233,16 +271,63 @@ class PrivacyPreflightService:
             account_verifier_status=account_status,
             source_id=source_id,
             source_version=source_version,
+            evidence_source=evidence_source,
+            privacy_decision=(
+                "user_accepted_risk" if risk_accepted else result.decision.value
+            ),
         )
         _log_privacy_preflight(diagnostics)
         if result.decision is PrivacyPreflightDecision.BLOCK:
             raise PrivacyPreflightBlockedError(diagnostics)
+        if (
+            result.decision is PrivacyPreflightDecision.WARNING
+            and not risk_accepted
+        ):
+            raise PrivacyPreflightWarning(diagnostics)
         return PrivacyPreflightOutcome(
             authorization=PrivacyAuthorization.issue(
                 operation_id=operation_id,
                 result=result,
+                risk_accepted=risk_accepted,
             ),
             diagnostics=diagnostics,
+        )
+
+
+class OllamaOfficialPolicySource:
+    """Evidencia oficial uniforme para todos los modelos Ollama Cloud."""
+
+    def lookup(self, target: InferenceTarget) -> PrivacyPolicySourceResult:
+        if target.provider != "ollama" or target.platform != "ollama_cloud":
+            return PrivacyPolicySourceResult(
+                source_id=OLLAMA_OFFICIAL_POLICY_URL,
+                source_version=OLLAMA_OFFICIAL_POLICY_VERSION,
+            )
+        verified_at = datetime(2026, 3, 1, tzinfo=UTC)
+        expires_at = datetime(2099, 1, 1, tzinfo=UTC)
+        return PrivacyPolicySourceResult(
+            source_id=OLLAMA_OFFICIAL_POLICY_URL,
+            source_version=OLLAMA_OFFICIAL_POLICY_VERSION,
+            evidence=(
+                PrivacyEvidence(
+                    constraint=PrivacyConstraint.NO_TRAINING,
+                    value=NO_TRAINING_GUARANTEED,
+                    scope="offering:ollama-cloud",
+                    source_kind="provider_official_policy",
+                    source_id=OLLAMA_OFFICIAL_POLICY_URL,
+                    verified_at=verified_at,
+                    expires_at=expires_at,
+                ),
+                PrivacyEvidence(
+                    constraint=PrivacyConstraint.RETENTION,
+                    value=ZERO_DATA_RETENTION,
+                    scope="offering:ollama-cloud",
+                    source_kind="provider_official_policy",
+                    source_id=OLLAMA_OFFICIAL_POLICY_URL,
+                    verified_at=verified_at,
+                    expires_at=expires_at,
+                ),
+            ),
         )
 
 
@@ -273,9 +358,12 @@ def _log_privacy_preflight(diagnostics: PrivacyPreflightDiagnostics) -> None:
     constraints = safe["constraints"]
     assert isinstance(constraints, dict)
     _LOGGER.info(
-        "privacy_preflight decision=%s execution=%s provider=%s platform=%s "
+        "privacy_preflight privacy_decision=%s evidence_source=%s "
+        "decision=%s execution=%s provider=%s platform=%s "
         "no_training=%s retention=%s data_location=%s cache_status=%s "
         "account_verifier=%s source_id=%s source_version=%s",
+        safe["privacy_decision"],
+        safe["evidence_source"],
         safe["decision"],
         safe["execution"],
         safe["provider"],

@@ -11,6 +11,7 @@ import pytest
 from barbarion.application.privacy import (
     InvalidPrivacyAuthorizationError,
     PrivacyPreflightBlockedError,
+    PrivacyPreflightWarning,
     PrivacyPreflightService,
     UnavailableAccountPrivacyVerifier,
 )
@@ -256,13 +257,24 @@ def test_tp040_042_remote_block_never_builds_prompt_or_generates(
     )
     caplog.set_level(logging.INFO, logger="barbarion")
 
-    with pytest.raises(PrivacyPreflightBlockedError) as captured:
-        _ask(service)
-
-    assert captured.value.result.evaluation_for(constraint).state.value != "pass"
-    assert llm.prompts == []
-    assert builder.build_calls == 0
-    assert not any("ask_llm_started" in record.message for record in caplog.records)
+    expected_error = (
+        PrivacyPreflightWarning
+        if constraint is PrivacyConstraint.RETENTION
+        else PrivacyPreflightBlockedError
+        if constraint is PrivacyConstraint.NO_TRAINING
+        else None
+    )
+    if expected_error is not None:
+        with pytest.raises(expected_error) as captured:
+            _ask(service)
+        assert captured.value.result.evaluation_for(constraint).state.value != "pass"
+    else:
+        result = _ask(service)
+        assert result.status is RagQueryStatus.COMPLETED
+    assert len(llm.prompts) == (0 if expected_error is not None else 1)
+    assert builder.build_calls == (0 if expected_error is not None else 1)
+    if expected_error is not None:
+        assert not any("ask_llm_started" in record.message for record in caplog.records)
 
 
 def test_tp043_unknown_execution_blocks_before_prompt_and_generation(tmp_path) -> None:
@@ -336,3 +348,32 @@ def test_common_generation_wrapper_rejects_missing_authorization(tmp_path) -> No
         )
 
     assert llm.prompts == []
+
+
+def test_retention_warning_requires_explicit_risk_acceptance(tmp_path) -> None:
+    evidence = (
+        _evidence(PrivacyConstraint.NO_TRAINING, "no_training_guaranteed"),
+        _evidence(PrivacyConstraint.RETENTION, "zdr_available", conditional=True),
+    )
+    service, llm, builder, _ = _service(
+        tmp_path,
+        execution=None,
+        remote=True,
+        evidence=evidence,
+    )
+
+    with pytest.raises(PrivacyPreflightWarning):
+        _ask(service)
+    assert llm.prompts == []
+    assert builder.build_calls == 0
+
+    result = service.ask(
+        "order_total",
+        mode=RetrievalMode.KEYWORD,
+        top_k=3,
+        candidate_k=3,
+        threshold=0,
+        privacy_risk_accepted=True,
+    )
+    assert result.status is RagQueryStatus.COMPLETED
+    assert len(llm.prompts) == 1

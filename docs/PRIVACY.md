@@ -6,10 +6,11 @@ siendo locales.
 
 ## Política
 
-`strict` exige tres hechos simultáneos: no-training, ZDR efectivo y ubicación
-de datos conocida. `allowed_regions` es opcional; si se define, la ubicación
-efectiva debe pertenecer a la allowlist. En remoto, cualquier FAIL o UNKNOWN
-produce `BLOCK`. En local, las restricciones son `NOT_APPLICABLE`.
+En remoto, `no_training` es obligatorio: FAIL o UNKNOWN produce `BLOCK` sin
+override. `retention` es informativa: FAIL o UNKNOWN produce `WARNING` y exige
+confirmación explícita antes de construir el prompt. `data_location` se evalúa
+para diagnóstico, pero no decide H3.2 v1. En local, las restricciones son
+`NOT_APPLICABLE`.
 
 El registry público es un índice de evidencia estructurada sobre capacidades.
 `yes_public`, `available`, `configurable` o `sales-gated` no prueban que la
@@ -34,6 +35,13 @@ identificadores de usuario, y conserva la snapshot anterior ante errores.
 
 `AccountPrivacyVerifier` es un contrato preparado para una integración futura.
 En v1 devuelve `unavailable`, sin credenciales, HTTP ni detección de cuenta.
+
+Para `provider=ollama` y `platform=ollama_cloud`, la segunda fuente permitida es
+la política oficial de Ollama (`https://ollama.com/privacy`). Declara que los
+prompts/respuestas cloud se procesan transitoriamente y no se usan para
+entrenamiento; la evidencia se aplica uniformemente a cualquier modelo, nunca
+por nombre. Si la política dejara de demostrar no-training, el estado sería
+`UNKNOWN` y el gate bloquearía.
 
 Con PASS remoto, Barbarion llama directamente al proveedor configurado; no
 hay gateway ni proxy de inferencia. `localhost` no implica local: Ollama Cloud

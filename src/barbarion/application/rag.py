@@ -2352,6 +2352,7 @@ class AskService:
         threshold: float,
         no_llm: bool = False,
         debug: bool = False,
+        privacy_risk_accepted: bool = False,
     ) -> AnswerResult:
         """Responde una pregunta RAG con validacion estricta de evidencia.
 
@@ -2522,12 +2523,21 @@ class AskService:
         preflight_outcome = self.privacy_preflight.authorize_with_diagnostics(
             operation_id=operation_id,
             target=target,
+            risk_accepted=privacy_risk_accepted,
         )
         authorization = preflight_outcome.authorization
+        safe_privacy = preflight_outcome.diagnostics.as_safe_dict()
+        safe_constraints = safe_privacy["constraints"]
+        if isinstance(safe_constraints, dict):
+            base_debug_payload["privacy_summary"] = {
+                "privacy_decision": safe_privacy["privacy_decision"],
+                "no_training": safe_constraints["no_training"]["state"],
+                "retention": safe_constraints["retention"]["state"],
+                "data_location": safe_constraints["data_location"]["state"],
+                "evidence_source": safe_privacy["evidence_source"],
+            }
         if debug:
-            base_debug_payload["privacy_preflight"] = (
-                preflight_outcome.diagnostics.as_safe_dict()
-            )
+            base_debug_payload["privacy_preflight"] = safe_privacy
         prompt = self.prompt_builder.build(question=question, context=context)
         prompt_composition = self.prompt_builder.compose(
             question=question,
@@ -2748,7 +2758,13 @@ class AskService:
             no_llm=False,
             citations_valid=validation.valid,
             missing_citations=validation.missing_source_ids,
-            debug=debug_payload if debug else {},
+            debug=(
+                debug_payload
+                if debug
+                else {
+                    "privacy_summary": base_debug_payload.get("privacy_summary", {})
+                }
+            ),
         )
 
     def _record_failed_llm_query(

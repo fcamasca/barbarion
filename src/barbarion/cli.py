@@ -50,7 +50,9 @@ from barbarion.application.model_benchmark_scoring import aggregate_model_benchm
 from barbarion.application.privacy import (
     InvalidPrivacyAuthorizationError,
     PrivacyPreflightBlockedError,
+    PrivacyPreflightWarning,
     PrivacyPreflightService,
+    OllamaOfficialPolicySource,
     UnavailableAccountPrivacyVerifier,
 )
 from barbarion.application.rag import (
@@ -1402,16 +1404,27 @@ def _run_ask(args: argparse.Namespace) -> int:
     service = _build_ask_service(settings)
     ask_started = time.monotonic()
     try:
-        result = service.ask(
-            args.question,
-            mode=RetrievalMode(args.mode),
-            filters=_retrieval_filter(args),
-            top_k=args.top_k,
-            candidate_k=args.candidate_k,
-            threshold=args.threshold,
-            no_llm=args.no_llm,
-            debug=args.debug,
-        )
+        ask_kwargs = {
+            "mode": RetrievalMode(args.mode),
+            "filters": _retrieval_filter(args),
+            "top_k": args.top_k,
+            "candidate_k": args.candidate_k,
+            "threshold": args.threshold,
+            "no_llm": args.no_llm,
+            "debug": args.debug,
+        }
+        try:
+            result = service.ask(args.question, **ask_kwargs)
+        except PrivacyPreflightWarning as warning:
+            _render_privacy_preflight_warning(warning, debug=args.debug)
+            if not _confirm_privacy_warning():
+                print("No se envio contexto al proveedor remoto.", file=sys.stderr)
+                return 1
+            result = service.ask(
+                args.question,
+                **ask_kwargs,
+                privacy_risk_accepted=True,
+            )
     except PrivacyPreflightBlockedError as error:
         _render_privacy_preflight_block(error, debug=args.debug)
         return 1
@@ -1488,12 +1501,49 @@ def _render_privacy_preflight_block(
         _render_privacy_preflight_debug(safe)
 
 
+def _render_privacy_preflight_warning(
+    error: PrivacyPreflightWarning,
+    *,
+    debug: bool,
+) -> None:
+    safe = error.diagnostics.as_safe_dict()
+    constraints = safe["constraints"]
+    assert isinstance(constraints, Mapping)
+    print("Privacy preflight: WARNING", file=sys.stderr)
+    print("", file=sys.stderr)
+    for key, label in (("no_training", "no_training"), ("retention", "retention")):
+        detail = constraints[key]
+        assert isinstance(detail, Mapping)
+        print(f"{label:<12}: {str(detail['state']).upper()}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print(
+        "El proveedor no cumple las politicas recomendadas por "
+        "Barbarion; la retención de datos no está verificada.",
+        file=sys.stderr,
+    )
+    if debug:
+        print("", file=sys.stderr)
+        _render_privacy_preflight_debug(safe)
+
+
+def _confirm_privacy_warning() -> bool:
+    try:
+        answer = input(
+            "¿Desea continuar bajo su responsabilidad? [S/N] "
+        )
+    except (EOFError, KeyboardInterrupt):
+        print("", file=sys.stderr)
+        return False
+    return answer.strip().lower() in {"s", "si", "sí", "y", "yes"}
+
+
 def _render_privacy_preflight_debug(value: object) -> None:
     if not isinstance(value, Mapping):
         return
     print("=== PRIVACY PREFLIGHT ===", file=sys.stderr)
     for key in (
         "decision",
+        "privacy_decision",
         "execution",
         "provider",
         "platform",
@@ -1503,6 +1553,7 @@ def _render_privacy_preflight_debug(value: object) -> None:
         "account_verifier",
         "source_id",
         "source_version",
+        "evidence_source",
     ):
         print(f"{key}={value.get(key)}", file=sys.stderr)
     policy = value.get("policy")
@@ -2109,6 +2160,7 @@ def _build_privacy_preflight(settings: Settings) -> PrivacyPreflightService:
         policy=PrivacyPolicy(),
         policy_source=privacy_cache.source,
         account_verifier=UnavailableAccountPrivacyVerifier(),
+        secondary_policy_source=OllamaOfficialPolicySource(),
         cache_status=privacy_cache.status.value,
     )
 
@@ -2173,6 +2225,7 @@ def _render_answer_result(
     _render_answer_debug(result, markdown=False)
     print("Barbarion Ask")
     print(f"Modelo: {model}")
+    _render_privacy_summary(result.debug.get("privacy_summary"))
     print(f"Validación: {'PASS' if result.citations_valid else 'FAIL'}")
     print(f"Tiempo: {elapsed_seconds:.2f}s")
     print()
@@ -2187,8 +2240,6 @@ def _render_answer_result(
 
 
 def _render_answer_debug(result: AnswerResult, *, markdown: bool) -> None:
-    if not result.debug:
-        return
     keys = (
         "sources",
         "context_chars",
@@ -2197,6 +2248,8 @@ def _render_answer_debug(result: AnswerResult, *, markdown: bool) -> None:
         "llm_timeout_seconds",
         "truncated_sources",
     )
+    if not any(key in result.debug for key in keys):
+        return
     if markdown:
         print("## Debug")
         for key in keys:
@@ -2207,6 +2260,36 @@ def _render_answer_debug(result: AnswerResult, *, markdown: bool) -> None:
     for key in keys:
         print(f"{key}={result.debug.get(key)}")
     print()
+
+
+def _render_privacy_summary(value: object) -> None:
+    """Renderiza privacidad en lenguaje humano, sin enums internos."""
+    if not isinstance(value, Mapping):
+        return
+    decision = str(value.get("privacy_decision", "unknown"))
+    labels = {
+        "pass": "PASS",
+        "warning": "WARNING",
+        "user_accepted_risk": "WARNING",
+        "block": "BLOCK",
+        "not_applicable": "NO APLICA",
+    }
+    no_training = "✓" if value.get("no_training") == "pass" else "no verificado"
+    retention = "✓" if value.get("retention") == "pass" else "no verificada"
+    source = str(value.get("evidence_source", ""))
+    source_label = (
+        "Ollama Privacy Policy"
+        if source == "provider_official_policy"
+        else "AI Provider Trust Registry"
+        if source == "trust_registry"
+        else "fuente no disponible"
+    )
+    accepted = " · riesgo aceptado" if decision == "user_accepted_risk" else ""
+    print(
+        f"Privacidad: {labels.get(decision, decision.upper())} · "
+        f"no-training {no_training} · retención {retention}"
+    )
+    print(f"Fuente: {source_label}{accepted}")
 
 
 def _render_ask_diagnostics(

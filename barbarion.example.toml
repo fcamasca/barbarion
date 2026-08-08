@@ -89,7 +89,8 @@ num_ctx = 16384
 # escribas en este archivo. El endpoint y anthropic-version son fijos en H1.2.
 
 # Privacy Preflight H3.2 se aplica automáticamente a inferencia remota.
-# strict equivale a no-training + ZDR efectivo + ubicación conocida.
+# H3.2 v1 exige no-training; retention puede requerir confirmación explícita.
+# data_location se informa, pero no bloquea por sí sola.
 # allowed_regions es opcional y todavía no es una sección TOML configurable en
 # v1; la política efectiva usa sus valores seguros por defecto.
 # ask consume únicamente la cache local de metadata pública. El refresh es

@@ -13,7 +13,7 @@
 - Estados iniciales: `pendiente`.
 
 Estado actual del hito: implementacion iniciada. H3.2-T01 a H3.2-T10
-completadas; T12 y T12.1 completadas; T13 pendiente.
+completadas; T12, T12.1, ajuste pragmático v1 y T13 completadas.
 
 ## 2. Tareas
 
@@ -248,8 +248,8 @@ prompt/provider. Matriz focal: 55 passed. Regresion completa: 1056 passed,
 **Objetivo:** alinear documentacion una vez estabilizados los contratos.  
 **Archivos/componentes esperados:** `barbarion.example.toml`, README, CLI,
 ARCHITECTURE, DECISIONS, ROADMAP, EVOLUTION y guia de privacy/cache.  
-**Descripcion:** documentar `strict = ZDR`, ubicacion conocida, allowlist
-opcional, refresh explicito, offline, egress directo,
+**Descripcion:** documentar no-training obligatorio, warning confirmable de
+retention, ubicación informativa, refresh explicito, offline, egress directo,
 limitaciones de evidencia y ausencia de garantias legales.  
 **Pruebas:** H3.2-TP-054 y links/docs tests.  
 **Dependencias:** T11.  
@@ -271,9 +271,14 @@ estáticos, límite de payload y validación HTTP/JSON. El comando reutiliza
 los fallos conservan la cache anterior y Ctrl+C devuelve 130.
 **Pruebas:** `tests/unit/test_h32_privacy_registry_http.py` y regresión focal.
 
+**Ajuste pragmático v1:** `no_training` permanece bloqueante; retention requiere
+confirmación explícita cuando no es PASS; data_location es informativa. Ollama
+Cloud usa evidencia oficial uniforme por transporte y conserva el gate antes
+del prompt.
+
 ### H3.2-T13 - Aceptacion tecnica y funcional
 
-**Estado:** pendiente.  
+**Estado:** completada.
 **Objetivo:** producir evidencia final y decision humana.  
 **Archivos/componentes esperados:** `acceptance.md` creado en esta tarea,
 reportes finales y checklist de revision.  
@@ -284,6 +289,9 @@ manual sintetica autorizada cuando exista conectividad.
 **Dependencias:** T12.  
 **Checkpoint:** aprobacion explicita; pendientes externos no se presentan como
 PASS.
+
+**Evidencia:** `specs/H3.2-PrivacyPreflight/acceptance.md`, suite completa
+`1067 passed, 14 skipped` y reportes `reports/h32/`.
 
 ## 3. Orden de implementacion
 

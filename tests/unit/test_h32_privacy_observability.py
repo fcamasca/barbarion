@@ -42,7 +42,7 @@ class ObservableSource:
             evidence=(
                 _evidence(
                     PrivacyConstraint.NO_TRAINING,
-                    "no_training_guaranteed",
+                    "training_confirmed",
                 ),
                 _evidence(
                     PrivacyConstraint.RETENTION,
@@ -110,7 +110,7 @@ def test_tp048_normal_block_output_is_compact_and_actionable(
     assert captured.out == ""
     assert captured.err == (
         "Privacy preflight: BLOCKED\n\n"
-        "no_training : PASS\n"
+        "no_training : FAIL\n"
         "retention   : UNKNOWN\n"
         "location    : PASS\n\n"
         "No se envio contexto al proveedor remoto.\n"
@@ -161,6 +161,6 @@ def test_tp050_privacy_event_and_debug_exclude_sensitive_canaries(
         "REGISTRY_PAYLOAD_CANARY_87G",
     )
 
-    assert "privacy_preflight decision=block" in combined
+    assert "privacy_decision=block" in combined
     for canary in canaries:
         assert canary not in combined

@@ -23,6 +23,17 @@ H3.2 distingue tres planos:
 No se interpreta `ZDR available` como `ZDR enabled`. Una propiedad obligatoria
 no demostrada queda `UNKNOWN` y bloquea la inferencia remota.
 
+### Enmienda pragmática H3.2 v1
+
+La política vigente reduce la obligación remota a `no_training`: FAIL o UNKNOWN
+bloquea sin override. `retention` y `data_location` permanecen como
+evaluaciones informativas; retention FAIL/UNKNOWN produce WARNING y requiere
+confirmación explícita antes del prompt, mientras data_location no bloquea.
+Una autorización aceptada se marca `user_accepted_risk`. Para
+`ollama/ollama_cloud`, la política oficial de Ollama es una fuente secundaria
+estructurada y uniforme para todos los modelos; si no demuestra no-training,
+el resultado sigue siendo UNKNOWN.
+
 ## 2. Alcance
 
 ### Incluido

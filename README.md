@@ -116,6 +116,11 @@ Para los detalles técnicos y de seguridad, consulta la [arquitectura](docs/ARCH
 
 ## Privacy Preflight (H3.2)
 
+**Política vigente H3.2 v1:** `no_training` es la única restricción
+bloqueante; retention FAIL/UNKNOWN requiere confirmación y data_location es
+informativa. Esta política vigente sustituye cualquier descripción histórica de
+`strict` como requisito simultáneo de ZDR y ubicación.
+
 Antes de una inferencia remota, Barbarion aplica un preflight fail-closed.
 `strict` exige no-training, ZDR efectivo y ubicación conocida. `allowed_regions`
 es opcional; cuando se define, la ubicación efectiva también debe pertenecer a
@@ -137,6 +142,11 @@ Cuando el preflight remoto da PASS, Barbarion llama directamente al proveedor
 configurado: no existe gateway ni proxy de inferencia. `localhost` tampoco
 implica ejecución local; Ollama Cloud declarado remoto permanece sujeto al
 preflight.
+
+En H3.2 v1 solo `no_training` es bloqueante. Una retención no demostrada genera
+una advertencia y requiere confirmación explícita; la ubicación se conserva como
+diagnóstico, pero no decide el gate. Ollama Cloud puede usar además la política
+oficial publicada por Ollama como evidencia uniforme para todos sus modelos.
 
 ## Comandos principales
 

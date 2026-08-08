@@ -112,8 +112,12 @@ def test_h32_tp004_remote_passes_only_when_every_constraint_passes() -> None:
     for blocked_state in (EvaluationState.FAIL, EvaluationState.UNKNOWN):
         evaluations = list(_evaluations(EvaluationState.PASS))
         evaluations[1] = _evaluation(PrivacyConstraint.RETENTION, blocked_state)
-        blocked = _result(InferenceExecution.REMOTE, tuple(evaluations))
-        assert blocked.decision is PrivacyPreflightDecision.BLOCK
+        warning = _result(InferenceExecution.REMOTE, tuple(evaluations))
+        assert warning.decision is PrivacyPreflightDecision.WARNING
+
+    evaluations = list(_evaluations(EvaluationState.PASS))
+    evaluations[2] = _evaluation(PrivacyConstraint.DATA_LOCATION, EvaluationState.UNKNOWN)
+    assert _result(InferenceExecution.REMOTE, tuple(evaluations)).decision is PrivacyPreflightDecision.PASS
 
 
 def test_h32_tp005_authorization_is_frozen_and_content_independent() -> None:

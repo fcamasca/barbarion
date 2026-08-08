@@ -39,6 +39,7 @@ class PrivacyPreflightDecision(StrEnum):
     """Decision agregada de una evaluacion."""
 
     PASS = "pass"
+    WARNING = "warning"
     BLOCK = "block"
     NOT_APPLICABLE = "not_applicable"
 
@@ -297,11 +298,13 @@ class PrivacyPreflightResult:
                 raise ValueError("Un destino no local no admite NOT_APPLICABLE.")
             if self.target.execution is InferenceExecution.UNKNOWN:
                 decision = PrivacyPreflightDecision.BLOCK
-            elif all(state is EvaluationState.PASS for state in states):
+            elif self.evaluation_for(PrivacyConstraint.NO_TRAINING).state is not EvaluationState.PASS:
+                decision = PrivacyPreflightDecision.BLOCK
+            elif self.evaluation_for(PrivacyConstraint.RETENTION).state is EvaluationState.PASS:
                 _require_current_pass_evidence(evaluations, self.evaluated_at)
                 decision = PrivacyPreflightDecision.PASS
             else:
-                decision = PrivacyPreflightDecision.BLOCK
+                decision = PrivacyPreflightDecision.WARNING
         object.__setattr__(self, "decision", decision)
 
     def evaluation_for(self, constraint: PrivacyConstraint) -> ConstraintEvaluation:
@@ -316,6 +319,7 @@ class PrivacyAuthorization:
     operation_id: str
     target_fingerprint: str
     policy_fingerprint: str
+    risk_accepted: bool
 
     @classmethod
     def issue(
@@ -323,14 +327,19 @@ class PrivacyAuthorization:
         *,
         operation_id: str,
         result: PrivacyPreflightResult,
+        risk_accepted: bool = False,
     ) -> PrivacyAuthorization:
-        """Emite solo desde PASS remoto o NOT_APPLICABLE local."""
+        """Emite desde PASS/local o WARNING con riesgo aceptado."""
         if not isinstance(result, PrivacyPreflightResult):
             raise ValueError("result debe ser PrivacyPreflightResult.")
+        if not isinstance(risk_accepted, bool):
+            raise ValueError("risk_accepted debe ser bool.")
         if result.decision not in {
             PrivacyPreflightDecision.PASS,
             PrivacyPreflightDecision.NOT_APPLICABLE,
-        }:
+        } and not (
+            result.decision is PrivacyPreflightDecision.WARNING and risk_accepted
+        ):
             raise ValueError("Una decision BLOCK no puede producir autorizacion.")
         authorization = object.__new__(cls)
         object.__setattr__(
@@ -348,6 +357,7 @@ class PrivacyAuthorization:
             "policy_fingerprint",
             result.policy.fingerprint,
         )
+        object.__setattr__(authorization, "risk_accepted", risk_accepted)
         return authorization
 
     def is_valid_for(
@@ -376,7 +386,9 @@ def _require_current_pass_evidence(
     evaluated_at: datetime,
 ) -> None:
     for evaluation in evaluations:
-        if not all(item.is_valid_at(evaluated_at) for item in evaluation.evidence):
+        if evaluation.state is EvaluationState.PASS and not all(
+            item.is_valid_at(evaluated_at) for item in evaluation.evidence
+        ):
             raise ValueError("PASS remoto no admite evidencia expirada o aun no vigente.")
 
 

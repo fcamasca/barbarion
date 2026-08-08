@@ -86,6 +86,10 @@ def test_graph_resolver_accepts_only_valid_relation_evidence_fallback() -> None:
 
 
 def test_graph_fusion_deduplicates_chunk_without_losing_origins() -> None:
+    structured = _candidate(
+        "chunk-shared",
+        evidence_kind="structured_symbol",
+    )
     graph = _candidate(
         "chunk-shared",
         evidence_kind="graph_expansion",
@@ -97,13 +101,14 @@ def test_graph_fusion_deduplicates_chunk_without_losing_origins() -> None:
     direct = _candidate("chunk-shared", evidence_kind=None)
 
     structural, chunks = _prepare_graph_aware_families(
-        (), (graph,), (direct,)
+        (structured,), (graph,), (direct,)
     )
 
     assert len(structural) == 1
     assert chunks == ()
     assert len(structural[0].source["graph_origins"]) == 2
     assert structural[0].source["candidate_origin_kinds"] == (
+        "structured_symbol",
         "graph_expansion",
         "h3_chunk",
     )

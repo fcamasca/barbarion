@@ -15,19 +15,29 @@ def _candidate(
     score: float = 0.9,
     start_line: int | None = None,
     end_line: int | None = None,
+    evidence_kind: str | None = None,
+    candidate_origin_kinds: tuple[str, ...] | None = None,
+    selection_global_rank: int | None = None,
 ) -> RetrievalCandidate:
+    source: dict[str, object] = {
+        "document_id": document_id,
+        "ordinal": ordinal,
+        "relative_path": f"synthetic/{chunk_id}.txt",
+        "content": content,
+        "start_line": start_line,
+        "end_line": end_line,
+    }
+    if evidence_kind is not None:
+        source["evidence_kind"] = evidence_kind
+    if candidate_origin_kinds is not None:
+        source["candidate_origin_kinds"] = candidate_origin_kinds
+    if selection_global_rank is not None:
+        source["selection_global_rank"] = selection_global_rank
     return RetrievalCandidate(
         chunk_id=chunk_id,
         content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
         combined_score=score,
-        source={
-            "document_id": document_id,
-            "ordinal": ordinal,
-            "relative_path": f"synthetic/{chunk_id}.txt",
-            "content": content,
-            "start_line": start_line,
-            "end_line": end_line,
-        },
+        source=source,
     )
 
 
@@ -244,3 +254,23 @@ def test_every_candidate_has_a_stable_selection_or_omission_reason() -> None:
         ("budget",),
     ]
     assert all(decision["contribution_tokens_est_local"] == 0 for decision in decisions)
+
+
+def test_context_decisions_preserve_safe_graph_origin_metadata() -> None:
+    candidate = _candidate(
+        "merged",
+        "evidencia graph",
+        evidence_kind="structured_symbol",
+        candidate_origin_kinds=("structured_symbol", "graph_expansion"),
+        selection_global_rank=3,
+    )
+
+    result = _builder().build((candidate,), debug=True)
+
+    decision = result.debug["evidence_decisions"][0]
+    assert decision["evidence_kind"] == "structured_symbol"
+    assert decision["candidate_origin_kinds"] == (
+        "structured_symbol",
+        "graph_expansion",
+    )
+    assert decision["selection_global_rank"] == 3

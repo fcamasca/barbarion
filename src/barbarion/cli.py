@@ -2371,6 +2371,7 @@ def _render_ask_diagnostics(
     print("", file=sys.stderr)
 
     _render_h31_observability(debug.get("observability"))
+    _render_h33_graph_observability(debug)
     _render_privacy_preflight_debug(debug.get("privacy_preflight"))
     print("", file=sys.stderr)
 
@@ -2498,6 +2499,187 @@ def _render_h31_observability(value: object) -> None:
                 file=sys.stderr,
             )
     print("", file=sys.stderr)
+
+
+def _render_h33_graph_observability(debug: object) -> None:
+    """Renderiza métricas H3.3 permitidas sin exponer evidencia ni contenido."""
+    if not isinstance(debug, Mapping):
+        return
+    safe_keys = (
+        "structured_candidates",
+        "graph_enabled",
+        "graph_candidates",
+        "graph_seeds",
+        "graph_relations_seen",
+        "graph_relations_accepted",
+        "graph_traces",
+        "graph_accepted",
+        "graph_cycles",
+        "graph_deduplicated",
+        "graph_duplicates",
+        "graph_limit_hit",
+        "graph_limits",
+        "graph_max_depth_reached",
+        "graph_unresolved_sources",
+        "graph_ms",
+        "graph_insufficient_reason",
+        "graph_budget_fallback_triggered",
+        "graph_budget_fallback_applied",
+        "graph_budget_fallback_candidate_rank",
+        "graph_budget_fallback_replaced_rank",
+        "graph_selected_in_context_after_fallback",
+    )
+    present = tuple(key for key in safe_keys if key in debug)
+    if not present:
+        return
+    print("=== H3.3 GRAPH-AWARE RETRIEVAL ===", file=sys.stderr)
+    if debug.get("graph_enabled") is False:
+        print("graph_status=disabled", file=sys.stderr)
+    else:
+        print("graph_status=enabled", file=sys.stderr)
+    for key in present:
+        value = debug.get(key)
+        if value is None or isinstance(value, (bool, int, float, str)):
+            print(f"{key}={_format_h33_metric(value)}", file=sys.stderr)
+    for key, value in _h33_h31_selection_metrics(debug).items():
+        print(f"{key}={_format_h33_metric(value)}", file=sys.stderr)
+    for key, value in _h33_context_decision_metrics(debug).items():
+        print(f"{key}={_format_h33_metric(value)}", file=sys.stderr)
+    print("", file=sys.stderr)
+
+
+def _format_h33_metric(value: object) -> str:
+    """Normaliza escalares seguros del bloque H3.3."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
+
+
+def _h33_h31_selection_metrics(debug: Mapping[str, object]) -> dict[str, object]:
+    """Agrega decisiones H3.1 de candidatos graph-aware sin revelar IDs."""
+    decisions = debug.get("candidate_selection")
+    if not isinstance(decisions, (tuple, list)):
+        observability = debug.get("observability")
+        decisions = (
+            observability.get("candidate_selection")
+            if isinstance(observability, Mapping)
+            else None
+        )
+    if not isinstance(decisions, (tuple, list)):
+        return {}
+    counters = {
+        "graph_selected_after_h31": 0,
+        "graph_omitted_after_h31": 0,
+        "graph_omitted_top_k": 0,
+        "graph_omitted_duplicate": 0,
+        "graph_omitted_missing_content": 0,
+    }
+    selected_ranks: list[int] = []
+    for decision in decisions:
+        if not isinstance(decision, Mapping) or not _is_graph_candidate_decision(decision):
+            continue
+        action = decision.get("action")
+        reasons = decision.get("reasons")
+        if isinstance(reasons, str):
+            reason_values = (reasons,)
+        elif isinstance(reasons, (tuple, list)):
+            reason_values = tuple(str(reason) for reason in reasons)
+        else:
+            reason_values = ()
+        if action == "selected":
+            counters["graph_selected_after_h31"] += 1
+            rank = decision.get("selection_global_rank")
+            if isinstance(rank, int) and not isinstance(rank, bool):
+                selected_ranks.append(rank)
+            continue
+        if action != "omitted":
+            continue
+        counters["graph_omitted_after_h31"] += 1
+        if "top_k" in reason_values:
+            counters["graph_omitted_top_k"] += 1
+        if any(reason.startswith("duplicate") for reason in reason_values):
+            counters["graph_omitted_duplicate"] += 1
+        if "missing_content" in reason_values:
+            counters["graph_omitted_missing_content"] += 1
+    return {
+        **counters,
+        "graph_selected_h31_ranks": sorted(set(selected_ranks)),
+    }
+
+
+def _is_graph_candidate_decision(decision: Mapping[str, object]) -> bool:
+    """Reconoce procedencia graph-aware usando solo metadata categórica segura."""
+    if decision.get("evidence_kind") == "graph_expansion":
+        return True
+    origins = decision.get("candidate_origin_kinds")
+    return isinstance(origins, (tuple, list)) and "graph_expansion" in origins
+
+
+def _h33_context_decision_metrics(debug: Mapping[str, object]) -> dict[str, object]:
+    """Agrega paso por presupuesto para candidatos graph-aware."""
+    decisions = debug.get("context_decisions")
+    if not isinstance(decisions, (tuple, list)):
+        observability = debug.get("observability")
+        decisions = (
+            observability.get("context_decisions")
+            if isinstance(observability, Mapping)
+            else None
+        )
+    if not isinstance(decisions, (tuple, list)):
+        return {}
+    selected = 0
+    omitted_budget = 0
+    selected_ranks: list[int] = []
+    omitted_budget_ranks: list[int] = []
+    selected_tokens: list[int | float] = []
+    omitted_budget_tokens: list[int | float] = []
+    for decision in decisions:
+        if not isinstance(decision, Mapping) or not _is_graph_candidate_decision(decision):
+            continue
+        action = decision.get("action")
+        reasons = decision.get("reasons")
+        if isinstance(reasons, str):
+            reason_values = (reasons,)
+        elif isinstance(reasons, (tuple, list)):
+            reason_values = tuple(str(reason) for reason in reasons)
+        else:
+            reason_values = ()
+        if action in {"selected", "truncated"}:
+            selected += 1
+            rank = decision.get("selection_global_rank")
+            if isinstance(rank, int) and not isinstance(rank, bool):
+                selected_ranks.append(rank)
+            contribution = decision.get("contribution_tokens_est_local")
+            if isinstance(contribution, (int, float)) and not isinstance(
+                contribution, bool
+            ):
+                selected_tokens.append(contribution)
+        elif action == "omitted" and "budget" in reason_values:
+            omitted_budget += 1
+            rank = decision.get("selection_global_rank")
+            if isinstance(rank, int) and not isinstance(rank, bool):
+                omitted_budget_ranks.append(rank)
+            contribution = decision.get("contribution_tokens_est_local")
+            if (
+                isinstance(contribution, (int, float))
+                and not isinstance(contribution, bool)
+                and contribution > 0
+            ):
+                omitted_budget_tokens.append(contribution)
+    return {
+        "graph_selected_in_context": selected,
+        "graph_omitted_by_budget": omitted_budget,
+        "graph_selected_in_context_ranks": sorted(set(selected_ranks)),
+        "graph_omitted_by_budget_ranks": sorted(set(omitted_budget_ranks)),
+        "graph_selected_in_context_tokens_est_local": (
+            sum(selected_tokens) if selected_tokens else None
+        ),
+        "graph_omitted_by_budget_tokens_est_local": (
+            sum(omitted_budget_tokens) if omitted_budget_tokens else None
+        ),
+    }
 
 
 def _render_ask_debug_summary(result: AnswerResult, debug: Mapping[str, object]) -> None:

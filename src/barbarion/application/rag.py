@@ -2533,6 +2533,11 @@ def _evidence_decisions(
                 "reasons": reasons,
                 "combined_score": candidate.combined_score,
                 "contribution_tokens_est_local": contribution,
+                "selection_global_rank": candidate.source.get(
+                    "selection_global_rank"
+                ),
+                "evidence_kind": candidate.source.get("evidence_kind"),
+                "candidate_origin_kinds": _candidate_origin_kinds(candidate),
             }
         )
     return tuple(decisions)
@@ -3007,6 +3012,25 @@ class AskService:
             )
         else:
             context = self.context_builder.build(candidates, debug=debug)
+        context, input_budget_debug, graph_budget_fallback = (
+            _apply_graph_budget_fallback(
+                context_builder=self.context_builder,
+                prompt_builder=self.prompt_builder,
+                candidates=candidates,
+                context=context,
+                input_budget_debug=input_budget_debug,
+                question=question,
+                input_token_budget_est=input_budget,
+                graph_enabled=graph_result is not None,
+                debug=debug,
+            )
+            if input_budget is not None and not no_llm
+            else (
+                context,
+                input_budget_debug,
+                _graph_budget_fallback_metrics(context, triggered=False),
+            )
+        )
         context_ms = _duration_ms(context_started)
         base_debug_payload = (
             _ask_debug_payload(
@@ -3036,6 +3060,7 @@ class AskService:
             base_debug_payload["combined_candidates"] = len(candidates)
             base_debug_payload["input_budget"] = input_budget_debug
             base_debug_payload["candidate_selection"] = candidate_selection_debug
+            base_debug_payload.update(graph_budget_fallback)
         budget_has_insufficient_evidence = (
             input_budget is not None
             and not no_llm
@@ -3706,6 +3731,7 @@ def _select_ask_candidates_relevance_first(
             candidate,
             action=action,
             reason=reason,
+            global_rank=global_rank,
             family=family,
             family_rank=family_rank,
             relative_score=relative_score,
@@ -3738,6 +3764,7 @@ def _candidate_selection_decision(
     *,
     action: str,
     reason: str,
+    global_rank: int | None = None,
     family: str | None = None,
     family_rank: int | None = None,
     relative_score: float | None = None,
@@ -3749,7 +3776,10 @@ def _candidate_selection_decision(
         "reasons": (reason,),
         "combined_score": candidate.combined_score,
         "evidence_kind": candidate.source.get("evidence_kind"),
+        "candidate_origin_kinds": _candidate_origin_kinds(candidate),
     }
+    if global_rank is not None:
+        decision["selection_global_rank"] = global_rank
     if family is not None:
         decision.update(
             {
@@ -3760,6 +3790,224 @@ def _candidate_selection_decision(
             }
         )
     return decision
+
+
+def _apply_graph_budget_fallback(
+    *,
+    context_builder: ContextBuilder,
+    prompt_builder: PromptBuilder,
+    candidates: tuple[RetrievalCandidate, ...],
+    context: ContextBuildResult,
+    input_budget_debug: dict[str, object] | None,
+    question: str,
+    input_token_budget_est: int,
+    graph_enabled: bool,
+    debug: bool,
+) -> tuple[ContextBuildResult, dict[str, object] | None, dict[str, object]]:
+    """Intenta una sola sustitucion para evitar cobertura graph nula por budget."""
+    metrics = _graph_budget_fallback_metrics(context, triggered=False)
+    if not graph_enabled:
+        return context, input_budget_debug, metrics
+
+    graph_candidates = tuple(
+        candidate
+        for candidate in candidates
+        if "graph_expansion" in _candidate_origin_kinds(candidate)
+    )
+    selected_chunk_ids = {
+        source.candidate.chunk_id for source in context.sources
+    }
+    if not graph_candidates or any(
+        candidate.chunk_id in selected_chunk_ids for candidate in graph_candidates
+    ):
+        return context, input_budget_debug, metrics
+
+    omitted_budget_ids = {
+        str(item.get("chunk_id"))
+        for item in context.omitted
+        if item.get("reason") == "budget"
+    }
+    eligible = tuple(
+        candidate
+        for candidate in graph_candidates
+        if candidate.chunk_id in omitted_budget_ids
+        and _selection_global_rank(candidate) is not None
+    )
+    ranked_sources = tuple(
+        source
+        for source in context.sources
+        if _selection_global_rank(source.candidate) is not None
+    )
+    if not eligible or not ranked_sources:
+        return context, input_budget_debug, metrics
+
+    graph_candidate = min(
+        eligible,
+        key=lambda candidate: (
+            _selection_global_rank(candidate),
+            candidate.chunk_id,
+        ),
+    )
+    replaced_source = max(
+        ranked_sources,
+        key=lambda source: (
+            _selection_global_rank(source.candidate),
+            source.candidate.chunk_id,
+        ),
+    )
+    metrics.update(
+        {
+            "graph_budget_fallback_triggered": True,
+            "graph_budget_fallback_candidate_rank": _selection_global_rank(
+                graph_candidate
+            ),
+            "graph_budget_fallback_replaced_rank": _selection_global_rank(
+                replaced_source.candidate
+            ),
+        }
+    )
+    alternative_candidates = tuple(
+        graph_candidate
+        if source is replaced_source
+        else source.candidate
+        for source in context.sources
+    )
+    alternative, alternative_budget_debug = _build_context_for_input_budget(
+        context_builder=context_builder,
+        prompt_builder=prompt_builder,
+        candidates=alternative_candidates,
+        question=question,
+        input_token_budget_est=input_token_budget_est,
+        debug=debug,
+    )
+    graph_in_alternative = any(
+        source.candidate.chunk_id == graph_candidate.chunk_id
+        for source in alternative.sources
+    )
+    source_keys = tuple(
+        (
+            source.candidate.chunk_id,
+            source.candidate.content_sha256[
+                : context_builder.dedupe_min_hash_prefix
+            ],
+        )
+        for source in alternative.sources
+    )
+    no_duplicates = (
+        len({key[0] for key in source_keys}) == len(source_keys)
+        and len({key[1] for key in source_keys}) == len(source_keys)
+    )
+    materializable = all(
+        source.content and _candidate_has_materializable_content(source.candidate)
+        for source in alternative.sources
+    )
+    fits_budget = (
+        alternative_budget_debug.get("final_prompt_tokens_est_local", 0)
+        <= input_token_budget_est
+    )
+    if (
+        graph_in_alternative
+        and len(alternative.sources) >= len(context.sources)
+        and no_duplicates
+        and materializable
+        and fits_budget
+    ):
+        alternative = _reconcile_graph_fallback_observability(
+            original_candidates=candidates,
+            original_context=context,
+            alternative_context=alternative,
+            replaced_candidate=replaced_source.candidate,
+            dedupe_min_hash_prefix=context_builder.dedupe_min_hash_prefix,
+            debug=debug,
+        )
+        metrics["graph_budget_fallback_applied"] = True
+        metrics["graph_selected_in_context_after_fallback"] = sum(
+            1
+            for source in alternative.sources
+            if "graph_expansion" in _candidate_origin_kinds(source.candidate)
+        )
+        return alternative, alternative_budget_debug, metrics
+    return context, input_budget_debug, metrics
+
+
+def _reconcile_graph_fallback_observability(
+    *,
+    original_candidates: tuple[RetrievalCandidate, ...],
+    original_context: ContextBuildResult,
+    alternative_context: ContextBuildResult,
+    replaced_candidate: RetrievalCandidate,
+    dedupe_min_hash_prefix: int,
+    debug: bool,
+) -> ContextBuildResult:
+    """Reconcilia diagnostico del fallback contra el universo H3.1 original."""
+    selected_chunk_ids = {
+        source.candidate.chunk_id for source in alternative_context.sources
+    }
+    original_reasons = {
+        str(item.get("chunk_id")): str(item.get("reason"))
+        for item in original_context.omitted
+    }
+    omitted = tuple(
+        {
+            "chunk_id": candidate.chunk_id,
+            "reason": (
+                "budget_fallback"
+                if candidate.chunk_id == replaced_candidate.chunk_id
+                else original_reasons.get(candidate.chunk_id, "budget")
+            ),
+        }
+        for candidate in original_candidates
+        if candidate.chunk_id not in selected_chunk_ids
+    )
+    if not debug:
+        return replace(alternative_context, omitted=omitted)
+
+    reconciled_debug = dict(alternative_context.debug)
+    reconciled_debug.update(
+        {
+            "input_candidates": len(original_candidates),
+            "omitted": len(omitted),
+            "evidence_decisions": _evidence_decisions(
+                original_candidates,
+                sources=alternative_context.sources,
+                omitted=omitted,
+                dedupe_min_hash_prefix=dedupe_min_hash_prefix,
+            ),
+            "redundancy_report": _context_redundancy_report(
+                original_candidates,
+                sources=alternative_context.sources,
+                dedupe_min_hash_prefix=dedupe_min_hash_prefix,
+            ),
+        }
+    )
+    return replace(
+        alternative_context,
+        omitted=omitted,
+        debug=reconciled_debug,
+    )
+
+
+def _graph_budget_fallback_metrics(
+    context: ContextBuildResult,
+    *,
+    triggered: bool,
+) -> dict[str, object]:
+    return {
+        "graph_budget_fallback_triggered": triggered,
+        "graph_budget_fallback_applied": False,
+        "graph_budget_fallback_candidate_rank": None,
+        "graph_budget_fallback_replaced_rank": None,
+        "graph_selected_in_context_after_fallback": sum(
+            1
+            for source in context.sources
+            if "graph_expansion" in _candidate_origin_kinds(source.candidate)
+        ),
+    }
+
+
+def _selection_global_rank(candidate: RetrievalCandidate) -> int | None:
+    value = candidate.source.get("selection_global_rank")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _prepare_graph_aware_families(
@@ -3813,8 +4061,9 @@ def _merge_same_chunk_candidate(
         source["graph_origins"] = tuple(origins)
     kinds = tuple(
         dict.fromkeys(
-            str(candidate.source.get("evidence_kind") or "h3_chunk")
+            kind
             for candidate in (primary, additional)
+            for kind in _candidate_origin_kinds(candidate)
         )
     )
     source["candidate_origin_kinds"] = kinds
@@ -3831,6 +4080,24 @@ def _merge_same_chunk_candidate(
         ),
         source=source,
     )
+
+
+def _candidate_origin_kinds(candidate: RetrievalCandidate) -> tuple[str, ...]:
+    """Obtiene la unión categórica de procedencias conservando orden estable."""
+    kinds: list[str] = []
+    accumulated = candidate.source.get("candidate_origin_kinds")
+    if isinstance(accumulated, (tuple, list)):
+        kinds.extend(
+            str(value)
+            for value in accumulated
+            if isinstance(value, str) and value
+        )
+    evidence_kind = candidate.source.get("evidence_kind")
+    if isinstance(evidence_kind, str) and evidence_kind:
+        kinds.append(evidence_kind)
+    if not kinds:
+        kinds.append("h3_chunk")
+    return tuple(dict.fromkeys(kinds))
 
 
 def _max_optional(left: float | None, right: float | None) -> float | None:

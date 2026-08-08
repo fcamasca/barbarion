@@ -1424,6 +1424,180 @@ def test_ask_debug_with_successful_validation_reports_models_and_retrieval(
     assert "final_result: ACCEPTED" in captured.err
 
 
+def test_ask_debug_renders_safe_h33_metrics_between_h31_and_privacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    debug_payload = {
+        **_ask_debug_payload(valid=True, response="Respuesta [F1]"),
+        "structured_candidates": 2,
+        "graph_enabled": True,
+        "graph_candidates": 3,
+        "graph_seeds": 2,
+        "graph_relations_seen": 5,
+        "graph_relations_accepted": 4,
+        "graph_cycles": 1,
+        "graph_deduplicated": 2,
+        "graph_limit_hit": False,
+        "graph_max_depth_reached": 2,
+        "graph_ms": 7,
+        "graph_insufficient_reason": None,
+        "graph_budget_fallback_triggered": True,
+        "graph_budget_fallback_applied": True,
+        "graph_budget_fallback_candidate_rank": 9,
+        "graph_budget_fallback_replaced_rank": 8,
+        "graph_selected_in_context_after_fallback": 1,
+        "candidate_selection": (
+            {
+                "chunk_id": "SECRET_CHUNK_SELECTED",
+                "action": "selected",
+                "reasons": ("relevance",),
+                "evidence_kind": "graph_expansion",
+                "selection_global_rank": 3,
+            },
+            {
+                "chunk_id": "SECRET_CHUNK_TOP_K",
+                "action": "omitted",
+                "reasons": ("top_k",),
+                "candidate_origin_kinds": ("graph_expansion", "h3_chunk"),
+            },
+            {
+                "chunk_id": "SECRET_CHUNK_DUPLICATE",
+                "action": "omitted",
+                "reasons": ("duplicate_chunk_id",),
+                "evidence_kind": "graph_expansion",
+            },
+            {
+                "chunk_id": "SECRET_CHUNK_MISSING",
+                "action": "omitted",
+                "reasons": ("missing_content",),
+                "evidence_kind": "graph_expansion",
+            },
+            {
+                "chunk_id": "NON_GRAPH_CHUNK",
+                "action": "selected",
+                "reasons": ("relevance",),
+                "evidence_kind": None,
+            },
+        ),
+        "context_decisions": (
+            {
+                "chunk_id": "SECRET_CONTEXT_SELECTED",
+                "action": "selected",
+                "reasons": ("selected",),
+                "candidate_origin_kinds": ("structured_symbol", "graph_expansion"),
+                "selection_global_rank": 3,
+                "contribution_tokens_est_local": 40,
+            },
+            {
+                "chunk_id": "SECRET_CONTEXT_TRUNCATED",
+                "action": "truncated",
+                "reasons": ("max_chunk_tokens",),
+                "evidence_kind": "graph_expansion",
+                "selection_global_rank": 7,
+                "contribution_tokens_est_local": 10,
+            },
+            {
+                "chunk_id": "SECRET_CONTEXT_BUDGET",
+                "action": "omitted",
+                "reasons": ("budget",),
+                "candidate_origin_kinds": ("graph_expansion", "h3_chunk"),
+                "selection_global_rank": 9,
+                "contribution_tokens_est_local": 0,
+            },
+            {
+                "chunk_id": "NON_GRAPH_CONTEXT",
+                "action": "omitted",
+                "reasons": ("budget",),
+                "candidate_origin_kinds": ("h3_chunk",),
+            },
+        ),
+        "graph_symbol_name": "SECRET_SYMBOL",
+        "graph_path": "secret/path.sql",
+        "graph_content": "SECRET_CONTENT",
+        "privacy_preflight": {"privacy_decision": "pass"},
+    }
+    service = FakeAskService(citations_valid=True, debug_payload=debug_payload)
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?", "--debug"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    header = "=== H3.3 GRAPH-AWARE RETRIEVAL ==="
+    assert header in captured.err
+    assert "graph_status=enabled" in captured.err
+    assert "structured_candidates=2" in captured.err
+    assert "graph_relations_accepted=4" in captured.err
+    assert "graph_limit_hit=false" in captured.err
+    assert "graph_insufficient_reason=null" in captured.err
+    assert "graph_budget_fallback_triggered=true" in captured.err
+    assert "graph_budget_fallback_applied=true" in captured.err
+    assert "graph_budget_fallback_candidate_rank=9" in captured.err
+    assert "graph_budget_fallback_replaced_rank=8" in captured.err
+    assert "graph_selected_in_context_after_fallback=1" in captured.err
+    assert "graph_selected_after_h31=1" in captured.err
+    assert "graph_omitted_after_h31=3" in captured.err
+    assert "graph_omitted_top_k=1" in captured.err
+    assert "graph_omitted_duplicate=1" in captured.err
+    assert "graph_omitted_missing_content=1" in captured.err
+    assert "graph_selected_h31_ranks=[3]" in captured.err
+    assert "graph_selected_in_context=2" in captured.err
+    assert "graph_omitted_by_budget=1" in captured.err
+    assert "graph_selected_in_context_ranks=[3, 7]" in captured.err
+    assert "graph_omitted_by_budget_ranks=[9]" in captured.err
+    assert "graph_selected_in_context_tokens_est_local=50" in captured.err
+    assert "graph_omitted_by_budget_tokens_est_local=null" in captured.err
+    assert captured.err.index("=== H3.1 OBSERVABILITY ===") < captured.err.index(header)
+    assert captured.err.index(header) < captured.err.index("=== PRIVACY PREFLIGHT ===")
+    assert "SECRET_SYMBOL" not in captured.err
+    assert "secret/path.sql" not in captured.err
+    assert "SECRET_CONTENT" not in captured.err
+    assert "SECRET_CHUNK_SELECTED" not in captured.err
+    assert "SECRET_CHUNK_TOP_K" not in captured.err
+    assert "SECRET_CHUNK_DUPLICATE" not in captured.err
+    assert "SECRET_CHUNK_MISSING" not in captured.err
+    assert "NON_GRAPH_CHUNK" not in captured.err
+    assert "SECRET_CONTEXT_SELECTED" not in captured.err
+    assert "SECRET_CONTEXT_TRUNCATED" not in captured.err
+    assert "SECRET_CONTEXT_BUDGET" not in captured.err
+    assert "NON_GRAPH_CONTEXT" not in captured.err
+
+
+def test_ask_debug_renders_h33_disabled_compactly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = write_ingest_config(tmp_path)
+    (tmp_path / "data").mkdir()
+    initialize_database(tmp_path / "data" / "barbarion.db")
+    service = FakeAskService(
+        citations_valid=True,
+        debug_payload={
+            **_ask_debug_payload(valid=True),
+            "graph_enabled": False,
+            "graph_candidates": 0,
+            "graph_seeds": 0,
+            "graph_ms": 0,
+        },
+    )
+    monkeypatch.setattr(cli, "_build_ask_service", lambda settings: service)
+
+    exit_code = cli.main(["--config", str(source), "ask", "Donde esta?", "--debug"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "=== H3.3 GRAPH-AWARE RETRIEVAL ===" in captured.err
+    assert "graph_status=disabled" in captured.err
+    assert "graph_enabled=false" in captured.err
+    assert "graph_candidates=0" in captured.err
+
+
 def test_ask_debug_with_successful_repair_reports_acceptance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

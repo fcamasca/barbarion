@@ -14,6 +14,7 @@ from barbarion.application.rag import (
     ContextBuilder,
     GraphAwareRetrievalResult,
     PromptBuilder,
+    _apply_graph_budget_fallback,
     _build_context_for_input_budget,
     _build_repair_context_for_input_budget,
 )
@@ -649,6 +650,182 @@ def test_graph_aware_debug_and_no_llm_do_not_call_provider(tmp_path) -> None:
     assert result.debug["graph_candidates"] == 1
 
 
+def _ranked_candidate(
+    chunk_id: str,
+    rank: int,
+    *,
+    graph: bool = False,
+    content: str = "evidencia breve " * 8,
+) -> RetrievalCandidate:
+    item = candidate(
+        chunk_id,
+        hashlib.sha256(chunk_id.encode()).hexdigest(),
+        1.0 - rank / 100,
+        document_id=rank + 1,
+        content=content,
+    )
+    source = {**dict(item.source), "selection_global_rank": rank}
+    if graph:
+        source["candidate_origin_kinds"] = ("graph_expansion",)
+        source["evidence_kind"] = "graph_expansion"
+    return replace(item, source=source)
+
+
+def _budgeted_context(
+    builder: ContextBuilder,
+    prompt_builder: PromptBuilder,
+    candidates: tuple[RetrievalCandidate, ...],
+    *,
+    evidence_budget: int,
+):
+    overhead = prompt_builder.compose(
+        question="consulta",
+        context=builder.build(()),
+    ).tokens_est_local
+    input_budget = overhead + evidence_budget
+    context, budget_debug = _build_context_for_input_budget(
+        context_builder=builder,
+        prompt_builder=prompt_builder,
+        candidates=candidates,
+        question="consulta",
+        input_token_budget_est=input_budget,
+        debug=True,
+    )
+    return context, budget_debug, input_budget
+
+
+def test_graph_budget_fallback_is_not_triggered_when_graph_already_fits() -> None:
+    builder = ContextBuilder(
+        token_budget=500,
+        max_chunk_tokens=100,
+        dedupe_min_hash_prefix=8,
+        selection_policy="optimized_v1",
+    )
+    prompt_builder = PromptBuilder()
+    graph = _ranked_candidate("graph", 0, graph=True)
+    context, budget_debug, input_budget = _budgeted_context(
+        builder, prompt_builder, (graph,), evidence_budget=100
+    )
+
+    final, final_budget, metrics = _apply_graph_budget_fallback(
+        context_builder=builder,
+        prompt_builder=prompt_builder,
+        candidates=(graph,),
+        context=context,
+        input_budget_debug=budget_debug,
+        question="consulta",
+        input_token_budget_est=input_budget,
+        graph_enabled=True,
+        debug=True,
+    )
+
+    assert final is context
+    assert final_budget is budget_debug
+    assert metrics["graph_budget_fallback_triggered"] is False
+    assert metrics["graph_selected_in_context_after_fallback"] == 1
+
+
+def test_graph_budget_fallback_replaces_worst_rank_deterministically() -> None:
+    builder = ContextBuilder(
+        token_budget=500,
+        max_chunk_tokens=100,
+        dedupe_min_hash_prefix=8,
+        selection_policy="optimized_v1",
+    )
+    prompt_builder = PromptBuilder()
+    first = _ranked_candidate("first", 1)
+    worst = _ranked_candidate("worst", 8)
+    graph = _ranked_candidate("graph", 9, graph=True)
+    graph_second = _ranked_candidate("graph-second", 10, graph=True)
+    candidates = (first, worst, graph, graph_second)
+    context, budget_debug, input_budget = _budgeted_context(
+        builder, prompt_builder, candidates, evidence_budget=95
+    )
+
+    outcomes = []
+    for _ in range(2):
+        final, final_budget, metrics = _apply_graph_budget_fallback(
+            context_builder=builder,
+            prompt_builder=prompt_builder,
+            candidates=candidates,
+            context=context,
+            input_budget_debug=budget_debug,
+            question="consulta",
+            input_token_budget_est=input_budget,
+            graph_enabled=True,
+            debug=True,
+        )
+        outcomes.append(tuple(source.candidate.chunk_id for source in final.sources))
+        assert final_budget["final_prompt_tokens_est_local"] <= input_budget
+        assert len(final.sources) >= len(context.sources)
+        assert any(
+            "graph_expansion" in source.candidate.source.get(
+                "candidate_origin_kinds", ()
+            )
+            for source in final.sources
+        )
+        assert metrics["graph_budget_fallback_triggered"] is True
+        assert metrics["graph_budget_fallback_applied"] is True
+        assert metrics["graph_budget_fallback_candidate_rank"] == 9
+        assert metrics["graph_budget_fallback_replaced_rank"] == 8
+        assert metrics["graph_selected_in_context_after_fallback"] == 1
+        decisions_by_rank = {
+            decision["selection_global_rank"]: decision
+            for decision in final.debug["evidence_decisions"]
+        }
+        assert decisions_by_rank[9]["action"] in {"selected", "truncated"}
+        assert decisions_by_rank[10]["action"] == "omitted"
+        assert decisions_by_rank[10]["reasons"] == ("budget",)
+        assert decisions_by_rank[8]["reasons"] == ("budget_fallback",)
+        assert len(final.omitted) == len(candidates) - len(final.sources)
+    assert outcomes[0] == outcomes[1]
+
+
+def test_graph_budget_fallback_rejects_alternative_with_fewer_sources() -> None:
+    builder = ContextBuilder(
+        token_budget=500,
+        max_chunk_tokens=1000,
+        dedupe_min_hash_prefix=8,
+        selection_policy="optimized_v1",
+    )
+    prompt_builder = PromptBuilder()
+    first = _ranked_candidate("first", 1)
+    worst = _ranked_candidate("worst", 8)
+    graph = _ranked_candidate(
+        "graph-large",
+        9,
+        graph=True,
+        content="evidencia graph extensa " * 100,
+    )
+    graph = replace(
+        graph,
+        source={**dict(graph.source), "relative_path": "x" * 800},
+    )
+    candidates = (first, worst, graph)
+    context, budget_debug, input_budget = _budgeted_context(
+        builder, prompt_builder, candidates, evidence_budget=95
+    )
+
+    final, final_budget, metrics = _apply_graph_budget_fallback(
+        context_builder=builder,
+        prompt_builder=prompt_builder,
+        candidates=candidates,
+        context=context,
+        input_budget_debug=budget_debug,
+        question="consulta",
+        input_token_budget_est=input_budget,
+        graph_enabled=True,
+        debug=True,
+    )
+
+    assert len(context.sources) == 2
+    assert final is context
+    assert final_budget is budget_debug
+    assert metrics["graph_budget_fallback_triggered"] is True
+    assert metrics["graph_budget_fallback_applied"] is False
+    assert metrics["graph_selected_in_context_after_fallback"] == 0
+
+
 def test_graph_disabled_keeps_candidates_and_reports_zero_metrics(tmp_path) -> None:
     service, _fake_llm = ask_service(tmp_path, "unused [F1].")
 
@@ -666,6 +843,9 @@ def test_graph_disabled_keeps_candidates_and_reports_zero_metrics(tmp_path) -> N
     assert result.debug["graph_enabled"] is False
     assert result.debug["graph_candidates"] == 0
     assert result.debug["graph_ms"] == 0
+    assert result.debug["graph_budget_fallback_triggered"] is False
+    assert result.debug["graph_budget_fallback_applied"] is False
+    assert result.debug["graph_selected_in_context_after_fallback"] == 0
 
 
 def test_graph_aware_selects_same_evidence_for_ollama_and_anthropic(tmp_path) -> None:

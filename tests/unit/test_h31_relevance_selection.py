@@ -24,6 +24,7 @@ def _candidate(
     document_id: int = 1,
     ordinal: int = 0,
     evidence_kind: str | None = None,
+    candidate_origin_kinds: tuple[str, ...] | None = None,
     symbol_name: str | None = None,
 ) -> RetrievalCandidate:
     text = content or f"evidencia de {chunk_id}"
@@ -35,6 +36,8 @@ def _candidate(
     }
     if evidence_kind is not None:
         source["evidence_kind"] = evidence_kind
+    if candidate_origin_kinds is not None:
+        source["candidate_origin_kinds"] = candidate_origin_kinds
     return RetrievalCandidate(
         chunk_id=chunk_id,
         content_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -42,6 +45,33 @@ def _candidate(
         metadata=SymbolMetadata(symbol_name=symbol_name),
         source=source,
     )
+
+
+def test_candidate_selection_preserves_safe_accumulated_origin_kinds() -> None:
+    candidate = _candidate(
+        "merged",
+        0.9,
+        evidence_kind="structured_symbol",
+        candidate_origin_kinds=(
+            "structured_symbol",
+            "graph_expansion",
+            "h3_chunk",
+        ),
+    )
+
+    _, decisions = _select_ask_candidates_relevance_first(
+        (candidate,),
+        (),
+        limit=1,
+        dedupe_min_hash_prefix=16,
+    )
+
+    assert decisions[0]["candidate_origin_kinds"] == (
+        "structured_symbol",
+        "graph_expansion",
+        "h3_chunk",
+    )
+    assert decisions[0]["selection_global_rank"] == 0
 
 
 def _missing_candidate(chunk_id: str, score: float) -> RetrievalCandidate:
@@ -160,6 +190,7 @@ def test_missing_content_does_not_spend_top_k_and_valid_candidate_backfills() ->
         "reasons": ("missing_content",),
         "combined_score": 0.95,
         "evidence_kind": None,
+        "candidate_origin_kinds": ("h3_chunk",),
     }
 
 

@@ -121,11 +121,6 @@ bloqueante; retention FAIL/UNKNOWN requiere confirmación y data_location es
 informativa. Esta política vigente sustituye cualquier descripción histórica de
 `strict` como requisito simultáneo de ZDR y ubicación.
 
-Antes de una inferencia remota, Barbarion aplica un preflight fail-closed.
-`strict` exige no-training, ZDR efectivo y ubicación conocida. `allowed_regions`
-es opcional; cuando se define, la ubicación efectiva también debe pertenecer a
-esa lista. La ejecución local no requiere esta autorización.
-
 El registry público solo aporta metadata estructurada sobre capacidades. No
 demuestra que una cuenta concreta tenga activado ZDR o una región concreta, ni
 verifica el cumplimiento contractual interno del proveedor. “ZDR disponible”

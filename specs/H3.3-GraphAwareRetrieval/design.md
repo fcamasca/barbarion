@@ -68,6 +68,65 @@ Extender el debug existente con `graph_seeds`, `graph_relations_seen`, `graph_re
 
 Si las tablas/repositorio H4 no están disponibles, están vacías o fallan de forma recuperable, H3.3 registra diagnóstico seguro y devuelve los candidatos H3. Un fallo de H3 base continúa siendo error H3, no se oculta. Ollama/Anthropic reciben el mismo contexto lógico.
 
+## 8.1 Contratos de dominio T02
+
+T02 define el vocabulario que usará el futuro expansor, sin decidir todavía cómo recorrer SQLite. Los nombres son contratos orientativos y deben reutilizar `RetrievalCandidate`, `TechnicalSymbol`, `TechnicalRelation` y `DependencyDirection` cuando sea posible.
+
+```text
+GraphSeed
+  seed_id: str                 # estable dentro de la consulta; no es una fuente citable
+  chunk_id: str                # chunk que originó la seed
+  symbol_id: str | None        # símbolo H4 activo asociado, si existe
+  retrieval_score: float
+  origin: SeedOrigin
+  source_candidate_id: str | None
+
+CandidateOrigin
+  kind: direct_h3 | structured_h41 | graph_expansion
+  seed_ids: tuple[str, ...]
+  relation_ids: tuple[str, ...]
+  path: GraphPath
+
+GraphPath
+  nodes: tuple[str, ...]       # symbol_ids, seed incluido
+  relations: tuple[str, ...]   # relation_ids, misma transición que nodes
+  direction: DependencyDirection
+  depth: int
+
+GraphExpansionLimits
+  max_depth: int
+  max_seeds: int
+  max_neighbors_per_seed: int
+  max_candidates: int
+
+GraphCandidateTrace
+  candidate_id: str             # chunk_id cuando el candidato ya es fuente
+  origin: CandidateOrigin
+  discovered_at_depth: int
+  dedupe_key: str
+  status: discovered | accepted | duplicate | cycle | limit | unresolved_source
+```
+
+### Invariantes
+
+- `GraphSeed.chunk_id` no se convierte automáticamente en evidencia estructural: sigue siendo el chunk del candidato H3 que originó la seed.
+- `CandidateOrigin.kind=direct_h3` tiene path vacío; `structured_h41` puede tener relaciones ya utilizadas por el recuperador existente; `graph_expansion` exige al menos una relación.
+- `GraphPath.nodes` contiene `len(relations) + 1` nodos; `depth = len(relations)` y es no negativo.
+- `GraphPath.direction` es la dirección efectiva de la consulta, no una propiedad persistida de la relación.
+- Una path no puede repetir `symbol_id`; una repetición se registra como ciclo y no forma una expansión aceptada.
+- Los IDs se ordenan y deduplican de forma estable; dos paths equivalentes producen la misma clave lógica.
+- Todos los límites son enteros positivos; `max_candidates` y `max_neighbors_per_seed` son globales/por seed respectivamente. Ningún contrato fija valores numéricos en T02.
+- Un candidato puede tener múltiples orígenes, pero un solo `dedupe_key` final por chunk/hash según las reglas H3.1.
+- Estos contratos no contienen texto de pregunta, prompt, respuesta ni código fuente; la trazabilidad usa IDs, conteos y metadata segura.
+
+### Catálogo de origen y dirección
+
+`SeedOrigin` debe distinguir al menos `h3_chunk`, `h41_structured` y `symbol_metadata`. `CandidateOrigin` es la procedencia del candidato fusionado y no reemplaza el `retrieval_mode` actual. La dirección permitida por tipo de relación se resolverá en T03; T02 solo transporta la dirección efectiva y exige que sea `OUTGOING`, `INCOMING` o `BOTH`.
+
+### Contrato de límites
+
+Los límites se validan al construir `GraphExpansionLimits`, pero sus valores provienen de configuración/benchmark posteriores. El futuro expansor debe poder devolver un resultado parcial con motivos `cycle`, `limit` o `unresolved_source`; T02 no define aún el algoritmo que produce esos estados.
+
 ## 9. Decisiones diferidas
 
 Los valores finales de límites, catálogo exacto de `relation_type`, dirección por tipo, suficiencia del recorrido para cada caso y fórmula de score se fijan tras inspeccionar datos reales y ejecutar fixtures. En particular, T01 debe confirmar si existe una relación package→miembro; sin ella, “package completo” no es una capacidad exigible de la primera versión. H4.2+ puede añadir relaciones, pero no se anticipan aquí.

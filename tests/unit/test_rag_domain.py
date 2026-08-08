@@ -5,21 +5,111 @@ from types import MappingProxyType
 import pytest
 
 from barbarion.domain.rag import (
+    CandidateOrigin,
+    CandidateOriginKind,
     ContextQualityMetrics,
     EmbeddingManifest,
     EmbeddingRequest,
     EmbeddingVector,
+    GraphCandidateStatus,
+    GraphCandidateTrace,
+    GraphExpansionLimits,
+    GraphPath,
+    GraphSeed,
     SymbolMetadata,
     RetrievalCandidate,
     RetrievalMode,
+    SeedOrigin,
     SearchRequest,
     combine_hybrid_candidates,
     embedding_version,
 )
+from barbarion.domain.reverse_engineering import DependencyDirection
 
 
 VALID_SHA = "a" * 64
 OTHER_SHA = "b" * 64
+
+
+def test_graph_contracts_preserve_seed_origin_path_and_limits() -> None:
+    seed = GraphSeed(
+        seed_id="seed-1",
+        chunk_id="chunk-1",
+        symbol_id="symbol-1",
+        retrieval_score=0.8,
+        origin=SeedOrigin.H3_CHUNK,
+        source_candidate_id="candidate-1",
+    )
+    path = GraphPath(
+        nodes=("symbol-1", "symbol-2"),
+        relations=("relation-1",),
+        direction=DependencyDirection.OUTGOING,
+        depth=1,
+    )
+    origin = CandidateOrigin(
+        kind=CandidateOriginKind.GRAPH_EXPANSION,
+        seed_ids=(seed.seed_id,),
+        relation_ids=path.relations,
+        path=path,
+    )
+    trace = GraphCandidateTrace(
+        candidate_id="chunk-2",
+        origin=origin,
+        discovered_at_depth=1,
+        dedupe_key="chunk-2",
+        status=GraphCandidateStatus.ACCEPTED,
+    )
+    limits = GraphExpansionLimits(
+        max_depth=2,
+        max_seeds=3,
+        max_neighbors_per_seed=4,
+        max_candidates=10,
+    )
+
+    assert trace.origin.path == path
+    assert trace.status == GraphCandidateStatus.ACCEPTED
+    assert limits.max_candidates == 10
+
+
+@pytest.mark.parametrize(
+    ("factory", "message"),
+    [
+        (
+            lambda: GraphPath(
+                nodes=("a", "b"),
+                relations=(),
+                direction=DependencyDirection.OUTGOING,
+                depth=0,
+            ),
+            "nodes",
+        ),
+        (
+            lambda: GraphPath(
+                nodes=("a", "b", "a"),
+                relations=("r1", "r2"),
+                direction=DependencyDirection.OUTGOING,
+                depth=2,
+            ),
+            "nodes",
+        ),
+        (
+            lambda: CandidateOrigin(kind=CandidateOriginKind.GRAPH_EXPANSION),
+            "graph_expansion",
+        ),
+        (
+            lambda: GraphExpansionLimits(
+                max_depth=0,
+                max_seeds=1,
+                max_neighbors_per_seed=1,
+                max_candidates=1,
+            ),
+            "max_depth",
+        ),
+    ],
+)
+def test_graph_contracts_reject_invalid_invariants(factory, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        factory()
 
 
 def test_embedding_version_is_stable_and_changes_by_dimension() -> None:

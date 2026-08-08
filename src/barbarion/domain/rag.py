@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any
 
 from barbarion.domain.models import SHA256_HEX_LENGTH
+from barbarion.domain.reverse_engineering import DependencyDirection
 
 
 class EmbeddingManifestStatus(StrEnum):
@@ -72,6 +73,33 @@ class RagQueryStatus(StrEnum):
     ERROR = "error"
 
 
+class SeedOrigin(StrEnum):
+    """Origen estructural de una semilla de expansión."""
+
+    H3_CHUNK = "h3_chunk"
+    H41_STRUCTURED = "h41_structured"
+    SYMBOL_METADATA = "symbol_metadata"
+
+
+class CandidateOriginKind(StrEnum):
+    """Procedencia de un candidato dentro de la fusión RAG."""
+
+    DIRECT_H3 = "direct_h3"
+    STRUCTURED_H41 = "structured_h41"
+    GRAPH_EXPANSION = "graph_expansion"
+
+
+class GraphCandidateStatus(StrEnum):
+    """Estado de trazabilidad de un candidato estructural."""
+
+    DISCOVERED = "discovered"
+    ACCEPTED = "accepted"
+    DUPLICATE = "duplicate"
+    CYCLE = "cycle"
+    LIMIT = "limit"
+    UNRESOLVED_SOURCE = "unresolved_source"
+
+
 class EmbeddingProviderError(RuntimeError):
     """Error esperado al generar embeddings."""
 
@@ -82,6 +110,111 @@ class VectorStoreError(RuntimeError):
 
 class LlmProviderError(RuntimeError):
     """Error esperado al generar respuestas con LLM local."""
+
+
+@dataclass(frozen=True, slots=True)
+class GraphSeed:
+    """Semilla estructural derivada de un candidato de retrieval."""
+
+    seed_id: str
+    chunk_id: str
+    symbol_id: str | None
+    retrieval_score: float
+    origin: SeedOrigin
+    source_candidate_id: str | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.seed_id, "seed_id")
+        _require_non_empty(self.chunk_id, "chunk_id")
+        if self.symbol_id is not None:
+            _require_non_empty(self.symbol_id, "symbol_id")
+        _require_unit_score(self.retrieval_score, "retrieval_score")
+        if not isinstance(self.origin, SeedOrigin):
+            raise ValueError("origin debe ser SeedOrigin.")
+        if self.source_candidate_id is not None:
+            _require_non_empty(self.source_candidate_id, "source_candidate_id")
+
+
+@dataclass(frozen=True, slots=True)
+class GraphPath:
+    """Camino lógico de símbolos y relaciones, sin ejecutar el recorrido."""
+
+    nodes: tuple[str, ...]
+    relations: tuple[str, ...]
+    direction: DependencyDirection
+    depth: int
+
+    def __post_init__(self) -> None:
+        if not self.nodes:
+            raise ValueError("nodes debe contener al menos un simbolo.")
+        if len(self.nodes) != len(self.relations) + 1:
+            raise ValueError("nodes debe tener una entrada mas que relations.")
+        for value in (*self.nodes, *self.relations):
+            _require_non_empty(value, "path_id")
+        if not isinstance(self.direction, DependencyDirection):
+            raise ValueError("direction debe ser DependencyDirection.")
+        _require_non_negative(self.depth, "depth")
+        if self.depth != len(self.relations):
+            raise ValueError("depth debe coincidir con la cantidad de relaciones.")
+        if len(set(self.nodes)) != len(self.nodes):
+            raise ValueError("nodes no puede repetir simbolos; el ciclo se registra fuera del path.")
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateOrigin:
+    """Trazabilidad de cómo un candidato llegó a la fusión RAG."""
+
+    kind: CandidateOriginKind
+    seed_ids: tuple[str, ...] = ()
+    relation_ids: tuple[str, ...] = ()
+    path: GraphPath | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, CandidateOriginKind):
+            raise ValueError("kind debe ser CandidateOriginKind.")
+        for value in (*self.seed_ids, *self.relation_ids):
+            _require_non_empty(value, "origin_id")
+        if self.kind == CandidateOriginKind.DIRECT_H3 and self.path is not None:
+            raise ValueError("direct_h3 no puede tener path.")
+        if self.kind == CandidateOriginKind.GRAPH_EXPANSION:
+            if self.path is None or not self.relation_ids:
+                raise ValueError("graph_expansion requiere path y relation_ids.")
+
+
+@dataclass(frozen=True, slots=True)
+class GraphExpansionLimits:
+    """Límites de exploración, sin valores de política congelados."""
+
+    max_depth: int
+    max_seeds: int
+    max_neighbors_per_seed: int
+    max_candidates: int
+
+    def __post_init__(self) -> None:
+        _require_positive(self.max_depth, "max_depth")
+        _require_positive(self.max_seeds, "max_seeds")
+        _require_positive(self.max_neighbors_per_seed, "max_neighbors_per_seed")
+        _require_positive(self.max_candidates, "max_candidates")
+
+
+@dataclass(frozen=True, slots=True)
+class GraphCandidateTrace:
+    """Estado efímero y seguro de un candidato estructural."""
+
+    candidate_id: str
+    origin: CandidateOrigin
+    discovered_at_depth: int
+    dedupe_key: str
+    status: GraphCandidateStatus = GraphCandidateStatus.DISCOVERED
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.candidate_id, "candidate_id")
+        if not isinstance(self.origin, CandidateOrigin):
+            raise ValueError("origin debe ser CandidateOrigin.")
+        _require_non_negative(self.discovered_at_depth, "discovered_at_depth")
+        _require_non_empty(self.dedupe_key, "dedupe_key")
+        if not isinstance(self.status, GraphCandidateStatus):
+            raise ValueError("status debe ser GraphCandidateStatus.")
 
 
 @dataclass(frozen=True, slots=True)

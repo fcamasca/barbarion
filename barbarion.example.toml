@@ -63,10 +63,11 @@ include_snippets = true
 # H3.3 es opt-in. Al activarlo, declara todos los limites y tipos tras medir
 # una baseline reproducible; no existen defaults numericos implicitos.
 graph_aware_enabled = false
-# graph_max_depth = <definir por baseline>
-# graph_max_seeds = <definir por baseline>
-# graph_max_neighbors_per_seed = <definir por baseline>
-# graph_max_candidates = <definir por baseline>
+# Valores recomendados por el benchmark sintético H3.3-T07.
+# graph_max_depth = 2
+# graph_max_seeds = 4
+# graph_max_neighbors_per_seed = 6
+# graph_max_candidates = 8
 # graph_relation_types = ["calls", "uses", "references"]
 # graph_direction = "outgoing" # outgoing, incoming, both
 # graph_min_confidence = "medium" # low, medium, high

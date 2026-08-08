@@ -1,0 +1,65 @@
+{
+  "dataset_id": "h33-graph-aware-v1",
+  "license": "synthetic-for-barbarion",
+  "top_k": 8,
+  "cases": [
+    {
+      "id": "simple-point-query",
+      "question": "¿Qué hace A?",
+      "direct": ["a"],
+      "expected": ["a"],
+      "symbols": ["a"],
+      "relations": []
+    },
+    {
+      "id": "transversal-depth-two",
+      "question": "¿Cómo funciona el proceso A completo?",
+      "direct": ["a"],
+      "expected": ["a", "b", "c"],
+      "symbols": ["a", "b", "c"],
+      "relations": [["a", "b", "calls"], ["b", "c", "uses"]]
+    },
+    {
+      "id": "branch-with-noise",
+      "question": "¿Qué componentes utiliza A?",
+      "direct": ["a"],
+      "expected": ["a", "b", "c", "d"],
+      "symbols": ["a", "b", "c", "d", "noise"],
+      "relations": [
+        ["a", "b", "calls"],
+        ["a", "c", "uses"],
+        ["a", "d", "opens"],
+        ["a", "noise", "uses"]
+      ]
+    },
+    {
+      "id": "multiple-seeds",
+      "question": "¿Cómo colaboran A y X?",
+      "direct": ["a", "x"],
+      "expected": ["a", "x", "b", "y"],
+      "symbols": ["a", "x", "b", "y"],
+      "relations": [["a", "b", "calls"], ["x", "y", "calls"]]
+    },
+    {
+      "id": "code-and-configuration",
+      "question": "¿Cómo calcula A y qué configuración usa?",
+      "direct": ["a"],
+      "expected": ["a", "cfg"],
+      "symbols": ["a", "cfg"],
+      "relations": [["a", "cfg", "references"]]
+    },
+    {
+      "id": "deep-process-with-distractors",
+      "question": "Explica el proceso A hasta su tabla final",
+      "direct": ["a"],
+      "expected": ["a", "b", "c"],
+      "symbols": ["a", "b", "c", "n1", "n2"],
+      "relations": [
+        ["a", "b", "calls"],
+        ["b", "c", "uses"],
+        ["b", "n1", "uses"],
+        ["b", "n2", "uses"]
+      ]
+    }
+  ]
+}

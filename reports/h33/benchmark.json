@@ -1,0 +1,560 @@
+{
+  "benchmark_id": "h33-graph-aware-v1",
+  "dataset_id": "h33-graph-aware-v1",
+  "license": "synthetic-for-barbarion",
+  "repetitions": 30,
+  "policies": {
+    "baseline": {
+      "limits": null,
+      "metrics": {
+        "multi_component_recall": 0.383333,
+        "simple_recall": 1.0,
+        "noise_ratio": 0.0,
+        "selected_chunks_avg": 1.167,
+        "context_tokens_est_avg": 42,
+        "relations_seen_avg": 0,
+        "latency_ms_median_like": 0.2545,
+        "latency_ms_avg": 0.264062
+      },
+      "cases": [
+        {
+          "id": "simple-point-query",
+          "expected_count": 1,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "transversal-depth-two",
+          "expected_count": 3,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 0.333333,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "branch-with-noise",
+          "expected_count": 4,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 0.25,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "multiple-seeds",
+          "expected_count": 4,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-x"
+          ],
+          "recall": 0.5,
+          "noise_count": 0,
+          "context_tokens_est": 72,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "code-and-configuration",
+          "expected_count": 2,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 0.5,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "deep-process-with-distractors",
+          "expected_count": 3,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 0.333333,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        }
+      ],
+      "provider_evidence_equal": true
+    },
+    "shallow": {
+      "limits": {
+        "max_depth": 1,
+        "max_seeds": 2,
+        "max_neighbors_per_seed": 3,
+        "max_candidates": 4
+      },
+      "metrics": {
+        "multi_component_recall": 0.866667,
+        "simple_recall": 1.0,
+        "noise_ratio": 0.0,
+        "selected_chunks_avg": 2.5,
+        "context_tokens_est_avg": 148.833,
+        "relations_seen_avg": 1.5,
+        "latency_ms_median_like": 0.4841,
+        "latency_ms_avg": 0.808909
+      },
+      "cases": [
+        {
+          "id": "simple-point-query",
+          "expected_count": 1,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "transversal-depth-two",
+          "expected_count": 3,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-b"
+          ],
+          "recall": 0.666667,
+          "noise_count": 0,
+          "context_tokens_est": 116,
+          "relations_seen": 1,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "branch-with-noise",
+          "expected_count": 4,
+          "selected_count": 4,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-d"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 276,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "multiple-seeds",
+          "expected_count": 4,
+          "selected_count": 4,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-x",
+            "chunk-y"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 232,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "code-and-configuration",
+          "expected_count": 2,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-cfg"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 117,
+          "relations_seen": 1,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "deep-process-with-distractors",
+          "expected_count": 3,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-b"
+          ],
+          "recall": 0.666667,
+          "noise_count": 0,
+          "context_tokens_est": 116,
+          "relations_seen": 1,
+          "provider_evidence_equal": true
+        }
+      ],
+      "provider_evidence_equal": true
+    },
+    "balanced": {
+      "limits": {
+        "max_depth": 2,
+        "max_seeds": 4,
+        "max_neighbors_per_seed": 6,
+        "max_candidates": 8
+      },
+      "metrics": {
+        "multi_component_recall": 1.0,
+        "simple_recall": 1.0,
+        "noise_ratio": 0.15,
+        "selected_chunks_avg": 3.333,
+        "context_tokens_est_avg": 226.5,
+        "relations_seen_avg": 2.167,
+        "latency_ms_median_like": 0.4853,
+        "latency_ms_avg": 0.479257
+      },
+      "cases": [
+        {
+          "id": "simple-point-query",
+          "expected_count": 1,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "transversal-depth-two",
+          "expected_count": 3,
+          "selected_count": 3,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 212,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "branch-with-noise",
+          "expected_count": 4,
+          "selected_count": 5,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-d",
+            "chunk-noise"
+          ],
+          "recall": 1.0,
+          "noise_count": 1,
+          "context_tokens_est": 358,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "multiple-seeds",
+          "expected_count": 4,
+          "selected_count": 4,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-x",
+            "chunk-y"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 232,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "code-and-configuration",
+          "expected_count": 2,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-cfg"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 117,
+          "relations_seen": 1,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "deep-process-with-distractors",
+          "expected_count": 3,
+          "selected_count": 5,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-n1",
+            "chunk-n2"
+          ],
+          "recall": 1.0,
+          "noise_count": 2,
+          "context_tokens_est": 404,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        }
+      ],
+      "provider_evidence_equal": true
+    },
+    "wide": {
+      "limits": {
+        "max_depth": 2,
+        "max_seeds": 8,
+        "max_neighbors_per_seed": 12,
+        "max_candidates": 16
+      },
+      "metrics": {
+        "multi_component_recall": 1.0,
+        "simple_recall": 1.0,
+        "noise_ratio": 0.15,
+        "selected_chunks_avg": 3.333,
+        "context_tokens_est_avg": 226.5,
+        "relations_seen_avg": 2.167,
+        "latency_ms_median_like": 0.4136,
+        "latency_ms_avg": 0.410605
+      },
+      "cases": [
+        {
+          "id": "simple-point-query",
+          "expected_count": 1,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "transversal-depth-two",
+          "expected_count": 3,
+          "selected_count": 3,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 212,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "branch-with-noise",
+          "expected_count": 4,
+          "selected_count": 5,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-d",
+            "chunk-noise"
+          ],
+          "recall": 1.0,
+          "noise_count": 1,
+          "context_tokens_est": 358,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "multiple-seeds",
+          "expected_count": 4,
+          "selected_count": 4,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-x",
+            "chunk-y"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 232,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "code-and-configuration",
+          "expected_count": 2,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-cfg"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 117,
+          "relations_seen": 1,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "deep-process-with-distractors",
+          "expected_count": 3,
+          "selected_count": 5,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-n1",
+            "chunk-n2"
+          ],
+          "recall": 1.0,
+          "noise_count": 2,
+          "context_tokens_est": 404,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        }
+      ],
+      "provider_evidence_equal": true
+    },
+    "deep_wide": {
+      "limits": {
+        "max_depth": 3,
+        "max_seeds": 8,
+        "max_neighbors_per_seed": 20,
+        "max_candidates": 30
+      },
+      "metrics": {
+        "multi_component_recall": 1.0,
+        "simple_recall": 1.0,
+        "noise_ratio": 0.15,
+        "selected_chunks_avg": 3.333,
+        "context_tokens_est_avg": 226.5,
+        "relations_seen_avg": 2.167,
+        "latency_ms_median_like": 0.4161,
+        "latency_ms_avg": 0.446319
+      },
+      "cases": [
+        {
+          "id": "simple-point-query",
+          "expected_count": 1,
+          "selected_count": 1,
+          "selected": [
+            "chunk-a"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 36,
+          "relations_seen": 0,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "transversal-depth-two",
+          "expected_count": 3,
+          "selected_count": 3,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 212,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "branch-with-noise",
+          "expected_count": 4,
+          "selected_count": 5,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-d",
+            "chunk-noise"
+          ],
+          "recall": 1.0,
+          "noise_count": 1,
+          "context_tokens_est": 358,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "multiple-seeds",
+          "expected_count": 4,
+          "selected_count": 4,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-x",
+            "chunk-y"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 232,
+          "relations_seen": 2,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "code-and-configuration",
+          "expected_count": 2,
+          "selected_count": 2,
+          "selected": [
+            "chunk-a",
+            "chunk-cfg"
+          ],
+          "recall": 1.0,
+          "noise_count": 0,
+          "context_tokens_est": 117,
+          "relations_seen": 1,
+          "provider_evidence_equal": true
+        },
+        {
+          "id": "deep-process-with-distractors",
+          "expected_count": 3,
+          "selected_count": 5,
+          "selected": [
+            "chunk-a",
+            "chunk-b",
+            "chunk-c",
+            "chunk-n1",
+            "chunk-n2"
+          ],
+          "recall": 1.0,
+          "noise_count": 2,
+          "context_tokens_est": 404,
+          "relations_seen": 4,
+          "provider_evidence_equal": true
+        }
+      ],
+      "provider_evidence_equal": true
+    }
+  },
+  "recommendation": {
+    "policy": "balanced",
+    "limits": {
+      "max_depth": 2,
+      "max_seeds": 4,
+      "max_neighbors_per_seed": 6,
+      "max_candidates": 8
+    },
+    "reason": "menor contexto y menor amplitud entre políticas con recall>=0.95, simple sin regresión y ruido<=0.15"
+  }
+}

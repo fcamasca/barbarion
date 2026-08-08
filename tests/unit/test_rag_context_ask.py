@@ -668,6 +668,36 @@ def test_graph_disabled_keeps_candidates_and_reports_zero_metrics(tmp_path) -> N
     assert result.debug["graph_ms"] == 0
 
 
+def test_graph_aware_selects_same_evidence_for_ollama_and_anthropic(tmp_path) -> None:
+    evidence_by_provider = {}
+    for provider in ("ollama", "anthropic"):
+        provider_path = tmp_path / provider
+        provider_path.mkdir()
+        service, fake_llm = ask_service(
+            provider_path,
+            "order_total se obtiene desde la evidencia [F1].",
+        )
+        fake_llm.provider = provider
+        service = replace(service, graph_retriever=_FakeGraphRetriever())
+
+        result = service.ask(
+            "order_total",
+            mode=RetrievalMode.KEYWORD,
+            top_k=3,
+            candidate_k=3,
+            threshold=0,
+            debug=True,
+        )
+
+        evidence_by_provider[provider] = tuple(
+            source.candidate.chunk_id for source in result.context.sources
+        )
+        assert len(fake_llm.prompts) == 1
+        assert result.debug["graph_enabled"] is True
+
+    assert evidence_by_provider["ollama"] == evidence_by_provider["anthropic"]
+
+
 def test_graph_debug_does_not_add_sensitive_rag_query_columns(tmp_path) -> None:
     question = "pregunta privada order_total"
     service, _fake_llm = ask_service(tmp_path, "unused [F1].")

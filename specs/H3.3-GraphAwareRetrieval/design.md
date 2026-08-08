@@ -127,6 +127,22 @@ GraphCandidateTrace
 
 Los límites se validan al construir `GraphExpansionLimits`, pero sus valores provienen de configuración/benchmark posteriores. El futuro expansor debe poder devolver un resultado parcial con motivos `cycle`, `limit` o `unresolved_source`; T02 no define aún el algoritmo que produce esos estados.
 
+## 8.2 Resultado T07 — benchmark y límites recomendados
+
+El benchmark sintético publicable `h33-graph-aware-v1` comparó cinco políticas sobre seis casos, con 30 repeticiones por caso. Se ejecutó el pipeline productivo de seeds, BFS, resolución a chunks, fusión y selección H3.1; no se utilizó LLM juez.
+
+| Política | Límites depth/seeds/vecinos/candidatos | Recall multi-componente | Recall simple | Ruido | Chunks promedio | Tokens contexto promedio |
+|---|---|---:|---:|---:|---:|---:|
+| baseline | desactivado | 0.383 | 1.000 | 0.000 | 1.167 | 42.000 |
+| shallow | 1/2/3/4 | 0.867 | 1.000 | 0.000 | 2.500 | 148.833 |
+| balanced | 2/4/6/8 | 1.000 | 1.000 | 0.150 | 3.333 | 226.500 |
+| wide | 2/8/12/16 | 1.000 | 1.000 | 0.150 | 3.333 | 226.500 |
+| deep_wide | 3/8/20/30 | 1.000 | 1.000 | 0.150 | 3.333 | 226.500 |
+
+Se recomienda `max_depth=2`, `max_seeds=4`, `max_neighbors_per_seed=6` y `max_candidates=8`. `wide` y `deep_wide` no mejoraron cobertura ni redujeron ruido/contexto, por lo que no justifican límites mayores. La evidencia lógica seleccionada fue idéntica para Ollama y Anthropic, ya que H3.3 termina antes de generación. Estos valores siguen siendo opt-in y deben revalidarse con corpus autorizado antes de promover H3.3 como default.
+
+Artefactos reproducibles: `tests/fixtures/h33_graph_benchmark.json`, `tests/support/h33_graph_benchmark.py` y `reports/h33/benchmark.{json,md}`.
+
 ## 9. Decisiones diferidas
 
 Los valores finales de límites, catálogo exacto de `relation_type`, dirección por tipo, suficiencia del recorrido para cada caso y fórmula de score se fijan tras inspeccionar datos reales y ejecutar fixtures. En particular, T01 debe confirmar si existe una relación package→miembro; sin ella, “package completo” no es una capacidad exigible de la primera versión. H4.2+ puede añadir relaciones, pero no se anticipan aquí.

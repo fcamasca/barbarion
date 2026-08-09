@@ -171,7 +171,7 @@ La sintaxis, opciones, efectos secundarios y códigos de salida están documenta
 
 - Versión actual: `0.6.0`
 - MVP completado: `5/5` hitos
-- Suite de aceptación vigente: `856 passed, 3 skipped`
+- Suite de aceptación vigente: `1107 passed, 14 skipped`
 - Smoke tests instalados: `11 passed`
 - Runtime validado: Python `3.12`
 - Integración continua: GitHub Actions
@@ -204,6 +204,12 @@ El historial y alcance de las evoluciones se mantienen en [`docs/EVOLUTION.md`](
 - [Specs por hito](specs/)
 
 El archivo [`barbarion.example.toml`](barbarion.example.toml) contiene una configuración completa y comentada. `barbarion.toml`, las bases SQLite, `data/`, `output/`, `logs/` y `.venv/` son artefactos locales excluidos de Git.
+
+## H4.2 — Patrones técnicos
+
+`barbarion patterns` calcula localmente rankings descriptivos de reutilización
+estructural y centralidad estructural. No usa LLM, no hace egress y no clasifica
+thresholds ni criticidad funcional. Consulta la [aceptación H4.2](specs/H4.2-TechnicalPatterns/acceptance.md).
 
 ## Licencia
 

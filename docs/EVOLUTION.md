@@ -402,6 +402,16 @@ del dominio.
 
 ## H4.2 -- Patrones técnicos
 
+Estado actual: completada y aceptada con alcance descriptivo. H4.2 expone
+rankings deterministas de `component_reuse` y `structural_centrality`; no define
+thresholds ni criticidad funcional. `component_reuse` usa
+`distinct_source_symbols` sobre `calls`, `uses`, `references` y `opens`;
+`structural_centrality` usa `distinct_total_neighbors`. La aceptación está en
+`specs/H4.2-TechnicalPatterns/acceptance.md`.
+
+Capas, módulos, código duplicado, hotspots y dependencias críticas quedan
+diferidos.
+
 Detectar:
 
 -   capas

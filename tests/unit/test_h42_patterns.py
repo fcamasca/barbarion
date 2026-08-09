@@ -77,6 +77,27 @@ def test_structural_centrality_uses_distinct_total_neighbors_only() -> None:
     assert result.metrics_secondary["outbound_relation_count"] == 1
 
 
+def test_component_reuse_excludes_hierarchy_but_centrality_keeps_it() -> None:
+    parent, child = _symbol("PARENT", 1), _symbol("CHILD", 2)
+    relation = _relation("parent", parent, child, 1)
+    relation = TechnicalRelation(
+        relation_id=relation.relation_id,
+        reference_id=relation.reference_id,
+        relation_type="parent_of",
+        classification=relation.classification,
+        resolution_status=relation.resolution_status,
+        confidence=relation.confidence,
+        evidence_file_id=relation.evidence_file_id,
+        source_symbol_id=relation.source_symbol_id,
+        target_symbol_id=relation.target_symbol_id,
+    )
+    results = detect_patterns((parent, child), (relation,))
+    reuse = next(r for r in results if r.pattern_type == "component_reuse" and r.subject_symbol_id == child.symbol_id)
+    centrality = next(r for r in results if r.pattern_type == "structural_centrality" and r.subject_symbol_id == child.symbol_id)
+    assert reuse.status.value == "insufficient_evidence"
+    assert centrality.metrics_primary == {"distinct_total_neighbors": 1}
+
+
 def test_logical_identity_is_stable_but_fingerprint_changes_with_graph() -> None:
     a, b, x = _symbol("A", 1), _symbol("B", 2), _symbol("X", 3)
     first = detect_patterns((a, b, x), (_relation("a", a, x, 1),))[0]

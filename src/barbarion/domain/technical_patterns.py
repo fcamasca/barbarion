@@ -39,6 +39,9 @@ class PatternPolicy:
     policy_id: str = "descriptive_v1"
     schema_version: str = "h42-pattern-result-v1"
     relation_types: frozenset[str] = frozenset()
+    component_reuse_relation_types: frozenset[str] = frozenset(
+        {"calls", "uses", "references", "opens"}
+    )
     decision_mode: str = "descriptive"
 
 
@@ -70,16 +73,16 @@ def detect_patterns(
 ) -> tuple[PatternResult, ...]:
     """Calcula resultados H4.2 en orden estable, sin umbrales numéricos."""
     symbol_by_id = {symbol.symbol_id: symbol for symbol in symbols}
-    eligible = tuple(
-        relation
-        for relation in relations
-        if _eligible(relation, symbol_by_id, policy)
-    )
     results: list[PatternResult] = []
     for subject_id in sorted(symbol_by_id):
         for pattern_type in sorted(pattern_types):
             if pattern_type not in {"component_reuse", "structural_centrality"}:
                 raise ValueError(f"Patrón no soportado: {pattern_type}")
+            eligible = tuple(
+                relation
+                for relation in relations
+                if _eligible(relation, symbol_by_id, policy, pattern_type)
+            )
             primary, secondary, contributing = _metrics_for(
                 pattern_type, subject_id, eligible
             )
@@ -100,7 +103,13 @@ def _eligible(
     relation: TechnicalRelation,
     symbols: dict[str, TechnicalSymbol],
     policy: PatternPolicy,
+    pattern_type: str,
 ) -> bool:
+    allowed_types = (
+        policy.component_reuse_relation_types
+        if pattern_type == "component_reuse"
+        else policy.relation_types
+    )
     return (
         relation.status == RelationStatus.ACTIVE
         and relation.resolution_status == ResolutionStatus.RESOLVED
@@ -109,8 +118,8 @@ def _eligible(
         and symbols[relation.source_symbol_id].status.value == "active"
         and symbols[relation.target_symbol_id].status.value == "active"
         and (
-            not policy.relation_types
-            or relation.relation_type in policy.relation_types
+            not allowed_types
+            or relation.relation_type in allowed_types
         )
     )
 
@@ -161,7 +170,7 @@ def _result(pattern_type: str, subject_id: str, primary: dict[str, Any], seconda
     logical_identity = _hash(logical_payload)
     fingerprint = _hash([logical_identity, relation_ids, primary, secondary, status.value])
     limitations = (
-        ("threshold_pending_baseline",)
+        ("descriptive_policy_no_classification",)
         if status == PatternResultStatus.NOT_EVALUATED
         else ("no_eligible_relations",)
     )

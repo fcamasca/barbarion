@@ -1104,12 +1104,22 @@ def _run_patterns(args: argparse.Namespace) -> int:
         relation_types=frozenset({"calls", "uses", "opens", "references", "parent_of", "precedes"}),
         decision_mode="descriptive",
     )
+    symbols = repository.active_symbols()
+    symbol_by_id = {symbol.symbol_id: symbol for symbol in symbols}
     results = detect_patterns(
-        repository.active_symbols(),
+        symbols,
         repository.active_relations(),
         policy=policy,
         pattern_types=frozenset(args.pattern_types or ("component_reuse", "structural_centrality")),
     )
+    display_names = {
+        symbol_id: _pattern_subject_name(symbol_by_id, symbol_id)
+        for symbol_id in symbol_by_id
+    }
+    display_subjects: dict[str, set[str]] = {}
+    for item in results:
+        name = display_names[item.subject_symbol_id]
+        display_subjects.setdefault(name, set()).add(item.subject_symbol_id)
     relations = repository.active_relations()
     started = time.monotonic()
     payload = {
@@ -1119,7 +1129,15 @@ def _run_patterns(args: argparse.Namespace) -> int:
         "patterns": [
             {
                 "pattern_type": item.pattern_type,
-                "subject": item.subject_symbol_id,
+                "subject": {
+                    "name": _pattern_display_name(
+                        display_names[item.subject_symbol_id],
+                        item.subject_symbol_id,
+                        len(display_subjects[display_names[item.subject_symbol_id]]),
+                    ),
+                    "type": symbol_by_id[item.subject_symbol_id].symbol_type,
+                    "symbol_id": item.subject_symbol_id,
+                },
                 "status": item.status.value,
                 "primary_metric": item.metrics_primary,
                 "secondary_metrics": item.metrics_secondary,
@@ -1140,13 +1158,42 @@ def _run_patterns(args: argparse.Namespace) -> int:
     if args.format == "json":
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        print("Patrones técnicos H4.2 (no-llm)")
-        for item in payload["patterns"]:
-            print(f"- {item['pattern_type']} subject={item['subject']} status={item['status']}")
-            print(f"  primary_metric={item['primary_metric']}")
-            print(f"  secondary_metrics={item['secondary_metrics']}")
-            print(f"  provenance={item['provenance']}")
-            print(f"  limitations={item['limitations']} policy={payload['policy']}")
+        print("Patrones técnicos H4.2 — descriptivo")
+        for pattern_type, metric_name, title in (
+            ("component_reuse", "distinct_source_symbols", "COMPONENT REUSE"),
+            ("structural_centrality", "distinct_total_neighbors", "STRUCTURAL CENTRALITY"),
+        ):
+            visible = [
+                item for item in payload["patterns"]
+                if item["pattern_type"] == pattern_type
+                and item["status"] != "insufficient_evidence"
+                and item["primary_metric"].get(metric_name, 0) > 0
+            ]
+            visible.sort(key=lambda item: (-item["primary_metric"][metric_name], item["subject"]["name"]))
+            if not getattr(args, "all", False):
+                visible = visible[: getattr(args, "limit", 10)]
+            print(f"\n{title}")
+            print("#  Componente                                      Tipo                     Métrica  Relaciones")
+            for index, item in enumerate(visible, start=1):
+                secondary = item["secondary_metrics"]
+                if pattern_type == "component_reuse":
+                    detail = ", ".join(f"{k}={v}" for k, v in secondary["relation_type_distribution"].items())
+                    metric = secondary.get("distinct_source_symbols", item["primary_metric"].get(metric_name, 0))
+                else:
+                    detail = f"In={secondary['distinct_inbound_neighbors']} Out={secondary['distinct_outbound_neighbors']}"
+                    metric = item["primary_metric"].get(metric_name, 0)
+                provenance = item["provenance"]
+                summary = (
+                    f"{len(provenance['relation_ids'])} {_plural('relación', len(provenance['relation_ids']))} / "
+                    f"{len(provenance['evidence_chunk_ids'])} {_plural('chunk', len(provenance['evidence_chunk_ids']))} / "
+                    f"{len(provenance['evidence_file_ids'])} {_plural('archivo', len(provenance['evidence_file_ids']))}"
+                )
+                print(
+                    f"{index:<3}{item['subject']['name']}  "
+                    f"{item['subject']['type']:<24} {metric:>7}  {detail:<28} [{summary}]"
+                )
+        print(f"\nPolítica: {payload['policy']['policy_id']}")
+        print("Clasificación: no definida; resultados ordenados descriptivamente.")
     if args.debug:
         statuses = [item.status.value for item in results]
         _render_operation_debug(
@@ -1170,6 +1217,34 @@ def _run_patterns(args: argparse.Namespace) -> int:
             },
         )
     return 0
+
+
+def _pattern_subject_name(symbol_by_id: dict[str, object], symbol_id: str) -> str:
+    """Construye un nombre visible contextual sin ocultar la identidad técnica."""
+    symbol = symbol_by_id[symbol_id]
+    parent_id = getattr(symbol, "parent_symbol_id", None)
+    container = getattr(symbol, "container_name", None)
+    if parent_id and parent_id in symbol_by_id:
+        return f"{symbol_by_id[parent_id].original_name}.{symbol.original_name}"
+    if container:
+        return f"{container}.{symbol.original_name}"
+    return symbol.original_name
+
+
+def _pattern_display_name(name: str, symbol_id: str, collisions: int) -> str:
+    """Añade ID corto solo cuando el nombre contextual no es único."""
+    return f"{name} [{symbol_id[:6]}]" if collisions > 1 else name
+
+
+def _plural(word: str, count: int) -> str:
+    """Devuelve una etiqueta legible para el resumen de provenance."""
+    if count == 1:
+        return word
+    return {
+        "relación": "relaciones",
+        "chunk": "chunks",
+        "archivo": "archivos",
+    }.get(word, f"{word}s")
 
 
 def _run_inventory(args: argparse.Namespace) -> int:
@@ -4534,6 +4609,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="pattern_types",
         help="limita el tipo de patrón; puede repetirse",
+    )
+    patterns_parser.add_argument(
+        "--limit", type=_positive_int, default=10, help="máximo de resultados por patrón en texto"
+    )
+    patterns_parser.add_argument(
+        "--all", action="store_true", help="muestra todos los resultados en texto"
     )
     patterns_parser.add_argument(
         "--format", choices=("text", "json"), default="text", help="formato de salida"

@@ -671,6 +671,25 @@ barbarion inventory --name order --output reports/inventory.md --overwrite
 
 Usalo para revisar el catalogo tecnico sin reanalizar el corpus. No modifica SQLite, no requiere embeddings ni LLM. Codigos de salida: `0`, `1` o `2` segun resultado.
 
+### patterns
+
+Proposito: calcular rankings descriptivos de patrones estructurales H4.2 desde
+SQLite, sin LLM ni egress.
+
+Sintaxis:
+
+```bash
+barbarion patterns [--pattern component_reuse|structural_centrality] [--limit N] [--all] [--format text|json] [--debug]
+```
+
+La salida normal muestra hasta 10 sujetos por patrón, ordenados por la métrica
+primaria. `--limit N` cambia ese límite y `--all` muestra todos. JSON incluye
+provenance completa; texto muestra un resumen de relaciones, chunks y archivos.
+`--debug` emite únicamente contadores seguros y `policy_id` a stderr.
+
+H4.2 permanece descriptivo: no clasifica thresholds, criticidad ni impacto
+funcional.
+
 ### describe
 
 Proposito: generar una ficha tecnica de un componente.

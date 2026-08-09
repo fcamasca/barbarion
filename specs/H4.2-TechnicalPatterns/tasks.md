@@ -91,8 +91,8 @@ H5, Ollama y Anthropic. Detenerse ante cambios de defaults o contratos.
 
 **T09 — COMPLETADA:** distribución real ejecutada: 161 símbolos y 313
 relaciones. Reporte agregado en `reports/h42/validation-t09.md`. La revisión
-humana de ranking permanece pendiente; ambas métricas siguen descriptivas y
-`not_evaluated`.
+humana del ranking fue realizada y documentada; ambas métricas siguen
+descriptivas y `not_evaluated`.
 
 Ejecutar sobre corpus real autorizado, registrar utilidad, falsos positivos,
 limitaciones y cobertura en agregados. No versionar nombres, código, rutas ni

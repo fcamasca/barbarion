@@ -1104,9 +1104,9 @@ def _run_patterns(args: argparse.Namespace) -> int:
         relation_types=frozenset({"calls", "uses", "opens", "references", "parent_of", "precedes"}),
         decision_mode="descriptive",
     )
+    started = time.monotonic()
     symbols = repository.active_symbols()
     symbol_by_id = {symbol.symbol_id: symbol for symbol in symbols}
-    started = time.monotonic()
     relations = repository.active_relations()
     results = detect_patterns(
         symbols,

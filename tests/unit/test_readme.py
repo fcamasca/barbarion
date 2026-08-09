@@ -30,9 +30,9 @@ def test_readme_has_the_expected_entry_point_structure() -> None:
     assert "finales de H4.2: `10 passed`" in readme
     assert "Smoke tests instalados: `11 passed`" in readme
     assert "Integración continua: GitHub Actions" in readme
-    assert readme.index("specs/H5-SpecMode/acceptance.md") < readme.index(
-        "Evoluciones posteriores al MVP:"
-    )
+    assert "### MVP completado" in readme
+    assert "### Evoluciones implementadas" in readme
+    assert "| H4.2 | Patrones técnicos | Aceptada, descriptiva |" in readme
     assert "H1.2 Inferencia Remota con Anthropic" in readme
     assert "Completada y aceptada técnica y funcionalmente" in readme
     assert "specs/H1.2-RemoteInference/acceptance.md" in readme

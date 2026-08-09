@@ -237,10 +237,12 @@ fabricar una cita textual; se registra explícitamente como limitación o
 | `not_detected` | Evidencia suficiente, evaluación válida y regla no cumplida. |
 | `insufficient_evidence` | No hay cobertura, identidad o resolución suficiente para evaluar. |
 | `ambiguous` | Alternativas estructurales impiden una evaluación única. |
+| `not_evaluated` | T04 expone métricas con política descriptiva, pero T07 aún no ha definido/calibrado una regla de decisión. |
 
 `not_detected` separa explícitamente “no supera el threshold” de
-`insufficient_evidence`; ninguno implica importancia funcional, criticidad o
-impacto de negocio. Antes de T07 no se produce una detección por intuición.
+`insufficient_evidence`; `not_evaluated` indica que todavía no existe una regla
+final. Ninguno implica importancia funcional, criticidad o impacto de negocio.
+Antes de T07 no se produce una detección por intuición.
 
 ## 7. Modelo lógico mínimo
 
@@ -250,7 +252,7 @@ No se propone tabla nueva todavía. Un resultado derivado puede ser un DTO con:
 PatternResult
   pattern_type
   subject_symbol_id(s)
-  status: detected | insufficient_evidence | ambiguous
+  status: detected | not_detected | insufficient_evidence | ambiguous | not_evaluated
   metrics: mapa numérico estable
   relation_ids
   symbol_ids

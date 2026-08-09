@@ -42,7 +42,7 @@ la cobertura.
 **T03 — EN PROGRESO:** definir `logical_identity` estable separado de
 `result_fingerprint`, orden canónico, métricas
 primarias/secundarias, provenance y estados `detected`, `not_detected`,
-`insufficient_evidence` y `ambiguous`. La implementación debe separar “no
+`not_evaluated`, `insufficient_evidence` y `ambiguous`. La implementación debe separar “no
 cumple la regla” de “no se puede evaluar”.
 
 Diseñar DTO/serialización mínima reutilizando H4. Definir IDs, orden canónico,

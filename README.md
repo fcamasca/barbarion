@@ -36,7 +36,7 @@ barbarion index        indexa evidencia en SQLite + sqlite-vec
 barbarion analyze      genera inventario, símbolos y relaciones
       |
       v
-ask / describe / impact / spec create
+ask / describe / impact / patterns / spec create
 ```
 
 El corpus, los índices y la evidencia permanecen en el entorno local. La generación de respuestas se ejecuta mediante el proveedor configurado. Consulta la [arquitectura](docs/ARCHITECTURE.md) para conocer los componentes y contratos internos.
@@ -180,17 +180,6 @@ mantienen en [docs/EVOLUTION.md](docs/EVOLUTION.md) y en las specs.
 - Integración continua: GitHub Actions
 
 La evidencia del cierre del MVP está en [`specs/H5-SpecMode/acceptance.md`](specs/H5-SpecMode/acceptance.md).
-
-Evoluciones posteriores al MVP:
-
-| Evolución | Estado | Referencia |
-|---|---|---|
-| H4.1 Configuraciones Data-Driven | Completada y aceptada técnicamente | [Aceptación](specs/H4.1-DataDrivenConfigurations/acceptance.md) |
-| H1.1 Gestión y Evaluación de Modelos Locales | Completada y aceptada técnicamente | [Aceptación](specs/H1.1-LocalModelManagement/acceptance.md) |
-| H1.2 Inferencia Remota con Anthropic | Completada y aceptada técnica y funcionalmente | [Aceptación](specs/H1.2-RemoteInference/acceptance.md) |
-| H3.1 Optimización de contexto RAG | Completada y aceptada; `baseline_v1` sigue como default y `optimized_v1` permanece opt-in | [Guía](docs/H31-RAG-CONTEXT.md) · [Aceptación](specs/H3.1-RAGContextOptimization/acceptance.md) |
-
-El historial y alcance de las evoluciones se mantienen en [`docs/EVOLUTION.md`](docs/EVOLUTION.md).
 
 ## Documentación
 

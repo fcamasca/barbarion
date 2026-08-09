@@ -116,32 +116,11 @@ Para los detalles técnicos y de seguridad, consulta la [arquitectura](docs/ARCH
 
 ## Privacy Preflight (H3.2)
 
-**Política vigente H3.2 v1:** `no_training` es la única restricción
-bloqueante; retention FAIL/UNKNOWN requiere confirmación y data_location es
-informativa. Esta política vigente sustituye cualquier descripción histórica de
-`strict` como requisito simultáneo de ZDR y ubicación.
-
-El registry público solo aporta metadata estructurada sobre capacidades. No
-demuestra que una cuenta concreta tenga activado ZDR o una región concreta, ni
-verifica el cumplimiento contractual interno del proveedor. “ZDR disponible”
-no equivale a “ZDR efectivo”. En v1 `AccountPrivacyVerifier` es únicamente un
-contrato preparado: su implementación productiva es `unavailable` y no usa
-credenciales ni red.
-
-La cache se actualiza solo mediante `barbarion privacy refresh` y contiene
-metadata pública normalizada, fuera del contenido RAG. `ask` consume la cache
-local y nunca consulta ni refresca el registry. El refresh valida el documento
-oficial y conserva la snapshot anterior si falla.
-
-Cuando el preflight remoto da PASS, Barbarion llama directamente al proveedor
-configurado: no existe gateway ni proxy de inferencia. `localhost` tampoco
-implica ejecución local; Ollama Cloud declarado remoto permanece sujeto al
-preflight.
-
-En H3.2 v1 solo `no_training` es bloqueante. Una retención no demostrada genera
-una advertencia y requiere confirmación explícita; la ubicación se conserva como
-diagnóstico, pero no decide el gate. Ollama Cloud puede usar además la política
-oficial publicada por Ollama como evidencia uniforme para todos sus modelos.
+Antes de cualquier inferencia remota, Barbarion evalúa localmente la política de
+privacidad aplicable. `no_training` es bloqueante; los riesgos de retención
+requieren confirmación explícita. `ask` no refresca metadata de privacidad
+durante una consulta. Consulta la [guía de privacidad](docs/PRIVACY.md) para
+registry, cache, proveedores y contratos completos.
 
 ## Comandos principales
 

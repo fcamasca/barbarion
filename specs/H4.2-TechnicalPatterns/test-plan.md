@@ -62,6 +62,14 @@ stale/deleted, configuración H4.1 y mutaciones que agreguen/eliminan destinos.
 
 ## Benchmark
 
+El benchmark versionado es `tests/fixtures/h42_pattern_benchmark.json` y su
+prueba es `tests/unit/test_h42_benchmark.py`. Debe medir la distribución real de
+las métricas por caso antes de considerar thresholds. Si no hay separación
+estable entre positivos y negativos, la decisión aceptable para v1 es ranking
+descriptivo con `not_evaluated`. El reporte agregado es
+`reports/h42/benchmark-v1.md`; la separación sintética no se interpreta como
+threshold generalizable.
+
 El dataset debe declarar por caso los patrones esperados, no esperados y
 ambiguos. Medir por patrón: detecciones correctas, omisiones, falsos positivos,
 insuficiencia explicada, evidencia completa, tiempo y determinismo. Repetir cada

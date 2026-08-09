@@ -77,6 +77,12 @@ preguntas, prompts, respuestas ni contenido nuevo y que no existe egress.
 
 ## T07 — Benchmark sintético/publicable
 
+**T07 — COMPLETADA:** benchmark `h42-pattern-benchmark-v1` añadido con
+distribuciones observables, positivos/negativos, repetición, aislado y ciclo.
+El reporte `reports/h42/benchmark-v1.md` muestra distribución y separación por
+candidato. No fija thresholds: ambos pasan a T09 como ranking descriptivo y
+`not_evaluated`.
+
 Crear fixture versionada con positivos, negativos, falsos positivos, ambiguos,
 ciclos, faltantes, aislados, repetidos, stale y mutaciones incrementales según
 los patrones aprobados. Definir baseline y corrección por caso; no fijar un

@@ -1,0 +1,52 @@
+{
+  "dataset": "h42-pattern-benchmark-v1",
+  "public": true,
+  "cases": [
+    {
+      "id": "reuse_multiple_sources",
+      "pattern": "component_reuse",
+      "nodes": ["A", "B", "C", "X"],
+      "edges": [["A", "X"], ["B", "X"], ["C", "X"]],
+      "subject": "X",
+      "expected": {"distinct_source_symbols": 3}
+    },
+    {
+      "id": "reuse_repeated_same_source",
+      "pattern": "component_reuse",
+      "nodes": ["A", "X"],
+      "edges": [["A", "X"], ["A", "X"], ["A", "X"]],
+      "subject": "X",
+      "expected": {"distinct_source_symbols": 1}
+    },
+    {
+      "id": "centrality_multiple_neighbors",
+      "pattern": "structural_centrality",
+      "nodes": ["A", "B", "C", "X"],
+      "edges": [["A", "X"], ["B", "X"], ["X", "C"]],
+      "subject": "X",
+      "expected": {"distinct_total_neighbors": 3}
+    },
+    {
+      "id": "centrality_isolated",
+      "pattern": "structural_centrality",
+      "nodes": ["X"],
+      "edges": [],
+      "subject": "X",
+      "expected": {"status": "insufficient_evidence"}
+    },
+    {
+      "id": "centrality_cycle",
+      "pattern": "structural_centrality",
+      "nodes": ["A", "B", "C"],
+      "edges": [["A", "B"], ["B", "C"], ["C", "A"]],
+      "subject": "B",
+      "expected": {"distinct_total_neighbors": 2}
+    }
+  ],
+  "threshold_decision": "pending_baseline",
+  "notes": [
+    "Synthetic and publishable; no private corpus data.",
+    "The dataset demonstrates metric behavior, not a universal threshold.",
+    "A stable positive/negative separation must be measured before calibration."
+  ]
+}

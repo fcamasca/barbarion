@@ -91,6 +91,10 @@ si la baseline demuestra que son necesarios y estables.
 
 ## T08 — Regresión y compatibilidad
 
+**T08 — COMPLETADA:** regresión focalizada `62 passed`; suite completa `1107
+passed, 14 skipped`. No se requirieron cambios funcionales ni se observaron
+regresiones en los contratos H2/H3/H3.1/H3.2/H3.3/H4/H4.1/H5.
+
 Ejecutar unit/integration/CLI y regresión H2, H3, H3.1, H3.2, H3.3, H4, H4.1,
 H5, Ollama y Anthropic. Detenerse ante cambios de defaults o contratos.
 

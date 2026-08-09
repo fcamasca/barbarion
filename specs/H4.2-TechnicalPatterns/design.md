@@ -74,7 +74,114 @@ SQLite H4/H4.1
   → JSON/Markdown/CLI existente o nueva superficie aprobada
 ```
 
-## 5. Modelo lógico mínimo
+## 5. Resultado T02 — semántica y política
+
+T02 define la cadena contractual sin calibrar valores:
+
+```text
+relaciones elegibles
+  → métricas observables
+  → regla/política
+  → patrón estructural
+```
+
+Los umbrales numéricos y la decisión de implementación definitiva quedan para
+la baseline de T07.
+
+### `component_reuse`
+
+```yaml
+pattern_type: component_reuse
+meaning: "El componente tiene relaciones estructurales desde múltiples símbolos origen independientes."
+eligible_relations:
+  - status: active
+  - resolution_status: resolved
+  - source_symbol_id: presente
+  - target_symbol_id: presente y activo
+  - relation_type: observado por H4 y permitido por la política
+metrics:
+  - inbound_relation_count
+  - distinct_source_symbols
+  - distinct_source_files
+  - relation_type_distribution
+  - repeated_relation_count
+source_definition: "symbol_id distinto; el archivo es una métrica secundaria, no independencia adicional."
+excluded_cases:
+  - relaciones stale/deleted
+  - destinos ambiguos, unresolved, external o dynamic
+  - relaciones sin origen o destino estructural resoluble
+  - repeticiones del mismo source_symbol_id contadas como nuevos reutilizadores
+insufficient_evidence_when:
+  - no hay relaciones elegibles
+  - la identidad de los símbolos origen no es resoluble
+  - la cobertura de relaciones no permite distinguir origen independiente de repetición
+interpretations_not_allowed:
+  - importancia funcional
+  - criticidad
+  - impacto de negocio
+  - calidad arquitectónica
+threshold_strategy: "pendiente de baseline T07"
+```
+
+La unidad primaria de independencia es `source_symbol_id`. `distinct_source_files`
+se conserva para explicar distribución y detectar concentración, pero no convierte
+varias referencias del mismo símbolo en varios reutilizadores. La política debe
+definir si los relation types se agrupan o separan; no se mezclan silenciosamente.
+
+### `structural_centrality`
+
+T02 acota este candidato a **conectividad local por vecinos distintos**, no a una
+teoría general de centralidad. No incluye participación en ciclos, conexión entre
+grupos, betweenness, caminos globales ni flujo.
+
+```yaml
+pattern_type: structural_centrality
+meaning: "El componente ocupa una posición localmente conectada con múltiples vecinos estructurales distintos."
+eligible_relations:
+  - status: active
+  - resolution_status: resolved
+  - source_symbol_id: presente
+  - target_symbol_id: presente y activo
+  - relation_type: observado por H4 y permitido por la política
+metrics:
+  - distinct_inbound_neighbors
+  - distinct_outbound_neighbors
+  - distinct_total_neighbors
+  - inbound_relation_count
+  - outbound_relation_count
+  - relation_type_distribution
+  - cycle_membership: "solo diagnóstico, no criterio de detección en T02"
+neighbor_definition: "symbol_id distinto conectado por una relación elegible; se deduplica por dirección efectiva."
+excluded_cases:
+  - relaciones stale/deleted
+  - destinos/orígenes ambiguos, unresolved, external o dynamic
+  - ciclos usados como prueba suficiente de centralidad
+  - inferencia de bridging o centralidad global
+insufficient_evidence_when:
+  - no hay vecinos resolubles
+  - solo existen relaciones repetidas sin vecinos adicionales
+  - la cobertura parcial impide comparar la conectividad observada con el universo analizado
+interpretations_not_allowed:
+  - dependencia crítica
+  - importancia funcional
+  - impacto de negocio
+  - cuello de botella
+  - pertenencia a capa o módulo
+threshold_strategy: "pendiente de baseline T07"
+```
+
+La decisión de T02 es tratarlo como candidato a patrón estructural local, no como
+familia abierta de métricas. T07 podrá confirmar esta definición, calibrarla,
+limitarla a una métrica o diferirla si la cobertura no es suficiente.
+
+### Contrato de métricas
+
+Las métricas son hechos calculados y no patrones. Por ejemplo,
+`inbound_relation_count=17` y `distinct_source_symbols=12` no implican por sí
+solos `component_reuse`; la regla/política y la baseline son necesarias. Ninguna
+métrica se presenta como cita textual ni como interpretación funcional.
+
+## 6. Modelo lógico mínimo
 
 No se propone tabla nueva todavía. Un resultado derivado puede ser un DTO con:
 

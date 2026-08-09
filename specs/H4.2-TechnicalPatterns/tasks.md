@@ -29,6 +29,14 @@ hasta disponer de la baseline de T07. Probar casos ambiguos y negativos.
 Detenerse si “crítico”, “hotspot”, “módulo” o “capa” no
 pueden expresarse sin inferencia funcional.
 
+## T02 — Definiciones y política de evidencia — COMPLETADA
+
+T02 fija la semántica, relaciones elegibles, métricas, casos excluidos,
+insuficiencia e interpretaciones prohibidas para `component_reuse` y
+`structural_centrality`. No fija umbrales; la baseline y calibración quedan en
+T07. La decisión puede dejar `structural_centrality` diferida si T07 no sostiene
+la cobertura.
+
 ## T03 — Contrato determinista y provenance
 
 Diseñar DTO/serialización mínima reutilizando H4. Definir IDs, orden canónico,

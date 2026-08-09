@@ -15,6 +15,17 @@ stale/deleted, configuración H4.1 y mutaciones que agreguen/eliminan destinos.
 
 ## Unit tests
 
+### Gate T02 — semántica de candidatos
+
+- `component_reuse` distingue `A→X`, `B→X`, `C→X` de tres repeticiones `A→X`;
+- `source_symbol_id` es la unidad primaria de origen independiente y los
+  archivos son métrica secundaria;
+- `structural_centrality` distingue vecinos entrantes/salientes distintos y no
+  usa ciclos, bridging o número bruto de relaciones como sustituto;
+- ningún caso se etiqueta por umbral numérico antes de T07;
+- cada candidato devuelve métricas, exclusiones e insuficiencia separadas del
+  patrón y no produce interpretaciones funcionales.
+
 - política filtra estados, resolución y confianza correctamente;
 - conteos de entrada/salida, fuentes distintas y tipos son exactos;
 - cada patrón tiene evidencia e IDs; insuficiencia no se convierte en detección;

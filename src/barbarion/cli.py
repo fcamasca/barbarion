@@ -1106,9 +1106,11 @@ def _run_patterns(args: argparse.Namespace) -> int:
     )
     symbols = repository.active_symbols()
     symbol_by_id = {symbol.symbol_id: symbol for symbol in symbols}
+    started = time.monotonic()
+    relations = repository.active_relations()
     results = detect_patterns(
         symbols,
-        repository.active_relations(),
+        relations,
         policy=policy,
         pattern_types=frozenset(args.pattern_types or ("component_reuse", "structural_centrality")),
     )
@@ -1120,8 +1122,6 @@ def _run_patterns(args: argparse.Namespace) -> int:
     for item in results:
         name = display_names[item.subject_symbol_id]
         display_subjects.setdefault(name, set()).add(item.subject_symbol_id)
-    relations = repository.active_relations()
-    started = time.monotonic()
     payload = {
         "template_version": "h42-patterns.v1",
         "no_llm": True,

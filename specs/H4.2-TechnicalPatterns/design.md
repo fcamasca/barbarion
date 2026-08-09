@@ -120,7 +120,7 @@ interpretations_not_allowed:
   - criticidad
   - impacto de negocio
   - calidad arquitectónica
-threshold_strategy: "pendiente de baseline T07"
+threshold_strategy: "descriptive_v1; no classification"
 ```
 
 La unidad primaria de independencia es `source_symbol_id`. `distinct_source_files`
@@ -167,7 +167,7 @@ interpretations_not_allowed:
   - impacto de negocio
   - cuello de botella
   - pertenencia a capa o módulo
-threshold_strategy: "pendiente de baseline T07"
+threshold_strategy: "descriptive_v1; no classification"
 ```
 
 La decisión de T02 es tratarlo como candidato a patrón estructural local, no como
@@ -237,7 +237,7 @@ fabricar una cita textual; se registra explícitamente como limitación o
 | `not_detected` | Evidencia suficiente, evaluación válida y regla no cumplida. |
 | `insufficient_evidence` | No hay cobertura, identidad o resolución suficiente para evaluar. |
 | `ambiguous` | Alternativas estructurales impiden una evaluación única. |
-| `not_evaluated` | T04 expone métricas con política descriptiva, pero T07 aún no ha definido/calibrado una regla de decisión. |
+| `not_evaluated` | La política descriptiva calcula métricas, pero no clasifica el patrón. |
 
 `not_detected` separa explícitamente “no supera el threshold” de
 `insufficient_evidence`; `not_evaluated` indica que todavía no existe una regla

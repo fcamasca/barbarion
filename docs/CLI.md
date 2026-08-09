@@ -155,6 +155,7 @@ Ollama.
 | `embeddings` | No | No | Si |
 | `analyze` | No | No | Si |
 | `inventory` | No | No | Si |
+| `patterns` | No | No | Si |
 | `describe --no-llm` | No | No | Si |
 | `describe --with-llm` | No; puede usar RAG si se pide `--include-rag` | Si | Si, usando Ollama local |
 | `impact --no-llm` | No | No | Si |
@@ -679,7 +680,7 @@ SQLite, sin LLM ni egress.
 Sintaxis:
 
 ```bash
-barbarion patterns [--pattern component_reuse|structural_centrality] [--limit N] [--all] [--format text|json] [--debug]
+barbarion patterns [--pattern component_reuse|structural_centrality] [--limit N] [--all] [--format text|json] [--no-llm] [--debug]
 ```
 
 La salida normal muestra hasta 10 sujetos por patrón, ordenados por la métrica

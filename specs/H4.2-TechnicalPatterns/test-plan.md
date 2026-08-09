@@ -96,12 +96,9 @@ contenido sensible nuevo.
 ## Regresión y validación real
 
 La validación agregada actual está en `reports/h42/validation-t09.md`. La
-revisión humana debe muestrear top 5, posición media y aislados sin publicar
-nombres ni contenido; hasta completarla, la decisión de política no puede
-promover threshold ni percentil.
-
-La revisión realizada queda agregada en
-`reports/h42/validation-t09-human-review.md`.
+La revisión humana ya se realizó sobre top 5, posición media y aislados. El
+resultado agregado está en `reports/h42/validation-t09-human-review.md`; no se
+promovieron thresholds ni percentiles.
 
 Ejecutar la suite H2/H3/H3.1/H3.2/H3.3/H4/H4.1/H5 y pruebas de Ollama/Anthropic
 existentes. En el corpus legacy autorizado comparar utilidad humana, falsos

@@ -171,7 +171,8 @@ La sintaxis, opciones, efectos secundarios y códigos de salida están documenta
 
 - Versión actual: `0.6.0`
 - MVP completado: `5/5` hitos
-- Suite de aceptación vigente: `1107 passed, 14 skipped`
+- Suite completa de T08: `1107 passed, 14 skipped`; las pruebas focalizadas
+  finales de H4.2: `10 passed`
 - Smoke tests instalados: `11 passed`
 - Runtime validado: Python `3.12`
 - Integración continua: GitHub Actions

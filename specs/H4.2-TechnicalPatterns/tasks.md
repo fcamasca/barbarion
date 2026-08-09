@@ -18,17 +18,6 @@ inventario sobre fixtures y matriz de los seis candidatos. **Resultado:** decisi
 de patrones. **Detener/diferir:** si falta evidencia estructural o requiere
 semántica no existente.
 
-## T02 — Definiciones y política de evidencia
-
-Definir, sin presuponer el resultado, si `component_reuse` y/o
-`structural_centrality` son patrones incluidos; fijar vocabulario observable,
-elegibilidad de relaciones, estados, confianza, estrategia de decisión y estados
-de insuficiencia. Si un patrón requiere umbral, definir únicamente su mecanismo
-(absoluto, percentil, ranking descriptivo u otro), sin fijar valores numéricos
-hasta disponer de la baseline de T07. Probar casos ambiguos y negativos.
-Detenerse si “crítico”, “hotspot”, “módulo” o “capa” no
-pueden expresarse sin inferencia funcional.
-
 ## T02 — Definiciones y política de evidencia — COMPLETADA
 
 T02 fija la semántica, relaciones elegibles, métricas, casos excluidos,
@@ -39,7 +28,7 @@ la cobertura.
 
 ## T03 — Contrato determinista y provenance
 
-**T03 — EN PROGRESO:** definir `logical_identity` estable separado de
+**T03 — COMPLETADA:** definir `logical_identity` estable separado de
 `result_fingerprint`, orden canónico, métricas
 primarias/secundarias, provenance y estados `detected`, `not_detected`,
 `not_evaluated`, `insufficient_evidence` y `ambiguous`. La implementación debe separar “no
@@ -57,7 +46,7 @@ stale, faltantes, aislados y cambios incrementales.
 
 ## T05 — Integración CLI y salidas
 
-**T05 — EN PROGRESO:** `inventory`, `describe`, `impact` y `stats` no exponen
+**T05 — COMPLETADA:** `inventory`, `describe`, `impact` y `stats` no exponen
 simultáneamente patrón, métricas, provenance, limitaciones y política sin
 deformar sus contratos; por ello se añade `patterns` como superficie mínima,
 local y `--no-llm`.
@@ -68,7 +57,7 @@ sin modificar H3/H3.1/H3.3.
 
 ## T06 — Observabilidad y privacidad
 
-**T06 — EN PROGRESO:** `patterns` solo emite contadores, categorías, duración y
+**T06 — COMPLETADA:** `patterns` solo emite contadores, categorías, duración y
 `policy_id` en debug; no registra nombres sensibles, contenido, SQL, preguntas,
 prompts, respuestas ni provenance textual, y no persiste resultados.
 
@@ -100,7 +89,7 @@ H5, Ollama y Anthropic. Detenerse ante cambios de defaults o contratos.
 
 ## T09 — Validación legacy autorizada
 
-**T09 — EN PROGRESO:** distribución real ejecutada: 161 símbolos y 313
+**T09 — COMPLETADA:** distribución real ejecutada: 161 símbolos y 313
 relaciones. Reporte agregado en `reports/h42/validation-t09.md`. La revisión
 humana de ranking permanece pendiente; ambas métricas siguen descriptivas y
 `not_evaluated`.

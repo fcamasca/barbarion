@@ -26,7 +26,8 @@ def test_readme_has_the_expected_entry_point_structure() -> None:
     assert positions == sorted(positions)
     assert f"Versión actual: `{__version__}`" in readme
     assert "MVP completado: `5/5` hitos" in readme
-    assert "Suite de aceptación vigente: `856 passed, 3 skipped`" in readme
+    assert "Suite completa de T08: `1107 passed, 14 skipped`" in readme
+    assert "finales de H4.2: `10 passed`" in readme
     assert "Smoke tests instalados: `11 passed`" in readme
     assert "Integración continua: GitHub Actions" in readme
     assert readme.index("specs/H5-SpecMode/acceptance.md") < readme.index(

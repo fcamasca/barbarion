@@ -17,6 +17,29 @@ que no se ha demostrado una relación completa y navegable `package → member`.
 
 ## 2. Inventario resumido y frontera con H3.3
 
+### Resultado T01 — capacidad real verificada
+
+| Área | Capacidad confirmada |
+|---|---|
+| Símbolos | `TechnicalSymbol` conserva ID determinista, nombres original/normalizado, `symbol_type`, tecnología, extracción, confianza, file/document/chunk, líneas, metadata, estado, `container_name`, `parent_symbol_id` opcional y `signature`. |
+| Tipos de símbolo | No hay enum cerrado: son strings de los extractores. H4.1 añade `configuration_entity`, `configuration_record`, `configuration_variable` y `configuration_parameter`; puede existir `unknown`. Los valores deben inventariarse desde la base. |
+| Relaciones | `TechnicalRelation` conserva origen, destino o `target_key`, tipo, clasificación, resolución, confianza, estado, referencia, archivo, chunk, líneas y notas. |
+| Tipos de relación | El catálogo de navegación/configuración es `calls`, `uses`, `opens`, `references`, `parent_of`, `precedes`; no se asumen otros tipos. |
+| Dirección | Persistencia conceptual `source → target`; el repositorio calcula `incoming`, `outgoing` o `both`. No hay columna de dirección independiente. |
+| Resolución | `resolved`, `ambiguous`, `unresolved`, `external`, `dynamic`; las dinámicas exigen `por_confirmar`; candidatos alternativos se persisten. |
+| Estados | Símbolos: `active`, `stale`, `deleted`, `ambiguous`. Relaciones: `active`, `stale`, `deleted`. |
+| Confianza/origen | Confianza `high`, `medium`, `low`; referencias/relaciones conservan método de detección y clasificación de evidencia. |
+| Trazabilidad | Enlaces a file/document/chunk, referencia, líneas y texto detectado cuando existen. Una métrica puede carecer de cita textual si no hay chunk vigente. |
+| Llamadas/uso/acceso | `calls`, `uses`, `opens` y `references` representan relaciones técnicas; no prueban runtime ni impacto de negocio. |
+| Jerarquía | `parent_symbol_id` y `parent_of` se usan en H4.1. En Oracle/PowerBuilder no se demuestra una navegación persistida completa `package → member`; `container_name`/metadata no se trata como arista equivalente. |
+| Navegación | Inventario, resolución, `describe`, `impact` y BFS H4 con profundidad, límites, ciclos y hojas no resueltas; H3.3 reutiliza la navegación en query-time. |
+| Persistencia/observabilidad | SQLite persiste `analysis_runs`, símbolos, referencias, relaciones y candidatos; `stats` agrega conteos por estado/run. No existe persistencia de patrones. |
+| Limitaciones | Parsers heurísticos, relaciones dinámicas/ambiguas/no resueltas, cobertura parcial, ausencia demostrada de package→member y falta de semántica de capas/módulos/criticidad. |
+
+Este inventario confirma que H4.2 puede calcular conectividad estructural sobre
+relaciones elegibles, pero no autoriza inferencias funcionales, arquitectónicas
+ni de criticidad.
+
 Tipos observables se obtendrán de los datos, no de una lista inventada: Oracle y
 PowerBuilder producen símbolos técnicos; H4.1 añade `configuration_entity`,
 `configuration_record` y símbolos derivados. Los relation types observados por
@@ -141,3 +164,10 @@ La cobertura de relaciones puede ser parcial; `package → member` no está
 demostrada; nombres comunes generan ambigüedad; la centralidad puede interpretarse
 erróneamente como impacto funcional; y los umbrales pueden sobreajustar un
 corpus. Por eso T01 y el benchmark son puertas de alcance.
+
+## 12. Decisión T01
+
+Pasan a T02 como candidatos condicionados `component_reuse` y
+`structural_centrality`. `critical_dependency` queda diferido: el grafo actual
+no demuestra criticidad. Capas, módulos, duplicación y hotspot permanecen
+diferidos.

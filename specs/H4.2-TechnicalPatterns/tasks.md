@@ -1,9 +1,10 @@
 # H4.2 — Tareas
 
 Las tareas son de implementación futura. Esta ejecución crea únicamente la
-spec y no inicia T01.
+spec y T01 ya fue ejecutada como inventario documental y de código; no se
+implementaron detectores ni se modificó código productivo.
 
-## T01 — Inventario real y matriz de viabilidad
+## T01 — Inventario real y matriz de viabilidad — COMPLETADA
 
 **Objetivo:** confirmar tipos de símbolos/relaciones, dirección, estados,
 confianza, origen, trazabilidad, llamadas, usos, jerarquías, navegación,

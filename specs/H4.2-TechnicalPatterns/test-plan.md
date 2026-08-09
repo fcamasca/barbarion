@@ -70,6 +70,12 @@ fixture y agregados.
 
 ## CLI, privacidad y no-LLM
 
+- `barbarion patterns --format json` expone patrón, sujeto, estado, métricas
+  primarias/secundarias, provenance, limitaciones y política;
+- `barbarion patterns --pattern component_reuse` y
+  `--pattern structural_centrality` filtran de forma determinista;
+- `patterns` no llama LLM, no cambia H3/H3.1/H3.3 y conserva `not_evaluated`.
+
 Cubrir formato JSON/Markdown/texto, errores de argumentos, base vacía, límites,
 interrupción, `--no-llm`, ausencia de Ollama y ausencia de red. Inspeccionar logs
 y SQLite para asegurar que no se persisten preguntas, prompts, respuestas ni

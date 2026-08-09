@@ -57,6 +57,11 @@ stale, faltantes, aislados y cambios incrementales.
 
 ## T05 — Integración CLI y salidas
 
+**T05 — EN PROGRESO:** `inventory`, `describe`, `impact` y `stats` no exponen
+simultáneamente patrón, métricas, provenance, limitaciones y política sin
+deformar sus contratos; por ello se añade `patterns` como superficie mínima,
+local y `--no-llm`.
+
 Extender una superficie existente o justificar `patterns`. Añadir JSON/Markdown
 solo donde el contrato lo permita. Probar `--no-llm`, códigos CLI, sin base H4 y
 sin modificar H3/H3.1/H3.3.

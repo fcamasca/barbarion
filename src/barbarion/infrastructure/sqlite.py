@@ -2896,6 +2896,22 @@ class SQLiteReverseEngineeringRepository:
             ).fetchall()
         return tuple(_technical_relation_from_row(row) for row in rows)
 
+    def active_relations(self) -> tuple[TechnicalRelation, ...]:
+        """Lista todas las relaciones activas para análisis estructural local."""
+        with self._connect_readonly() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, reference_id, source_symbol_id, target_symbol_id,
+                       target_key, relation_type, classification, resolution_status,
+                       confidence, evidence_file_id, evidence_chunk_id, start_line,
+                       end_line, notes, status
+                FROM relations
+                WHERE status = 'active'
+                ORDER BY id
+                """
+            ).fetchall()
+        return tuple(_technical_relation_from_row(row) for row in rows)
+
     def relations_for_reference(self, reference_id: str) -> tuple[TechnicalRelation, ...]:
         """Lista relaciones persistidas para una referencia."""
         with self._connect_readonly() as connection:

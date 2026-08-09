@@ -159,6 +159,7 @@ from barbarion.infrastructure.privacy_registry_http import HttpPrivacyRegistryFe
 from barbarion.infrastructure.sqlite import SQLiteIngestionRepository
 from barbarion.infrastructure.sqlite import SQLiteRagRepository
 from barbarion.infrastructure.sqlite import SQLiteReverseEngineeringRepository
+from barbarion.domain.technical_patterns import PatternPolicy, detect_patterns
 from barbarion.infrastructure.sqlite_vec import SQLiteVecStore
 from barbarion.infrastructure.llm import OllamaLlmProvider
 from barbarion.infrastructure.ollama_models import OllamaModelClient
@@ -1088,6 +1089,63 @@ def _run_analyze(args: argparse.Namespace) -> int:
         _render_analyze_summary(summary)
         _log_data_driven_analyze_summary(settings, summary)
     return _analyze_exit_code(tuple(summaries))
+
+
+def _run_patterns(args: argparse.Namespace) -> int:
+    """Calcula H4.2 sin LLM; es una superficie nueva porque los contratos
+    inventory/describe/impact/stats no representan resultados de patrones."""
+    settings = load_settings(args.config)
+    if not settings.database_path.exists():
+        print("No hay base SQLite de Barbarion. Ejecuta 'barbarion doctor' antes de patterns.", file=sys.stderr)
+        return 1
+    initialize_database(settings.database_path)
+    repository = SQLiteReverseEngineeringRepository(settings.database_path)
+    policy = PatternPolicy(
+        relation_types=frozenset({"calls", "uses", "opens", "references", "parent_of", "precedes"}),
+        decision_mode="descriptive",
+    )
+    results = detect_patterns(
+        repository.active_symbols(),
+        repository.active_relations(),
+        policy=policy,
+        pattern_types=frozenset(args.pattern_types or ("component_reuse", "structural_centrality")),
+    )
+    payload = {
+        "template_version": "h42-patterns.v1",
+        "no_llm": True,
+        "policy": {"policy_id": policy.policy_id, "decision_mode": policy.decision_mode},
+        "patterns": [
+            {
+                "pattern_type": item.pattern_type,
+                "subject": item.subject_symbol_id,
+                "status": item.status.value,
+                "primary_metric": item.metrics_primary,
+                "secondary_metrics": item.metrics_secondary,
+                "provenance": {
+                    "symbol_ids": item.symbol_ids,
+                    "relation_ids": item.relation_ids,
+                    "reference_ids": item.reference_ids,
+                    "evidence_file_ids": item.evidence_file_ids,
+                    "evidence_chunk_ids": item.evidence_chunk_ids,
+                },
+                "limitations": item.limitations,
+                "logical_identity": item.logical_identity,
+                "result_fingerprint": item.result_fingerprint,
+            }
+            for item in results
+        ],
+    }
+    if args.format == "json":
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print("Patrones técnicos H4.2 (no-llm)")
+        for item in payload["patterns"]:
+            print(f"- {item['pattern_type']} subject={item['subject']} status={item['status']}")
+            print(f"  primary_metric={item['primary_metric']}")
+            print(f"  secondary_metrics={item['secondary_metrics']}")
+            print(f"  provenance={item['provenance']}")
+            print(f"  limitations={item['limitations']} policy={payload['policy']}")
+    return 0
 
 
 def _run_inventory(args: argparse.Namespace) -> int:
@@ -4438,6 +4496,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="muestra metricas operativas en stderr",
     )
     inventory_parser.set_defaults(handler=_run_inventory)
+
+    patterns_parser = commands.add_parser(
+        "patterns",
+        help="calcula patrones estructurales H4.2",
+        description="Calcula métricas y patrones estructurales desde SQLite, sin LLM.",
+        add_help=False,
+    )
+    _add_help_option(patterns_parser)
+    patterns_parser.add_argument(
+        "--pattern",
+        choices=("component_reuse", "structural_centrality"),
+        action="append",
+        dest="pattern_types",
+        help="limita el tipo de patrón; puede repetirse",
+    )
+    patterns_parser.add_argument(
+        "--format", choices=("text", "json"), default="text", help="formato de salida"
+    )
+    patterns_parser.add_argument(
+        "--no-llm", action="store_true", default=True, help="analisis determinista local"
+    )
+    patterns_parser.set_defaults(handler=_run_patterns)
 
     describe_parser = commands.add_parser(
         "describe",

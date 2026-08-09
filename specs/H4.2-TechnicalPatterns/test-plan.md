@@ -75,6 +75,10 @@ fixture y agregados.
 - `barbarion patterns --pattern component_reuse` y
   `--pattern structural_centrality` filtran de forma determinista;
 - `patterns` no llama LLM, no cambia H3/H3.1/H3.3 y conserva `not_evaluated`.
+- `--debug` solo contiene contadores seguros, duración y `policy_id`; no contiene
+  nombres, contenido, SQL, preguntas, prompts, respuestas ni provenance textual.
+- `patterns` no invoca privacy preflight, no hace egress, no escribe `rag_queries`
+  y no persiste `PatternResult`.
 
 Cubrir formato JSON/Markdown/texto, errores de argumentos, base vacía, límites,
 interrupción, `--no-llm`, ausencia de Ollama y ausencia de red. Inspeccionar logs

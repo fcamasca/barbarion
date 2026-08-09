@@ -68,6 +68,10 @@ sin modificar H3/H3.1/H3.3.
 
 ## T06 — Observabilidad y privacidad
 
+**T06 — EN PROGRESO:** `patterns` solo emite contadores, categorías, duración y
+`policy_id` en debug; no registra nombres sensibles, contenido, SQL, preguntas,
+prompts, respuestas ni provenance textual, y no persiste resultados.
+
 Añadir conteos, tiempos, motivos y límites seguros. Verificar que no se guardan
 preguntas, prompts, respuestas ni contenido nuevo y que no existe egress.
 

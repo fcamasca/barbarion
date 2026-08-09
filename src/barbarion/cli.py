@@ -1110,6 +1110,8 @@ def _run_patterns(args: argparse.Namespace) -> int:
         policy=policy,
         pattern_types=frozenset(args.pattern_types or ("component_reuse", "structural_centrality")),
     )
+    relations = repository.active_relations()
+    started = time.monotonic()
     payload = {
         "template_version": "h42-patterns.v1",
         "no_llm": True,
@@ -1145,6 +1147,28 @@ def _run_patterns(args: argparse.Namespace) -> int:
             print(f"  secondary_metrics={item['secondary_metrics']}")
             print(f"  provenance={item['provenance']}")
             print(f"  limitations={item['limitations']} policy={payload['policy']}")
+    if args.debug:
+        statuses = [item.status.value for item in results]
+        _render_operation_debug(
+            "patterns",
+            {
+                "patterns_started": 1,
+                "patterns_finished": 1,
+                "subjects_evaluated": len(repository.active_symbols()),
+                "relations_considered": len(relations),
+                "relations_excluded": max(
+                    0,
+                    len(relations)
+                    - len({relation_id for item in results for relation_id in item.relation_ids}),
+                ),
+                "patterns_detected": statuses.count("detected"),
+                "patterns_not_evaluated": statuses.count("not_evaluated"),
+                "insufficient_evidence": statuses.count("insufficient_evidence"),
+                "ambiguous": statuses.count("ambiguous"),
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "policy_id": policy.policy_id,
+            },
+        )
     return 0
 
 
@@ -4516,6 +4540,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     patterns_parser.add_argument(
         "--no-llm", action="store_true", default=True, help="analisis determinista local"
+    )
+    patterns_parser.add_argument(
+        "--debug", action="store_true", help="muestra solo métricas operativas seguras"
     )
     patterns_parser.set_defaults(handler=_run_patterns)
 

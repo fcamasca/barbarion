@@ -181,7 +181,68 @@ Las métricas son hechos calculados y no patrones. Por ejemplo,
 solos `component_reuse`; la regla/política y la baseline son necesarias. Ninguna
 métrica se presenta como cita textual ni como interpretación funcional.
 
-## 6. Modelo lógico mínimo
+## 6. Resultado T03 — contrato determinista y provenance
+
+### Identidad y fingerprint
+
+Se separan dos conceptos:
+
+```text
+logical_identity = hash(schema_version, pattern_type, subject_symbol_id(s), policy_id)
+
+result_fingerprint = hash(
+  logical_identity,
+  contributing_relation_ids,
+  metric_values,
+  status
+)
+```
+
+`logical_identity` representa el resultado lógico del patrón sobre el sujeto y
+la política. Permanece estable cuando cambia el grafo. `result_fingerprint`
+representa la versión calculada de ese resultado y cambia si cambian relaciones,
+métricas o estado. Así se pueden comparar ejecuciones incrementales sin tratar
+cada cambio estructural como un patrón lógico distinto.
+
+Los componentes de ambos hashes se ordenan canónicamente. La misma entrada
+produce el mismo resultado independientemente del proveedor LLM.
+
+### Métricas primarias y secundarias
+
+En `component_reuse`, `distinct_source_symbols` es primaria. Archivos distintos,
+conteo bruto de relaciones, repeticiones y distribución por tipo son contexto
+secundario, no señales equivalentes. En `structural_centrality`,
+`distinct_total_neighbors` es la métrica primaria candidata; dirección y tipo
+son secundarios. T07 confirmará si la primaria basta y si requiere umbral.
+
+### Provenance
+
+```text
+PatternResult → subject_symbol_ids → relation_ids
+                             ├→ reference_ids → evidence_chunk_ids
+                             └→ evidence_file_ids / line_ranges
+```
+
+La provenance conserva todos los niveles disponibles y admite ramas incompletas,
+por ejemplo `PatternResult → symbol → relation → file`. La ausencia de
+`reference_id` o chunk no invalida evidencia estructural válida ni permite
+fabricar una cita textual; se registra explícitamente como limitación o
+`structural_evidence_without_textual_citation`.
+
+### Estados del resultado
+
+| Estado | Significado |
+|---|---|
+| `detected` | Evidencia suficiente, evaluación válida y regla cumplida. |
+| `not_detected` | Evidencia suficiente, evaluación válida y regla no cumplida. |
+| `insufficient_evidence` | No hay cobertura, identidad o resolución suficiente para evaluar. |
+| `ambiguous` | Alternativas estructurales impiden una evaluación única. |
+
+`not_detected` separa explícitamente “no supera el threshold” de
+`insufficient_evidence`; ninguno implica importancia funcional, criticidad o
+impacto de negocio. Antes de T07 no se produce una detección por intuición.
+
+## 7. Modelo lógico mínimo
 
 No se propone tabla nueva todavía. Un resultado derivado puede ser un DTO con:
 

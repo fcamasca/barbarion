@@ -15,6 +15,21 @@ stale/deleted, configuración H4.1 y mutaciones que agreguen/eliminan destinos.
 
 ## Unit tests
 
+### Gate T03 — contrato y provenance
+
+- la misma política, patrón y sujeto conservan `logical_identity` aunque cambie
+  el grafo;
+- cambiar relaciones, métricas o estado cambia `result_fingerprint`, no
+  `logical_identity`;
+- `component_reuse` distingue métrica primaria de contexto explicativo;
+- se conservan ramas completas o parciales de provenance sin exigir reference o
+  chunk textual;
+- la ausencia de reference/chunk se declara como evidencia estructural sin cita
+  textual, sin fabricar niveles inexistentes;
+- `not_detected`, `insufficient_evidence` y `ambiguous` no se intercambian;
+- no superar un umbral futuro produce `not_detected`, no
+  `insufficient_evidence`.
+
 ### Gate T02 — semántica de candidatos
 
 - `component_reuse` distingue `A→X`, `B→X`, `C→X` de tres repeticiones `A→X`;

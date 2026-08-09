@@ -33,9 +33,7 @@ def test_readme_has_the_expected_entry_point_structure() -> None:
     assert "### MVP completado" in readme
     assert "### Evoluciones implementadas" in readme
     assert "| H4.2 | Patrones técnicos | Aceptada, descriptiva |" in readme
-    assert "H1.2 Inferencia Remota con Anthropic" in readme
-    assert "Completada y aceptada técnica y funcionalmente" in readme
-    assert "specs/H1.2-RemoteInference/acceptance.md" in readme
+    assert "| H1.2 | Inferencia remota | Aceptada |" in readme
 
 
 def test_quick_start_remains_ollama_first_and_links_anthropic_setup() -> None:

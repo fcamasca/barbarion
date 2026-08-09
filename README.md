@@ -155,6 +155,7 @@ oficial publicada por Ollama como evidencia uniforme para todos sus modelos.
 | `barbarion ask "pregunta"` | Responde con evidencia y citas |
 | `barbarion analyze` | Actualiza símbolos y relaciones |
 | `barbarion inventory` | Consulta el inventario técnico |
+| `barbarion patterns` | Calcula rankings descriptivos de patrones estructurales |
 | `barbarion describe OBJETO` | Describe un componente |
 | `barbarion impact OBJETO` | Analiza impacto técnico |
 | `barbarion spec create "REQUERIMIENTO"` | Genera una spec Markdown |
@@ -168,6 +169,28 @@ oficial publicada por Ollama como evidencia uniforme para todos sus modelos.
 La sintaxis, opciones, efectos secundarios y códigos de salida están documentados en [`docs/CLI.md`](docs/CLI.md).
 
 ## Estado del proyecto
+
+### MVP completado
+
+```text
+H1 Foundation → H2 Ingesta/Memoria → H3 RAG/Recuperación →
+H4 Ingeniería inversa → H5 Spec Mode
+```
+
+### Evoluciones implementadas
+
+| Evolución | Capacidad | Estado |
+|---|---|---|
+| H1.1 | Gestión y benchmark de modelos locales | Aceptada |
+| H1.2 | Inferencia remota | Aceptada |
+| H3.1 | Optimización de contexto RAG | Aceptada |
+| H3.2 | Privacy Preflight | Aceptada |
+| H3.3 | Graph-Aware Retrieval | Aceptada, opt-in |
+| H4.1 | Configuraciones Data-Driven | Aceptada |
+| H4.2 | Patrones técnicos | Aceptada, descriptiva |
+
+El detalle conceptual, las decisiones, benchmarks y próximas evoluciones se
+mantienen en [docs/EVOLUTION.md](docs/EVOLUTION.md) y en las specs.
 
 - Versión actual: `0.6.0`
 - MVP completado: `5/5` hitos
@@ -205,12 +228,6 @@ El historial y alcance de las evoluciones se mantienen en [`docs/EVOLUTION.md`](
 - [Specs por hito](specs/)
 
 El archivo [`barbarion.example.toml`](barbarion.example.toml) contiene una configuración completa y comentada. `barbarion.toml`, las bases SQLite, `data/`, `output/`, `logs/` y `.venv/` son artefactos locales excluidos de Git.
-
-## H4.2 — Patrones técnicos
-
-`barbarion patterns` calcula localmente rankings descriptivos de reutilización
-estructural y centralidad estructural. No usa LLM, no hace egress y no clasifica
-thresholds ni criticidad funcional. Consulta la [aceptación H4.2](specs/H4.2-TechnicalPatterns/acceptance.md).
 
 ## Licencia
 
